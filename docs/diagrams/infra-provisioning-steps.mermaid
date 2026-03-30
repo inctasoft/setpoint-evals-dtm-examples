@@ -1,0 +1,63 @@
+%%{init: {'theme': 'default', 'themeVariables': {'primaryColor': '#f8fafc', 'lineColor': '#2563eb'}}}%%
+flowchart TD
+    %% ── Infrastructure Provisioning Step DAG ──
+    %% 15 steps, 7 entities, 1 fan-out, deepest cascade (5 levels)
+    %% Entities: Environment, Network, Compute, Storage, DNS, Certificate, LoadBalancer
+
+    subgraph environment ["Environment (required)"]
+        PE["PlanEnvironment"]:::phase1
+        AE["ApplyEnvironment 🔔"]:::phase2
+        PE --> AE
+    end
+
+    subgraph network ["Network (required)"]
+        PN["PlanNetwork"]:::phase1
+        AN["ApplyNetwork 🔔"]:::phase2
+        PN --> AN
+    end
+
+    subgraph compute ["Compute (fan-out, required)"]
+        DC["DiscoverCompute"]:::discover
+        PC["PlanCompute × N"]:::phase1
+        AC["ApplyCompute × N 🔔"]:::phase2
+        DC --> PC --> AC
+    end
+
+    subgraph storage ["Storage (optional)"]
+        PS["PlanStorage"]:::phase1
+        ASt["ApplyStorage 🔔"]:::phase2
+        PS --> ASt
+    end
+
+    subgraph dns ["DNS (optional)"]
+        PD["PlanDNS"]:::phase1
+        AD["ApplyDNS 🔔"]:::phase2
+        PD --> AD
+    end
+
+    subgraph certificate ["Certificate (optional)"]
+        PCert["PlanCertificate"]:::phase1
+        ACert["ApplyCertificate 🔔"]:::phase2
+        PCert --> ACert
+    end
+
+    subgraph loadBalancer ["LoadBalancer (optional)"]
+        PLB["PlanLoadBalancer"]:::phase1
+        ALB["ApplyLoadBalancer 🔔"]:::phase2
+        PLB --> ALB
+    end
+
+    %% Cross-cascade dependencies (deep cascade chain)
+    AE --> PN
+    AN --> DC
+    AC --> PS
+    AN --> PD
+    AC --> PD
+    AD --> PCert
+    AN --> PLB
+    AC --> PLB
+
+    %% Style definitions (light theme)
+    classDef phase1 fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef phase2 fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef discover fill:#fef9c3,stroke:#ca8a04,color:#854d0e

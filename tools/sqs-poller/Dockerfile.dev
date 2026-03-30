@@ -1,0 +1,26 @@
+FROM node:22-alpine
+
+# Install pnpm and tsx globally
+RUN npm install -g pnpm@9 tsx@4.7.0
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json ./
+
+# Install dependencies (including dev dependencies for tsx)
+# Use --ignore-workspace for standalone build
+RUN pnpm install --ignore-workspace
+
+# Copy TypeScript config
+COPY tsconfig.json ./
+
+# Source will be mounted as volume, not copied
+# This allows hot reload to work
+
+# Expose debugger port if needed
+EXPOSE 9230
+
+# Run with tsx in watch mode for hot reload
+CMD ["pnpm", "run", "dev"]
+

@@ -1,0 +1,289 @@
+:root {
+  --bg: #0d1117;
+  --bg-panel: #161b22;
+  --bg-hover: #1c2128;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --green: #3fb950;
+  --blue: #58a6ff;
+  --cyan: #56d4dd;
+  --yellow: #d29922;
+  --red: #f85149;
+  --magenta: #bc8cff;
+  --orange: #d18616;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body, #app {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ═══ Header ═══ */
+.header {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  white-space: pre;
+  color: var(--cyan);
+  user-select: none;
+  flex-shrink: 0;
+}
+.header .title { color: var(--text); font-weight: bold; }
+.header .live {
+  float: right;
+  animation: pulse 2s ease-in-out infinite;
+}
+.header .live.disconnected {
+  color: var(--red);
+  animation: none;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ═══ Panels ═══ */
+.panels {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+.panel {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.panel:last-child { border-right: none; }
+.panel-left { flex: 0 0 340px; }
+.panel-center { flex: 1; }
+.panel-right { flex: 0 0 400px; }
+
+.panel-header {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--cyan);
+  font-weight: bold;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  flex-shrink: 0;
+}
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+/* ═══ Job List ═══ */
+.job-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.1s;
+}
+.job-item:hover { background: var(--bg-hover); }
+.job-item.selected {
+  background: var(--bg-hover);
+  border-left-color: var(--cyan);
+}
+.job-item .job-id { color: var(--text-dim); font-size: 11px; }
+.job-item .job-workflow { color: var(--text); }
+.job-item .job-progress {
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ═══ Progress Bar ═══ */
+.progress-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.progress-track {
+  display: inline-block;
+  width: 120px;
+  height: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+.progress-fill {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  transition: width 0.3s ease;
+}
+.progress-fill.green { background: var(--green); }
+.progress-fill.cyan { background: var(--cyan); }
+.progress-fill.yellow { background: var(--yellow); }
+.progress-fill.red { background: var(--red); }
+.progress-text {
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 80px;
+}
+
+/* ═══ Step Row ═══ */
+.step-row {
+  display: flex;
+  align-items: center;
+  padding: 3px 12px;
+  gap: 8px;
+  font-size: 12px;
+}
+.step-icon {
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.step-icon.completed { color: var(--green); }
+.step-icon.in_progress, .step-icon.delegated { color: var(--blue); }
+.step-icon.in_progress_retrying { color: var(--yellow); }
+.step-icon.waiting_for_ack { color: var(--magenta); }
+.step-icon.failed { color: var(--red); }
+.step-icon.pending { color: var(--text-dim); }
+
+.step-num { color: var(--text-dim); width: 24px; text-align: right; flex-shrink: 0; }
+.step-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-status { color: var(--text-dim); font-size: 11px; width: 110px; text-align: right; flex-shrink: 0; }
+.step-duration { color: var(--text-dim); font-size: 11px; width: 50px; text-align: right; flex-shrink: 0; }
+.step-error {
+  padding: 2px 12px 2px 60px;
+  color: var(--red);
+  font-size: 11px;
+}
+.step-retry-info {
+  padding: 2px 12px 2px 60px;
+  color: var(--yellow);
+  font-size: 11px;
+}
+
+/* ═══ Job Detail Header ═══ */
+.job-detail-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.job-detail-header .workflow-name { color: var(--cyan); font-weight: bold; }
+.job-detail-header .variant { color: var(--text-dim); font-size: 11px; }
+
+/* ═══ SQS Panel ═══ */
+.sqs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.sqs-table th {
+  text-align: right;
+  padding: 3px 8px;
+  color: var(--text-dim);
+  font-weight: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+.sqs-table th:first-child { text-align: left; }
+.sqs-table td {
+  padding: 3px 8px;
+  text-align: right;
+}
+.sqs-table td:first-child {
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
+}
+.sqs-table td.dlq-active { color: var(--red); font-weight: bold; }
+
+/* ═══ Event Log ═══ */
+.event-log { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.event-log .panel-body { font-size: 11px; }
+.log-entry {
+  padding: 1px 12px;
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+.log-entry:hover { background: var(--bg-hover); }
+.log-time { color: var(--text-dim); width: 65px; flex-shrink: 0; }
+.log-type { width: 100px; flex-shrink: 0; }
+.log-type.job_created { color: var(--cyan); }
+.log-type.job_completed { color: var(--green); }
+.log-type.step_started { color: var(--blue); }
+.log-type.step_completed { color: var(--green); }
+.log-type.step_failed { color: var(--red); }
+.log-type.step_retrying { color: var(--yellow); }
+.log-type.ack_waiting { color: var(--magenta); }
+.log-type.ack_received { color: var(--magenta); }
+.log-job { color: var(--text-dim); width: 75px; flex-shrink: 0; }
+.log-detail { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+
+/* ═══ Status badges ═══ */
+.status { font-size: 11px; font-weight: bold; }
+.status.completed, .status.partial_success { color: var(--green); }
+.status.processing { color: var(--blue); }
+.status.failed { color: var(--red); }
+.status.pending { color: var(--yellow); }
+
+/* ═══ Empty state ═══ */
+.empty-state {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.empty-state pre {
+  margin-top: 12px;
+  text-align: left;
+  color: var(--cyan);
+  font-size: 11px;
+  display: inline-block;
+}
+
+/* ═══ Connection status ═══ */
+.connection-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+.connection-dot.connected { background: var(--green); }
+.connection-dot.disconnected { background: var(--red); }
+.connection-dot.reconnecting {
+  background: var(--yellow);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* ═══ Scrollbar ═══ */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* ═══ Bottom bar ═══ */
+.bottom-bar {
+  padding: 4px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+  flex-shrink: 0;
+}

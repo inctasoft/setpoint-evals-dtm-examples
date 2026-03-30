@@ -1,0 +1,325 @@
+---
+description: "Testing standards and practices for DTM"
+globs: ["**/*.spec.ts", "**/*.e2e-spec.ts", "test/**"]
+alwaysApply: true
+---
+
+# Testing Standards - DTM
+
+**Last Updated**: November 16, 2025  
+**Test Count**: 53 tests (42 unit + 11 E2E)  
+**Coverage Goal**: 90%+ for services, 80%+ overall
+
+---
+
+## 📊 Current Test Status
+
+### Unit Tests (42 tests)
+- ✅ Kafka Consumer Service (17 tests)
+- ✅ Migration Trigger Service (7 tests)
+- ✅ Consumer Created Handler (7 tests)
+- ✅ Consumer Updated Handler (7 tests)
+- ✅ Orchestration Service (existing tests)
+- ✅ Callback Service (existing tests)
+
+### E2E Tests (11+ tests)
+- ✅ Kafka Consumer Integration (`test/kafka-consumer.e2e-spec.ts`)
+- ✅ Ingestion API (`test/ingestion.e2e-spec.ts`)
+- ✅ Lambda Integration (`test/lambda-integration.e2e-spec.ts`)
+- ✅ **Happy Path E2E tests** (`test/e2e/`) - Full workflow flows
+
+---
+
+## 📁 Test File Location
+
+### Unit Tests
+**Location**: Next to source files (`*.spec.ts`)
+```
+src/
+├── kafka/
+│   ├── kafka-consumer.service.ts
+│   ├── kafka-consumer.service.spec.ts    ← Unit test here
+│   ├── migration-trigger.service.ts
+│   └── migration-trigger.service.spec.ts  ← Unit test here
+```
+
+### E2E Tests
+**Location**: `test/` directory at package root
+```
+services/orchestrator/
+├── src/
+├── test/
+│   ├── kafka-consumer.e2e-spec.ts
+│   ├── ingestion.e2e-spec.ts
+│   └── lambda-integration.e2e-spec.ts
+```
+
+---
+
+## ✅ Testing Best Practices
+
+### 1. Unit Test Structure
+```typescript
+describe('ServiceName', () => {
+  let service: ServiceName;
+  let mockDependency: jest.Mocked<DependencyType>;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ServiceName,
+        {
+          provide: DependencyService,
+          useValue: {
+            method: jest.fn(),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get<ServiceName>(ServiceName);
+    mockDependency = module.get(DependencyService);
+  });
+
+  describe('methodName', () => {
+    it('should handle success case', async () => {
+      // Arrange
+      mockDependency.method.mockResolvedValue(expectedValue);
+      
+      // Act
+      const result = await service.methodName(input);
+      
+      // Assert
+      expect(result).toEqual(expectedOutput);
+      expect(mockDependency.method).toHaveBeenCalledWith(expectedArgs);
+    });
+
+    it('should handle error case', async () => {
+      // Arrange
+      mockDependency.method.mockRejectedValue(new Error('Test error'));
+      
+      // Act & Assert
+      await expect(service.methodName(input)).rejects.toThrow('Test error');
+    });
+  });
+});
+```
+
+### 2. E2E Test Structure
+```typescript
+describe('Feature E2E', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('should complete full workflow', async () => {
+    // Test full integration
+  });
+});
+```
+
+### 3. Mocking Guidelines
+- **Mock external services**: Kafka, SQS, Database (in unit tests)
+- **Use real services**: In E2E tests (with cleanup)
+- **Mock carefully**: Don't over-mock - test real behavior where possible
+
+---
+
+## ⚡ Fast E2E Tests (Jest)
+
+**Purpose**: Quick happy path verification with direct database queries. No delays - tests complete in ~500ms-15s.
+
+**Location**: `services/orchestrator/test/e2e/`
+
+### Running E2E Tests
+
+```bash
+cd services/orchestrator
+
+# Run all e2e tests
+npm run test:e2e
+
+# Run with verbose output
+npm run test:e2e -- --verbose
+```
+
+### Key Features
+
+- **Zero Delays**: All `testOptions` delays set to `0`
+- **Direct DB Verification**: Queries `dtm_jobs` and `dtm_steps` tables
+- **Fast Feedback**: Full flow completes in ~15s (vs 30s-3min for bash evals)
+
+### When to Use (vs Bash STEs)
+
+| Use Jest E2E | Use Bash STEs (`ste/`) |
+|--------------|-------------------------------|
+| Quick CI/CD checks | Full E2E validation |
+| Development feedback | Failure/retry scenarios |
+| Happy path verification | Production-like timing |
+| Direct DB assertions | DLQ/concurrent tests |
+
+---
+
+## 🎯 Test Coverage Requirements
+
+### Critical Paths (100% coverage required)
+- Job creation
+- Step delegation logic
+- Dependency evaluation
+- Callback processing
+- Error handling & retry logic
+- Kafka event handling
+
+### Happy Paths (90%+ coverage required)
+- All service methods
+- Controller endpoints
+- Repository operations
+
+### Error Paths (80%+ coverage required)
+- Exception handling
+- Validation failures
+- Timeout scenarios
+
+---
+
+## 🧪 Manual Testing Scripts
+
+### Kafka Testing
+```bash
+# Test Kafka-triggered migration
+./scripts/test-kafka-trigger.sh
+
+# Publish custom event
+node scripts/publish-test-event.js
+
+# Load test
+node scripts/load-test-kafka-triggers.js
+```
+
+### Database Monitoring
+```bash
+# Real-time job monitoring
+./scripts/monitor-jobs-db.sh
+```
+
+### SQS Monitoring
+```bash
+# Monitor all queues
+./scripts/local-env.sh monitor sqs
+
+# Monitor specific queue
+./scripts/local-env.sh monitor sqs consumer
+```
+
+---
+
+## 🚨 Test Rules
+
+### When Writing Tests
+1. **Arrange-Act-Assert** pattern always
+2. **One assertion per test** when possible
+3. **Descriptive test names** (what, when, expected)
+4. **Mock external dependencies** in unit tests
+5. **Clean up after tests** (especially E2E)
+6. **Test error cases** not just happy paths
+7. **Use typed mocks** (`jest.Mocked<T>`)
+8. **Avoid test interdependence** (each test independent)
+
+### When Tests Fail
+1. **Read the error message** carefully
+2. **Check mock expectations** (called with correct args?)
+3. **Verify test setup** (all dependencies mocked?)
+4. **Look for timing issues** (async/await correct?)
+5. **Check for state leakage** (cleanup between tests?)
+
+### Before Committing
+1. **Run all tests**: `pnpm test`
+2. **Run E2E tests**: `pnpm test:e2e`
+3. **Check coverage**: `pnpm test:cov`
+4. **Fix linting**: `pnpm lint:fix`
+5. **Format code**: `pnpm format`
+
+---
+
+## 📚 Test Examples
+
+### Testing Kafka Consumer
+See: `packages/kafka-consumer/src/kafka-consumer.service.spec.ts`
+- Connection handling
+- Graceful degradation
+- Handler registration
+- Message dispatching
+
+### Testing Kafka-Triggered Jobs
+See: `services/orchestrator/src/kafka/migration-trigger.service.spec.ts`
+- Auto-job triggering
+- Idempotency checks
+- Configuration validation
+- Error handling
+
+### Testing E2E Kafka Flow
+See: `services/orchestrator/test/kafka-consumer.e2e-spec.ts`
+- Real Kafka connection
+- Message publishing
+- Handler invocation
+- Topic cleanup
+
+---
+
+## 🔍 Debugging Tests
+
+### Running Specific Tests
+```bash
+# Run single test file
+pnpm test kafka-consumer.service.spec.ts
+
+# Run tests matching pattern
+pnpm test --testNamePattern="should handle success"
+
+# Run in watch mode
+pnpm test --watch
+
+# Run with coverage
+pnpm test --coverage
+```
+
+### Debugging in VSCode
+1. Set breakpoint in test file
+2. Open "Run and Debug" panel
+3. Select "Jest Current File"
+4. Press F5 to start debugging
+
+---
+
+## 📊 CI/CD Integration
+
+### Pre-commit Hook
+- ✅ Format check (`prettier --check`)
+- ✅ Runs automatically
+
+### Pre-push Hook
+- ✅ Lint check (`eslint`)
+- ✅ Unit tests (`jest`)
+- ✅ Runs automatically
+
+---
+
+## 🎓 Resources
+
+- **Jest Docs**: https://jestjs.io
+- **NestJS Testing**: https://docs.nestjs.com/fundamentals/testing
+- **Testing Library**: https://testing-library.com
+- **Internal Docs**: See `TESTING-SUMMARY.md`
+
+**Status**: ✅ Well-tested, CI/CD integrated

@@ -1,0 +1,75 @@
+# ============================================
+# DTM Orchestrator — Simulator Mode
+# ============================================
+# Based on Dockerfile.dev but WITHOUT hardcoded workflow imports.
+# Workflow configs are mounted at runtime via WORKFLOW_CONFIG_PATHS.
+#
+# Build context: monorepo root (sms/)
+# ============================================
+
+FROM node:22-alpine
+
+RUN npm install -g pnpm@10.13.1
+
+WORKDIR /app
+
+# Copy workspace configuration files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
+
+# Copy core package.json files for dependency resolution
+COPY packages/core/package.json ./packages/core/
+COPY packages/errors/package.json ./packages/errors/
+COPY packages/database/package.json ./packages/database/
+COPY packages/kafka-producer/package.json ./packages/kafka-producer/
+COPY packages/kafka-consumer/package.json ./packages/kafka-consumer/
+COPY services/orchestrator/package.json ./services/orchestrator/
+
+# Copy workflow package.json stubs for pnpm workspace resolution
+# (source code is NOT copied — mounted at runtime via volumes)
+COPY workflows/order-processing/package.json ./workflows/order-processing/
+COPY workflows/iot-sensor-pipeline/package.json ./workflows/iot-sensor-pipeline/
+COPY workflows/infra-provisioning/package.json ./workflows/infra-provisioning/
+
+# Install dependencies (all workspace packages resolved)
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+# Copy and build core workspace packages (order matters)
+COPY packages/core/tsconfig.json ./packages/core/
+COPY packages/core/src ./packages/core/src
+RUN pnpm --filter @dtm/core run build
+
+COPY packages/errors/tsconfig.json ./packages/errors/
+COPY packages/errors/src ./packages/errors/src
+RUN pnpm --filter @dtm/errors run build
+
+COPY packages/database/tsconfig.json ./packages/database/
+COPY packages/database/src ./packages/database/src
+RUN pnpm --filter @dtm/database run build
+
+COPY packages/kafka-producer/tsconfig.json ./packages/kafka-producer/
+COPY packages/kafka-producer/src ./packages/kafka-producer/src
+RUN pnpm --filter @dtm/kafka-producer run build
+
+COPY packages/kafka-consumer/tsconfig.json ./packages/kafka-consumer/
+COPY packages/kafka-consumer/src ./packages/kafka-consumer/src
+RUN pnpm --filter @dtm/kafka-consumer run build
+
+# NOTE: No workflow packages are copied or built.
+# Workflow configs are loaded at runtime from mounted volumes
+# via WORKFLOW_CONFIG_PATHS environment variable.
+
+# Copy orchestrator source (includes simulator entry points)
+COPY services/orchestrator/tsconfig.json ./services/orchestrator/
+COPY services/orchestrator/tsconfig.build.json ./services/orchestrator/
+COPY services/orchestrator/nest-cli.json ./services/orchestrator/
+COPY services/orchestrator/src ./services/orchestrator/src
+
+WORKDIR /app/services/orchestrator
+
+# Build the orchestrator (compiles main.simulator.ts → dist/main.simulator.js)
+RUN pnpm run build
+
+EXPOSE 3000
+
+# Run the simulator entry point directly
+CMD ["node", "dist/main.simulator"]

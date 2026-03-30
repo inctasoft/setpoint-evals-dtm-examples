@@ -1,0 +1,150 @@
+services:
+  # Zookeeper - Required for Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: dtm-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2182:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - dtm
+    healthcheck:
+      test:
+        ["CMD", "bash", "-c", 'timeout 10 bash -c "</dev/tcp/localhost/2181"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Kafka Broker
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: dtm-kafka
+    hostname: dtm-kafka
+    env_file:
+      - .env.development
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      # KAFKA_LISTENERS: What Kafka binds to inside the container
+      # Use 9093 internally so it matches the advertised port (simpler!)
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_INTERNAL://0.0.0.0:9093
+      # KAFKA_ADVERTISED_LISTENERS: What clients should connect to
+      # PLAINTEXT: For Docker containers (dtm-kafka:29092)
+      # PLAINTEXT_INTERNAL: For localhost connections (same port inside and outside)
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://dtm-kafka:29092,PLAINTEXT_INTERNAL://localhost:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - "9093:9093"
+      - "29093:29092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - dtm
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "kafka-topics",
+          "--bootstrap-server",
+          "localhost:9093",
+          "--list",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Kafka UI
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: dtm-kafka-ui
+    env_file:
+      - .env.development
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: dtm-kafka:29092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    ports:
+      - "8090:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - dtm
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Kafka Init - Create required topics
+  kafka-init:
+    image: confluentinc/cp-kafka:latest
+    container_name: dtm-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - dtm
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      # Blocks until kafka is reachable
+      kafka-topics --bootstrap-server kafka:29092 --list
+
+      echo '============================================'
+      echo 'Creating DTM Core Kafka Topics'
+      echo 'Note: workflow-specific topics are created by each workflow configuration'
+      echo '============================================'
+      echo ''
+
+      # Job lifecycle topics (generic DTM core topics)
+      echo 'Creating topic: dtm.jobs.submitted (3 partitions)'
+      kafka-topics --bootstrap-server dtm-kafka:29092 --create --if-not-exists --topic dtm.jobs.submitted --replication-factor 1 --partitions 3
+
+      echo 'Creating topic: dtm.jobs.completed (3 partitions)'
+      kafka-topics --bootstrap-server dtm-kafka:29092 --create --if-not-exists --topic dtm.jobs.completed --replication-factor 1 --partitions 3
+
+      echo 'Creating topic: dtm.jobs.failed (3 partitions)'
+      kafka-topics --bootstrap-server dtm-kafka:29092 --create --if-not-exists --topic dtm.jobs.failed --replication-factor 1 --partitions 3
+
+      echo ''
+      echo '============================================'
+      echo 'DTM Kafka topics created successfully!'
+      echo '============================================'
+      echo ''
+      echo 'Topics created:'
+      kafka-topics --bootstrap-server dtm-kafka:29092 --list | grep -E 'dtm\.'
+      echo ''
+      "
+    restart: "no"
+
+volumes:
+  zookeeper_data:
+  zookeeper_logs:
+  kafka_data:
+
+networks:
+  dtm:
+    external: true

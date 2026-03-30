@@ -1,0 +1,47 @@
+%% PARTIAL_SUCCESS Flow - Graceful Degradation in Fan-Out
+%% Shows how partial failures propagate through the system
+%% Example: Order Processing workflow — LineItem fan-out with dependent Payment
+%% Updated: Feb 2026
+
+sequenceDiagram
+    participant LI1 as LineItem #1
+    participant LI2 as LineItem #2
+    participant LI3 as LineItem #3
+    participant DLI as DiscoverLineItems
+    participant VPay as ValidatePayment
+    participant SPay as SubmitPayment
+
+    Note over LI1,LI3: Fan-Out: 3 LineItems discovered
+
+    rect rgb(200, 250, 200)
+        Note over LI1: SUCCESS
+        LI1->>DLI: ACK (externalId: ext-li-001)
+    end
+
+    rect rgb(250, 200, 200)
+        Note over LI2: FAILED
+        LI2--xDLI: Submit Error (validation failed)
+    end
+
+    rect rgb(200, 250, 200)
+        Note over LI3: SUCCESS
+        LI3->>DLI: ACK (externalId: ext-li-003)
+    end
+
+    Note over DLI: All children done (2 success, 1 failed)
+    DLI->>DLI: Build FK Map:<br/>{li-001: ext-li-001, li-003: ext-li-003}
+    DLI->>DLI: Set status: PARTIAL_SUCCESS
+
+    Note over VPay: PARTIAL_SUCCESS satisfies dependency
+    DLI->>VPay: Trigger with FK Map
+
+    VPay->>VPay: Validate payment data
+    VPay->>SPay: Submit payment (ACK required)
+
+    rect rgb(200, 250, 200)
+        Note over SPay: Payment submitted with available line items
+        SPay->>SPay: ACK received
+    end
+
+    Note over LI1,SPay: Result: 2 of 3 LineItems processed<br/>Job Status: PARTIAL_SUCCESS
+

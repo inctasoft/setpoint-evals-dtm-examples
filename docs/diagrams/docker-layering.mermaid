@@ -1,0 +1,61 @@
+flowchart TB
+    subgraph core["DTM Core Infrastructure"]
+        direction TB
+        DC_CORE["docker-compose.yml"]
+        ORCH["dtm-orchestrator<br/>(NestJS, port 3002)"]
+        DB["dtm-db<br/>(PostgreSQL, port 5448)"]
+        ACK_SIM["dtm-dev-ack-simulator<br/>(port 3003)"]
+
+        DC_CORE --> ORCH
+        DC_CORE --> DB
+        DC_CORE --> ACK_SIM
+    end
+
+    subgraph kafka["Kafka Infrastructure"]
+        direction TB
+        DC_KAFKA["docker-compose.kafka.yml"]
+        ZK["dtm-zookeeper"]
+        KF["dtm-kafka<br/>(port 9093)"]
+        KUI["dtm-kafka-ui<br/>(port 8090)"]
+
+        DC_KAFKA --> ZK
+        DC_KAFKA --> KF
+        DC_KAFKA --> KUI
+    end
+
+    subgraph workers["Worker Infrastructure"]
+        direction TB
+        DC_WORKERS["docker-compose.workers.yml"]
+        LS["dtm-localstack<br/>(SQS, port 4567)"]
+        POLLER["dtm-sqs-poller-{N}<br/>(scalable)"]
+
+        DC_WORKERS --> LS
+        DC_WORKERS --> POLLER
+    end
+
+    subgraph workflow["Workflow-Specific (per workflow)"]
+        direction TB
+        DC_WF["docker-compose.<workflow-name>.yml"]
+        SRC_DB["dtm-<workflow>-source-db<br/>(port 5449+)"]
+
+        DC_WF --> SRC_DB
+    end
+
+    %% Dependencies
+    ORCH -->|"State"| DB
+    ORCH -->|"Publish/Subscribe"| KF
+    ORCH -->|"Delegate steps"| LS
+    POLLER -->|"Poll SQS"| LS
+    ACK_SIM -->|"Subscribe/Publish"| KF
+    SRC_DB -.->|"Queried by workers<br/>(not by orchestrator)"| POLLER
+
+    %% Styles
+    style core fill:#e6f3ff,stroke:#4a90d9
+    style kafka fill:#e6ffe6,stroke:#4a9950
+    style workers fill:#fff3e6,stroke:#d9904a
+    style workflow fill:#ffe6f0,stroke:#d94a7a
+
+    style DC_CORE fill:#4a90d9,color:#fff
+    style DC_KAFKA fill:#4a9950,color:#fff
+    style DC_WORKERS fill:#d9904a,color:#fff
+    style DC_WF fill:#d94a7a,color:#fff

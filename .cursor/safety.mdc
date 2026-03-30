@@ -1,0 +1,423 @@
+---
+description: "Security and safety best practices for DTM"
+globs: ["**/*.ts", "**/*.js", "**/*.env*"]
+alwaysApply: true
+---
+
+# Security & Safety Best Practices
+
+**Last Updated**: November 16, 2025  
+**Security Level**: Production-ready with documented enhancement opportunities
+
+---
+
+## 🔐 Secrets Management
+
+### Never Commit Secrets
+```bash
+# ✅ Good: .gitignore includes
+.env
+.env.local
+.env.development
+.env.test
+*.pem
+*.key
+
+# ❌ Bad: Hardcoded secrets
+const API_KEY = 'sk_live_12345...';  // NEVER
+const DB_PASSWORD = 'mypassword123';  // NEVER
+```
+
+### Use Environment Variables
+```typescript
+// ✅ Good
+const config = {
+  database: {
+    host: process.env.POSTGRES_HOST,
+    password: process.env.POSTGRES_PASSWORD,
+  },
+  kafka: {
+    broker: process.env.KAFKA_BROKER,
+  },
+};
+
+// ❌ Bad
+const config = {
+  database: {
+    host: 'localhost',
+    password: 'admin123',  // NEVER hardcode
+  },
+};
+```
+
+### Environment Variable Validation
+```typescript
+// ✅ Good: Validate on startup
+@Injectable()
+export class ConfigService {
+  constructor() {
+    this.validateEnv();
+  }
+
+  private validateEnv(): void {
+    const required = [
+      'POSTGRES_HOST',
+      'POSTGRES_PASSWORD',
+      'AWS_ACCESS_KEY_ID',
+    ];
+
+    for (const key of required) {
+      if (!process.env[key]) {
+        throw new Error(`Missing required environment variable: ${key}`);
+      }
+    }
+  }
+}
+```
+
+---
+
+## 🛡️ Input Validation
+
+### Always Validate DTOs
+```typescript
+import { IsString, IsNumber, IsOptional, Min, Max } from 'class-validator';
+
+export class CreateJobDto {
+  @IsString()
+  entityKey: string;
+
+  @IsOptional()
+  @IsString()
+  deduplicationKey?: string;
+
+  @IsString()
+  @Length(1, 255)
+  externalSystemId: string;
+
+  // ✅ Validation happens automatically via class-validator
+}
+```
+
+### Sanitize Database Queries
+```typescript
+// ✅ Good: Parameterized queries (TypeORM does this)
+const job = await this.repo
+  .createQueryBuilder('job')
+  .where('job.consumer_no = :no', { no: consumerNo })
+  .getOne();
+
+// ❌ Bad: String concatenation (SQL injection risk)
+const job = await this.repo.query(
+  `SELECT * FROM jobs WHERE consumer_no = ${consumerNo}`
+);
+```
+
+### Validate External Data
+```typescript
+// ✅ Good: Validate Kafka messages
+async handleMessage(payload: EachMessagePayload): Promise<void> {
+  const { message } = payload;
+  
+  try {
+    const data = JSON.parse(message.value?.toString() || '{}');
+    
+    // Validate structure
+    if (!data.consumerId || !data.consumerNo) {
+      throw new BadRequestException('Invalid message format');
+    }
+    
+    // Validate types
+    if (typeof data.consumerNo !== 'number') {
+      throw new BadRequestException('consumerNo must be number');
+    }
+    
+    // Process validated data
+    await this.processMessage(data);
+  } catch (error) {
+    this.logger.error('Invalid message', error);
+    // Don't process invalid messages
+  }
+}
+```
+
+---
+
+## 🔒 Authentication & Authorization
+
+### API Authentication (TODO)
+```typescript
+// Current: No authentication (local dev only)
+// Production TODO: Add authentication
+
+// ✅ Future: JWT authentication
+@Controller('workflows')
+@UseGuards(JwtAuthGuard)
+export class WorkflowController {
+  @Post(':name/jobs')
+  @Roles('admin', 'operator')
+  async createJob(@User() user: User, @Body() dto: CreateJobDto) {
+    // Only authenticated users with correct roles can access
+  }
+}
+```
+
+### Webhook Authentication (TODO)
+```typescript
+// Current: No webhook authentication
+// Production TODO: HMAC signature verification
+
+// ✅ Future: HMAC verification
+async verifyWebhookSignature(
+  payload: string,
+  signature: string,
+  secret: string,
+): Promise<boolean> {
+  const hmac = crypto
+    .createHmac('sha256', secret)
+    .update(payload)
+    .digest('hex');
+  
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(hmac)
+  );
+}
+```
+
+---
+
+## 📝 Logging Safely
+
+### Don't Log PII
+```typescript
+// ❌ Bad: Logging sensitive data
+this.logger.log('User data:', {
+  email: user.email,          // PII
+  phone: user.phone,          // PII
+  password: user.password,    // CRITICAL - NEVER LOG
+  ssn: user.ssn,              // PII
+});
+
+// ✅ Good: Log non-sensitive identifiers
+this.logger.log('User action', {
+  userId: user.id,            // UUID - safe
+  action: 'login',
+  timestamp: new Date(),
+});
+```
+
+### Sanitize Error Messages
+```typescript
+// ❌ Bad: Exposing internal details
+throw new Error(`Database query failed: ${sqlQuery}`);
+throw new Error(`Connection to ${dbHost}:${dbPort} failed`);
+
+// ✅ Good: Generic error messages
+throw new InternalServerErrorException('Database operation failed');
+throw new ServiceUnavailableException('External service unavailable');
+```
+
+### Structured Logging
+```typescript
+// ✅ Good: Structured, searchable logs
+this.logger.log('Job created', {
+  jobId,
+  type: job.type,
+  submittedBy: job.submittedBy,
+  timestamp: job.submittedAt,
+});
+
+this.logger.error('Job failed', {
+  jobId,
+  error: error.message,
+  stack: error.stack,
+});
+```
+
+---
+
+## 🔐 Data Protection
+
+### Encrypt Sensitive Data
+```typescript
+// Current: No encryption for stored data
+// Production TODO: Encrypt sensitive fields
+
+// ✅ Future: Field-level encryption
+@Column({ type: 'text', transformer: {
+  to: (value: string) => encrypt(value, process.env.ENCRYPTION_KEY),
+  from: (value: string) => decrypt(value, process.env.ENCRYPTION_KEY),
+}})
+sensitiveData: string;
+```
+
+### HTTPS Only
+```bash
+# ✅ Production: Always use HTTPS
+ORCHESTRATOR_URL=https://dtm.example.com
+
+# ❌ Production: Never use HTTP
+# ORCHESTRATOR_URL=http://dtm.example.com
+```
+
+### Database Connection Security
+```typescript
+// ✅ Good: TLS for database connections
+{
+  type: 'postgres',
+  host: process.env.POSTGRES_HOST,
+  ssl: process.env.NODE_ENV === 'production' ? {
+    rejectUnauthorized: true,
+    ca: fs.readFileSync('/path/to/ca.pem').toString(),
+  } : false,
+}
+```
+
+---
+
+## 🚨 Security Features Implemented
+
+### 1. Simulated Delays Protection
+```typescript
+// ✅ Protected by environment variable
+if (
+  input.simulatedDelay &&
+  process.env.ENABLE_REQUESTS_FOR_SIMULATED_DELAYS === 'true'
+) {
+  await this.simulateDelay(input.simulatedDelay);
+}
+// If env var not set or false, simulated delays ignored
+```
+
+### 2. Query Parameterization
+```typescript
+// ✅ All database queries use parameters
+const job = await this.repo.createQueryBuilder('job')
+  .where('job.id = :id', { id })  // Parameterized
+  .getOne();
+```
+
+### 3. Input Validation
+```typescript
+// ✅ All API endpoints validate inputs
+@Post()
+async create(@Body() dto: ValidatedDto) {
+  // class-validator ensures dto is valid
+}
+```
+
+### 4. Error Handling
+```typescript
+// ✅ All Lambda workers use try-catch
+try {
+  await processMessage(message);
+  return { batchItemFailures: [] };
+} catch (error) {
+  await callbackOrchestrator({ status: 'failed', error: error.message });
+  return { batchItemFailures: [{ itemIdentifier: message.messageId }] };
+}
+```
+
+---
+
+## 🎯 Security Checklist
+
+### Before Production Deployment
+- [ ] Add authentication (JWT, API keys, etc.)
+- [ ] Add authorization (role-based access control)
+- [ ] Enable HTTPS only
+- [ ] Configure TLS for database connections
+- [ ] Add rate limiting
+- [ ] Add webhook signature verification
+- [ ] Enable audit logging
+- [ ] Set up secrets management (AWS Secrets Manager, etc.)
+- [ ] Configure CORS properly
+- [ ] Add request size limits
+- [ ] Enable security headers (Helmet.js)
+- [ ] Set up WAF rules (if applicable)
+- [ ] Conduct security audit
+- [ ] Penetration testing
+
+### Regular Security Maintenance
+- [ ] Update dependencies monthly (`pnpm update`)
+- [ ] Review security advisories (`pnpm audit`)
+- [ ] Rotate secrets quarterly
+- [ ] Review access logs
+- [ ] Update security patches promptly
+- [ ] Review and update security policies
+- [ ] Conduct annual security audits
+
+---
+
+## 🔍 Security Monitoring
+
+### What to Monitor
+```typescript
+// ✅ Log security events
+this.logger.warn('Multiple failed login attempts', {
+  userId,
+  ip: request.ip,
+  attempts: failedAttempts,
+});
+
+this.logger.error('Unauthorized access attempt', {
+  endpoint: request.url,
+  ip: request.ip,
+  timestamp: new Date(),
+});
+
+this.logger.info('API key usage', {
+  apiKeyId,
+  endpoint: request.url,
+  responseTime: duration,
+});
+```
+
+### Alerts to Configure
+- Multiple failed authentication attempts
+- Unusual API usage patterns
+- Slow query performance (potential DoS)
+- High error rates
+- Unexpected data access patterns
+- Database connection failures
+
+---
+
+## 🎓 Security Resources
+
+- **OWASP Top 10**: https://owasp.org/www-project-top-ten/
+- **NestJS Security**: https://docs.nestjs.com/security/
+- **Node.js Security**: https://nodejs.org/en/docs/guides/security/
+- **AWS Security Best Practices**: https://aws.amazon.com/security/
+
+---
+
+## 📊 Current Security Status
+
+### ✅ Implemented
+- Input validation (class-validator)
+- Parameterized queries (TypeORM)
+- Error handling & retry logic
+- Structured logging
+- Environment variable configuration
+- Simulated delay protection
+- `.gitignore` for secrets
+
+### 🟡 Partial
+- Authentication (TODO for production)
+- Authorization (TODO for production)
+- Encryption (TODO for sensitive fields)
+- Rate limiting (TODO)
+
+### 🔴 TODO for Production
+- Add API authentication
+- Add webhook signature verification
+- Enable HTTPS only
+- Configure TLS for databases
+- Add rate limiting
+- Implement field-level encryption
+- Security audit
+- Penetration testing
+
+**Status**: ✅ Development-ready, Production needs enhancements (documented)

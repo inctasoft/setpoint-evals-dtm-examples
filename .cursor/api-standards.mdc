@@ -1,0 +1,63 @@
+---
+description: "API Design and Coding Standards"
+globs: ["src/**/*.controller.ts", "src/**/*.dto.ts"]
+alwaysApply: true
+---
+
+# API & Coding Standards
+
+## 🌐 API Design
+
+### Endpoints
+- **Prefix**: Always use `/api/v1`.
+- **Resource Naming**: Use plural nouns (e.g., `/jobs`, `/steps`).
+- **IDs**: Use `jobId` (UUID) universally. **Do NOT use `eventId`**.
+
+### DTOs (Data Transfer Objects)
+- **Validation**: Use `class-validator` decorators (`@IsString()`, `@IsUUID()`).
+- **Documentation**: Use `@ApiProperty()` for Swagger/OpenAPI with comprehensive examples.
+- **Transformation**: Use `class-transformer` for type conversion.
+
+### OpenAPI/Swagger Examples (REQUIRED for TestOptions)
+When adding new testOptions fields to `TestOptionsDto`:
+
+1. **Field Documentation** - Each field needs `@ApiPropertyOptional`:
+   - Use emojis: ⏰ (delays), ❌ (failures), 🔄 (retries), 🎯 (filters), 📦 (payloads)
+   - Write multi-line descriptions explaining purpose and behavior
+   - Provide realistic `example` values (not just `0` or `undefined`)
+
+2. **Add Swagger Examples** - Add 2-3 complete examples showing testOptions in action:
+   - `{entityName}FanOutHappyPath` - Minimal delays (300-500ms), happy path flow
+   - `{entityName}FanOutWithFailures` - Partial failure with filter (e.g., `failForIds`)
+   - `{entity}With{Dependency}Cascade` - If entity has FK dependencies, show cascade
+
+3. **Example Values Must Be Realistic**:
+   - ✅ `validatePayment: 300` (realistic 300ms delay)
+   - ✅ `submitPaymentFailOnAttempts: [1, 2, 3]` (DLQ scenario)
+   - ✅ `submitPaymentFailForIds: ['uuid-123']` (partial failure)
+   - ❌ `validatePayment: 0` (defeats purpose of testing delays)
+
+**Without OpenAPI examples, users won't know how to use testOptions!**
+
+### Response Format
+- Standardize on strict JSON responses.
+- Return `201 Created` for initiations, `200 OK` for status checks.
+
+## 🧹 Code Cleanliness
+
+### Legacy Code
+- **Rule**: "No Legacy Code".
+- **Action**: If you find unused controllers, services, or DTOs (especially related to old "ElasticMQ" or "backend-apps" patterns), **delete them** after verifying they are unused.
+
+### Logging & Tracing
+- **Correlation ID**:
+  - **Middleware**: `CorrelationMiddleware` extracts `X-Correlation-ID`.
+  - **Service**: `CorrelationService` stores it in `AsyncLocalStorage`.
+  - **Logger**: `AppLogger` auto-prepends `[CorrelationID]` to all logs.
+  - **Propagation**: Must be passed to SQS (MessageAttributes) and Kafka (Headers).
+
+## 🏗️ Maintenance Tasks
+
+- **Location**: `services/orchestrator/src/maintenance/`.
+- **Purpose**: System health, recovery, metrics.
+- **Security**: `executeTaskManually` accepts options (e.g., `ackTimeoutMinutes`), but these are **ignored** unless `ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=true` is set.

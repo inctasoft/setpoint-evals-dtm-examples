@@ -1,0 +1,129 @@
+---
+description: Order-processing workflow architecture, entity model, step DAG, criticality rules, and STE patterns
+globs:
+  - workflows/order-processing/**
+alwaysApply: false
+---
+
+# Order-Processing Workflow Architecture
+
+## Overview
+
+E-commerce order processing pipeline with 6 entity types demonstrating parallel root steps, single-level fan-out, FK cascade injection, optional entity criticality, and multiple workflow variants.
+
+## Entities (6)
+
+| Entity | Criticality | Validate Step | Submit Step | Notes |
+|--------|-------------|--------------|-------------|-------|
+| Customer | **Required** | ValidateCustomer | SubmitCustomer | Root step (no dependencies) |
+| Product | Optional | ValidateProduct | — | Validate-only, no submit |
+| Order | **Required** | ValidateOrder | SubmitOrder | Depends on ValidateCustomer |
+| LineItem | Optional | ValidateLineItem (N children) | SubmitLineItem (N children) | Fan-out from DiscoverLineItems |
+| Payment | Optional | ValidatePayment | SubmitPayment | Depends on ValidateOrder + SubmitOrder |
+| Shipment | Optional | ValidateShipment | SubmitShipment | Depends on ValidateShipment + SubmitOrder |
+
+## Variants
+
+### default (12 steps)
+Full fan-out workflow: all 6 entities, DiscoverLineItems, FK cascade, ACK flow.
+
+### quick-order (4 steps)
+Simplified: ValidateCustomer → SubmitCustomer → ValidateOrder → SubmitOrder. No discovery, no fan-out, no optional entities.
+
+## Step DAG (Default Variant)
+
+```
+ValidateCustomer ──┬──→ SubmitCustomer ──┬──→ SubmitOrder ──┬──→ SubmitPayment
+                   │                     │                  ├──→ SubmitShipment
+ValidateProduct    │    ValidateOrder ───┘                  │
+                   │         │                              │
+                   │    DiscoverLineItems ──→ N × (ValidateLineItem → SubmitLineItem)
+                   │         │
+                   │    ValidatePayment ──────→ (feeds SubmitPayment)
+                   │    ValidateShipment ─────→ (feeds SubmitShipment)
+                   │
+                   └──→ (SubmitCustomer depends on ValidateCustomer)
+```
+
+Key dependency chains:
+- SubmitOrder depends on: [ValidateOrder, SubmitCustomer]
+- SubmitPayment depends on: [ValidatePayment, SubmitOrder]
+- SubmitShipment depends on: [ValidateShipment, SubmitOrder]
+- DiscoverLineItems depends on: [ValidateOrder]
+
+## FK Cascade Injection
+
+| Source Submit Step | Injected FK | Target Entities |
+|--------------------|-------------|-----------------|
+| SubmitCustomer | `ext_customer_id` | Order |
+| SubmitOrder | `ext_order_id` | LineItem, Payment, Shipment |
+
+When a submit step completes and is ACK'd, the orchestrator's cascade-publish.service.ts injects the resulting FK into dependent entity submit steps.
+
+## Outcome Rules (Entity Criticality)
+
+Defined in `workflow.config.ts` → `OUTCOME_RULES`:
+
+| Priority | Rule ID | Condition | Result |
+|----------|---------|-----------|--------|
+| 10 | critical-entity-failed | Customer or Order failed (attempted, 0 successes) | FAILED |
+| 20 | full-success | All attempted entities succeeded, no failures | COMPLETED |
+| 30 | partial-success-optional-failed | Critical OK, any optional (lineItem/payment/shipment) failed | PARTIAL_SUCCESS |
+| 100 | fallback-unknown | Catch-all safety net | FAILED |
+
+CRITICAL_ENTITIES = ['customer', 'order']
+OPTIONAL_ENTITIES = ['lineItem', 'payment', 'shipment']
+
+## Source Database
+
+- **Container**: dtm-order-processing-source-db
+- **Port**: 5449 (host) → 5432 (container)
+- **Database**: order_processing_db
+- **User/Pass**: order_user / order_pass
+- **Tables**: customers (5), products (10), orders (8), order_items (25), payments (8), shipments (6)
+- **Customer 99999**: Does NOT exist (reserved for negative testing in STE 02)
+- **Payment order 99999**: Does NOT exist (reserved for STE 04 partial failure)
+
+## STE Catalog (5 Tests)
+
+| # | Name | Tests | Expected Status | Key Verification |
+|---|------|-------|-----------------|------------------|
+| 01 | happy-path | 6 | COMPLETED | All 16 steps complete, fan-out 3 items |
+| 02 | customer-not-found | 4 | FAILED | ValidateCustomer fails, all downstream skipped |
+| 03 | fan-out-order-items | 5 | COMPLETED | DiscoverLineItems → 3 Validate + 3 Submit children |
+| 04 | partial-payment-failure | 7 | PARTIAL_SUCCESS | ValidatePayment fails (paymentId 99999), SubmitPayment skipped |
+| 05 | quick-order-variant | 6 | COMPLETED | 4 steps only, no fan-out or ACK |
+
+### Running STEs
+```bash
+# All 5 STEs (must set ORCHESTRATOR_URL for host execution)
+ORCHESTRATOR_URL="http://localhost:3002/api/v1" bash workflows/order-processing/ste/run-all.sh
+
+# Individual STE
+ORCHESTRATOR_URL="http://localhost:3002/api/v1" bash workflows/order-processing/ste/01-happy-path/test.sh
+```
+
+### STE Timing Notes
+- Default-variant jobs take ~25-70s (ACK roundtrip through Kafka)
+- Batch-import variant takes ~24s (no ACK delays)
+- Poll timeouts set to 600s for safety margin
+- `testOptions.maxRetries: 1` used in STE 02 to speed up failure exhaustion
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `workflow.config.ts` | Step DAG, cascades, outcome rules, entity criticality |
+| `workers/src/handlers/` | 12 Lambda worker handlers |
+| `source-db/init-scripts/01-schema-and-seed.sql` | Schema + 52 seed records |
+| `dev-tools/ack-defaults.ts` | ACK payload generators for dev-ack-simulator |
+| `docker-compose.order-processing.yml` | Source database container |
+| `ste/shared/helpers.sh` | Workflow-specific STE helpers |
+
+## Common Pitfalls
+
+1. **Wrong ORCHESTRATOR_URL**: STEs default to port 3000 but Docker maps to 3002. Always set `ORCHESTRATOR_URL="http://localhost:3002/api/v1"`.
+2. **Timeout too short**: Default-variant jobs need 600s poll timeout due to ACK roundtrip.
+3. **paymentId 99999**: Used by STE 04 to trigger natural ValidatePayment failure (no payments for order 99999 in source DB).
+4. **SubmitPayment/SubmitShipment stuck pending**: These depend on SubmitOrder. While SubmitOrder is in WAITING_FOR_ACK, dependencies are not satisfied. Wait for ACK to arrive.
+5. **Fan-out count depends on seed data**: Order 1 has 3 items (IDs: 1, 2, 3). If seed data changes, STE 03 assertions must be updated.

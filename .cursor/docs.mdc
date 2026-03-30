@@ -1,0 +1,85 @@
+---
+description: "Documentation standards and guidelines for DTM"
+globs: ["**/*.md", "docs/**"]
+alwaysApply: true
+---
+
+# Documentation Standards
+
+> **⚠️ IMPORTANT FOR AI AGENTS**: Always use the canonical documentation structure below.
+> If you see conflicting information, the source of truth is:
+> 1. **Database schema**: Check actual TypeORM entities in `packages/database/src/entities/`
+> 2. **Master index**: `docs/MASTER-INDEX.md` for navigation
+> 3. **Current code**: Always verify against actual code, not historical documentation
+
+## 📚 Documentation Structure
+
+### 1. Persistent Documentation (`docs/`)
+
+**Location**: `docs/` directory.
+**Purpose**: Long-term, high-value guides and references.
+
+- `docs/MASTER-INDEX.md`: **CANONICAL NAVIGATION** - Start here for finding documentation.
+- `docs/README.md`: Entry point with quick links.
+- `docs/guides/`: Feature guides, architectural deep dives.
+- `docs/diagrams/`: Mermaid diagrams.
+
+### 2. Living Documentation (`ste/`)
+
+**Location**: `ste/*/README.md` (State Transition Evals).
+**Purpose**: Describes **verified capabilities** and proven scenarios.
+
+- **Status**: Equal in importance to `docs/`. This is the "proof" of what the system can actually do.
+- **Requirement**: Each STE `README.md` **MUST** contain a Mermaid diagram of the flow it tests.
+
+### 2b. Workflow Documentation (`workflows/`)
+
+**Location**: `workflows/<workflow-name>/` (e.g., `workflows/order-processing/`).
+**Purpose**: Workflow-specific documentation, cursor rules, and configuration.
+
+- Contains `.cursor/` subdirectory with workflow-specific rules
+- Keeps domain-specific content separate from DTM core
+
+### 3. Project History (`CHANGELOG/`)
+
+**Location**: `CHANGELOG/` directory.
+**Purpose**: Intermediate status reports, bug fix summaries, session logs.
+
+- **Rule**: DO NOT clutter the root directory with temporary `.md` files. Move them here.
+- Naming: `YYYY-MM-DD-Topic.md` or descriptive names like `E2E-IMPROVEMENT-PLAN.md`.
+
+**⚠️ Note on CHANGELOG files**:
+- **Root `CHANGELOG.md`**: Semantic versioning releases (Keep a Changelog format) - standard location for project releases
+- **`CHANGELOG/` folder**: Historical status reports, bug fixes, feature summaries organized by category (bug-fixes, features, e2e-tests, etc.)
+
+## 📝 Documentation Guidelines
+
+### Synchronization Rule (Crucial)
+
+- **Sync STEs with Guides**: Whenever you update an `ste/**/README.md` (the _proof_), you **MUST** verify if `docs/guides/` (the _theory_) need corresponding updates.
+- **Direction**: Changes often flow from STE (implementation/proof) -> Docs (guide/reference).
+
+### Markdown Best Practices
+
+- **Headers**: Use `H1` (#) for title, `H2` (##) for sections.
+- **Code Blocks**: Always specify language (e.g., ```typescript).
+- **Links**: Use relative paths for internal links.
+
+### Mermaid Diagrams
+
+- **Rule**: Do **NOT** use numbered lists with dots (e.g., `1.`) in node labels. It breaks rendering.
+- **Use**: `1`, `(1)`, or `{1}` instead.
+- **Flow**: Use `graph TB` or `sequenceDiagram`.
+
+### API Documentation
+
+- **OpenAPI**: Use NestJS decorators (`@ApiOperation`, `@ApiResponse`) in controllers.
+- **Synchronization**: Ensure `README.md` examples match actual API behavior (check `api-standards.mdc`).
+
+## 🔍 Documentation Checklist
+
+- [ ] Is this a permanent guide? -> `docs/guides/`
+- [ ] Is this a status report? -> `CHANGELOG/`
+- [ ] Is this a test scenario? -> `ste/`
+- [ ] **Sync Check**: If I updated `ste/`, did I update `docs/`?
+- [ ] Did I update the Mermaid diagram?

@@ -1,0 +1,580 @@
+---
+description: "Complete architecture reference for the DTM (Distributed Task Manager) - Two-Phase Step pattern with Kafka integration"
+globs:
+  [
+    "package.json",
+    "pnpm-workspace.yaml",
+    "services/**",
+    "tools/**",
+    "packages/**",
+    "apps/**",
+  ]
+alwaysApply: true
+---
+
+# DTM Architecture (Distributed Task Manager)
+
+**Version**: 2.1.0 (Kafka Acknowledgement Workflow + Bug Fixes)
+**Last Updated**: February 9, 2026
+
+## System Architecture Overview
+
+This is a **distributed task orchestration service** built with:
+
+- **Orchestrator**: NestJS application coordinating workflows
+- **Lambda Workers**: Specialized workers implementing two-phase steps (input + output)
+- **SQS Poller**: DEV ONLY - Polls SQS queues and invokes Lambda workers (simulates AWS Event Source Mapping for LocalStack)
+  - Production: Uses native AWS Lambda-SQS event source mappings
+  - Development: Custom Node.js poller in Docker container
+- **DevAckSimulator**: DEV ONLY - Auto-acknowledges output steps via Kafka
+  - Production: External system sends real acknowledgements to `workflow.*.ack` topics
+  - Development: Simulates external responses with configurable delays and custom payloads
+- **PostgreSQL**: 2 databases (task service DB + source data DB)
+- **Kafka**: Event streaming (producer + consumer)
+- **React**: Front-end dashboard (Vite + MUI)
+- **LocalStack**: DEV ONLY - Local AWS services emulation (Lambda, SQS, CloudWatch)
+
+---
+
+## Two-Phase Step Pattern (2+ Steps Per Cascade)
+
+### Pattern Overview
+
+**Core Pattern**: Each cascade requires **at least 2 steps**:
+
+1. **Input Step** (source phase) - Query source system(s) for raw data (e.g., Validate, Register, Plan)
+2. **Output Step** (processing phase) - Process to target format and store (e.g., Submit, Provision, Apply)
+
+### Properties
+
+- Input steps run in **parallel** when there are no dependencies between cascades
+- Each output step depends on its respective input step
+- **Cascade dependencies**: Output steps may also depend on other output steps to reflect cascade relationships (e.g., SubmitCascadeB may require SubmitCascadeA to complete first for foreign key data)
+- Orchestrator evaluates **all steps upon job ingestion** (enables parallelization)
+- Output workers can process **multiple records** from input step output
+
+### Example Flow with Cascade Dependencies
+
+```
+CascadeA (no dependencies):
+  ValidateCascadeA -> SubmitCascadeA
+
+CascadeB (depends on CascadeA for FK):
+  ValidateCascadeB -> [Wait for SubmitCascadeA] -> SubmitCascadeB
+
+CascadeC (depends on CascadeA + CascadeB):
+  ValidateCascadeC -> [Wait for SubmitCascadeA AND SubmitCascadeB] -> SubmitCascadeC
+```
+
+**Why Output Step Dependencies?**
+
+- **Foreign key relationships**: CascadeB needs CascadeA ID from processed data
+- **Data enrichment**: CascadeC needs both CascadeA and CascadeB IDs
+- **Business rules**: Downstream cascades tied to specific upstream types in target format
+
+**Scalability**: Pattern supports unlimited cascades with flexible step composition
+
+**Additional Step Types (Future)**:
+
+- **Enrichment** - Augment source data from other systems
+- **Validation** - Validate data quality before processing
+- **Aggregation** - Combine data from multiple sources
+- **Calculation** - Compute derived fields
+
+### Data Flow (with Acknowledgement Workflow)
+
+```
+API Request OR Kafka Event
+        |
+  Orchestrator (Creates Job + Steps)
+        |
+  Parallel Delegation
+  |-> InputStepA -> SQS -> Lambda -> Callback (stores in step.output)
+  |-> InputStepB -> SQS -> Lambda -> Callback (stores in step.output)
+        |
+  Parallel Delegation (after input steps complete)
+  |-> OutputStepA -> SQS -> Lambda -> Callback (stores in step.output)
+  |                                          |
+  |                    Publish to Kafka (workflow.cascadeA.completed)
+  |                                          |
+  |                    Status: WAITING_FOR_ACK (orchestration pauses)
+  |                                          |
+  |                    [External system processes data]
+  |                                          |
+  |                    External sends ack (workflow.cascadeA.ack)
+  |                                          |
+  |                    AcknowledgementHandler -> Status: COMPLETED
+  |
+  |-> OutputStepB -> SQS -> Lambda -> Callback
+  |                                          |
+  |                   (same ACK flow as above)
+        |
+  Job Completion -> Calculate Results -> Store in job.results
+        |
+  Publish to Kafka (workflow.jobs.completed)
+        |
+  (Optional) Webhook Notification
+```
+
+**Note**: In development, DevAckSimulatorService automatically sends acknowledgements.
+In production, the real external system sends acknowledgements after processing.
+
+---
+
+## Common Worker Features
+
+- All wrapped in try-catch for error handling
+- Follow AWS SQS `batchItemFailures` pattern
+- Support simulated delays (when `ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=true`)
+- Always callback to orchestrator (success or failure)
+- Track retry count via `ApproximateReceiveCount`
+
+### Shared Worker SDK
+
+**Package**: `@dtm/worker-sdk`
+**Location**: `packages/lambda-worker-utils/`
+
+Common code extracted from all workers into a shared, tested package:
+
+**Utilities Provided**:
+
+- `simulateWork()` / `simulateFailure()` - Testing simulation (production-safe)
+- `sendSuccessCallback()` / `sendFailureCallback()` - Orchestrator communication
+- `getSQSMessageAttributes()` - Get retry count from SQS
+- `createBatchItemFailure()` - Build SQS failure responses
+
+**Benefits**:
+
+- Consistent behavior and error handling
+- Single source of truth for common logic
+- 100% test coverage
+
+---
+
+## Database Schema
+
+### Task Service DB
+
+**jobs** - Job tracking
+
+- `id` UUID (PK, auto-generated)
+- `type` ENUM
+- `status` ENUM (pending, in_progress, completed, failed)
+- `payload` JSONB - Contains:
+  - Filter keys for workers
+  - `externalSystemId` - Source system
+  - `webhookUrl` - Completion notification
+  - `simulatedDelays` - Optional test delays
+  - `_trigger` - Kafka trigger metadata (for idempotency)
+- **`results` JSONB** - Job summary (populated on completion):
+  - `totalRecordsProcessed` - Count of processed records
+  - `totalRecordsFailed` - Count of failed records
+  - `stepsCompleted` / `stepsFailed` / `stepsAborted`
+  - `durationMs` - Total job duration
+  - `completedAt` - Completion timestamp
+- Timestamps: `submitted_at`, `started_at`, `completed_at`, `updated_at`
+- Retry: `retry_count`, `max_retries`
+
+**steps** - Step tracking
+
+- `id` UUID (PK)
+- `job_id` FK -> jobs.id
+- `step_value` VARCHAR
+- `status` ENUM (pending, delegated, in_progress, in_progress_retrying, completed, failed, skipped, waiting_for_ack)
+- `dependencies` JSONB array
+- `input` JSONB - Data sent to Lambda
+- **`output` JSONB** - ALL workers store data here (input + output steps)
+- `error` TEXT (NULL when step succeeds - history preserved in `execution_history`)
+- `records_processed` INT, `records_failed` INT
+- Retry: `retry_count`, `max_retry_count`, `execution_history` JSONB
+- **Acknowledgement fields**:
+  - `kafka_published_at` TIMESTAMP
+  - `ack_received_at` TIMESTAMP
+  - `ack_metadata` JSONB
+- Timestamps: `started_at`, `completed_at`, `first_attempt_at`, `last_attempt_at`
+
+---
+
+## Kafka Architecture
+
+### Acknowledgement Workflow
+
+**Purpose**: Enable asynchronous workflow control by waiting for external system acknowledgements before proceeding.
+
+**Flow**:
+
+1. Output step completes -> Publishes to `workflow.{cascade}.completed`
+2. Step status updated to `WAITING_FOR_ACK`
+3. Orchestration pauses (step not marked complete yet)
+4. External system processes data
+5. External system publishes acknowledgement to `workflow.{cascade}.ack`
+6. AcknowledgementHandler receives ack -> Updates step to `COMPLETED`
+7. Orchestration continues with next steps
+
+**Step Statuses**:
+
+- `WAITING_FOR_ACK` - Output step completed, waiting for external acknowledgement
+- `WAITING_FOR_CHILDREN` - Discovery step waiting for fan-out children to complete (NOT terminal)
+
+**Development Simulator** (DEV ONLY):
+
+- `DevAckSimulatorService` - Auto-acknowledges output steps in local/dev/test environments
+- **Production**: External system sends real acknowledgements after processing data
+- **Development**: DevAckSimulator echoes acknowledgements immediately or with simulated delays
+- Controlled by `ENABLE_DEV_ACK_SIMULATOR=true` (local/dev/test ONLY - NEVER in production!)
+- Supports custom acknowledgement payloads and simulated delays
+- **Zero overhead in production** (feature flag gated - not deployed to AWS)
+
+### Idempotency Strategy
+
+- Query-based: Check for existing job with same trigger ID today
+- 24-hour window prevents duplicate processing
+
+---
+
+## SQS Architecture
+
+### Configuration
+
+- `maxReceiveCount: 3` (3 retries -> DLQ)
+- `visibilityTimeout: 900` (15 minutes)
+- `messageRetentionPeriod: 1209600` (14 days)
+
+### SQS Poller (DEV ONLY)
+
+**Location**: `tools/sqs-poller/`
+**Purpose**: Poll SQS queues and invoke Lambda workers in LocalStack
+**Why**: LocalStack doesn't reliably support native Lambda-SQS event source mappings
+
+**Development**: Custom Node.js poller runs in Docker container
+**Production**: Uses native AWS Lambda-SQS event source mappings (no custom poller needed)
+
+---
+
+## Development vs Production Architecture
+
+### Development-Only Components
+
+| Component             | Development                                     | Production                                    |
+| --------------------- | ----------------------------------------------- | --------------------------------------------- |
+| **SQS Poller**        | Custom Node.js poller in Docker                 | Not deployed (uses AWS Event Source Mapping)   |
+| **Dev Ack Simulator** | Standalone NestJS service (profile: `dev-tools`) | Not deployed (external system sends real ACKs) |
+| **LocalStack**        | AWS services emulation                          | Not deployed (uses real AWS services)          |
+| **Simulated Delays**  | Enabled via env var                             | Disabled (env var not set)                     |
+
+### Production Components
+
+| Component           | Purpose                      | Notes                                                   |
+| ------------------- | ---------------------------- | ------------------------------------------------------- |
+| **Orchestrator**    | Workflow coordination        | Same codebase, different env vars                       |
+| **Lambda Workers**  | Input/Output step processing | Deployed to AWS Lambda (production) or LocalStack (dev) |
+| **PostgreSQL**      | State persistence            | RDS (production) or Docker (dev)                        |
+| **Kafka**           | Event streaming              | MSK (production) or Docker (dev)                        |
+| **React Dashboard** | Monitoring UI                | S3+CloudFront (production) or local dev server (dev)    |
+
+### Key Architectural Differences
+
+**Development**:
+
+```
+API -> Orchestrator -> SQS (LocalStack) -> Custom Poller -> Lambda (LocalStack)
+                                                            |
+                                           CallbackService (Orchestrator)
+                                                            |
+                                           Kafka -> DevAckSimulator -> Kafka
+                                                            |
+                                           AcknowledgementHandler -> Continue
+```
+
+**Production**:
+
+```
+API -> Orchestrator -> SQS (AWS) -> Event Source Mapping -> Lambda (AWS)
+                                                            |
+                                           CallbackService (Orchestrator)
+                                                            |
+                                           Kafka -> External System -> Kafka
+                                                            |
+                                           AcknowledgementHandler -> Continue
+```
+
+**Critical**: `ENABLE_DEV_ACK_SIMULATOR` must be `false` or unset in production!
+
+---
+
+## State Machine Reference
+
+### Step States (10 total)
+
+| Status | Description | Terminal? | Accepts Callbacks? | Typical Duration |
+|--------|-------------|-----------|-------------------|------------------|
+| `PENDING` | Initial state, waiting to be scheduled | No | Yes | ~0s |
+| `DELEGATED` | Step sent to Lambda via SQS | No | Yes | <1s |
+| `IN_PROGRESS` | Lambda actively processing | No | Yes | 1-10s |
+| `IN_PROGRESS_RETRYING` | Failed but retrying via SQS | No | Yes | Varies |
+| `COMPLETED` | Successfully finished | **Yes** | No | Final |
+| `WAITING_FOR_ACK` | Output step waiting for Kafka ACK | **Yes** | No | 1-5s |
+| `WAITING_FOR_CHILDREN` | Discovery step waiting for fan-out children | **No** | Yes | 5-30s |
+| `FAILED` | Permanently failed | **Yes** | No | Final |
+| `SKIPPED` | Skipped due to dependency failure | **Yes** | No | Final |
+| `PARTIAL_SUCCESS` | Fan-out parent with some children failed | **Yes** | No | Final |
+
+**Critical Distinction**: `WAITING_FOR_CHILDREN` is NOT terminal (fan-out service transitions it when all children complete), while `WAITING_FOR_ACK` IS terminal (callback guards reject subsequent callbacks).
+
+### Step State Transitions
+
+```
+PENDING --> DELEGATED --> IN_PROGRESS --> COMPLETED
+                              |               ^
+                              |               |
+                              v               |
+                    IN_PROGRESS_RETRYING ------+
+                              |               |
+                              v               |
+                           FAILED <-----------+
+
+(Discovery Steps - Fan-Out Pattern)
+    IN_PROGRESS --> WAITING_FOR_CHILDREN --> COMPLETED
+                              |                   |
+                              v                   v
+                      PARTIAL_SUCCESS         FAILED
+
+(Output Steps - ACK Pattern)
+    IN_PROGRESS --> WAITING_FOR_ACK --> COMPLETED
+                              |
+                              v
+                           FAILED
+
+SKIPPED <-- (via dependency failure propagation from any terminal failure)
+```
+
+### Job States (5 total)
+
+| Status | Description | Transition From |
+|--------|-------------|-----------------|
+| `PENDING` | Job created, no steps started | Initial |
+| `PROCESSING` | At least one step in progress | PENDING |
+| `COMPLETED` | All steps completed successfully | PROCESSING |
+| `FAILED` | Critical step failed | PROCESSING |
+| `CANCELLED` | Job cancelled by user | PENDING, PROCESSING |
+
+### Terminal State Guard
+
+The callback service rejects callbacks for steps in terminal states to prevent race conditions:
+
+```typescript
+const TERMINAL_STATUSES = new Set([
+  StepStatus.COMPLETED,
+  StepStatus.WAITING_FOR_ACK,
+  StepStatus.FAILED,
+  StepStatus.SKIPPED,
+  StepStatus.PARTIAL_SUCCESS,
+]);
+// WAITING_FOR_CHILDREN is NOT in this set - it's managed by fan-out service
+```
+
+### Workflow Support Matrix
+
+| Workflow Type | Supported? | Implementation |
+|---------------|------------|----------------|
+| Sequential | Yes | Step dependencies in config |
+| Parallel | Yes | Independent steps with no dependencies |
+| DAG | Yes | Dependency graph resolution |
+| Fan-Out | Yes | Discovery -> N child steps |
+| Fan-In | Yes | Parent waits for all children |
+| Conditional | Partial | Via SKIPPED status propagation |
+| Loops | No | Not supported |
+| Dynamic Step Types | No | Steps defined at config time |
+| Sub-Workflows | No | Flat step structure only |
+
+### Fan-Out Parent-Child Relationships
+
+**Parent Step Fields** (on discovery steps):
+- `childCount`: Number of child steps created (set after discovery callback)
+- `childSteps`: TypeORM relation to child steps
+
+**Child Step Fields**:
+- `parentStepId`: UUID reference to discovery/parent step
+- `childIndex`: Position in parent's children (0-based)
+- `childItemId`: The specific item ID this child processes
+
+### Fan-Out Outcome Rules
+
+| Children Outcomes | Parent Final Status |
+|-------------------|---------------------|
+| All COMPLETED | COMPLETED |
+| Some COMPLETED + Some FAILED | PARTIAL_SUCCESS |
+| All FAILED | FAILED |
+| Any SKIPPED (due to dependency) | Counted as FAILED |
+
+---
+
+## Critical Rules
+
+### Data Access Boundaries (FUNDAMENTAL)
+
+**RULE: Orchestrator NEVER accesses source databases directly**
+
+```
+WRONG:
+Orchestrator -> Source DB (Direct query)
+
+CORRECT:
+Orchestrator -> Worker -> Source DB
+                  |
+            Returns data
+                  |
+Orchestrator uses worker output
+```
+
+**Why This Matters:**
+
+- **Separation of Concerns**: Orchestrator = coordination only, Workers = data access
+- **Scalability**: Workers can be scaled independently based on data access load
+- **Security**: Orchestrator doesn't need source DB credentials
+- **Testability**: Clear boundaries enable easier mocking and testing
+- **Flexibility**: Workers can be replaced/updated without touching orchestrator logic
+
+### Architectural Vision: Pluggable Workflows (Future Direction)
+
+**The Orchestrator is being designed as a generic, client-domain-agnostic workflow engine.**
+
+The strict separation between Orchestrator and external data sources is intentional preparation for:
+
+```
+FUTURE STATE: Pluggable Workflow Architecture
+
+  ORCHESTRATOR CORE (Reusable Framework - Separate Repository)
+  - Job/Step state machine
+  - Dependency resolution
+  - Fan-out pattern
+  - Callback protocol
+  - ACK workflow
+  - Cascade publish
+                    |
+    +---------------+---------------+
+    |               |               |
+  WORKFLOW A      WORKFLOW B      WORKFLOW C
+  (This repo)    (Different repo) (Another domain)
+  - Step configs  - Step configs   - Step configs
+  - Workers       - Workers        - Workers
+  - Source access  - Source access  - Source access
+  - Target integ.  - Target integ. - Target integ.
+  - Infrastructure - Infrastructure - Infrastructure
+```
+
+**Key Design Principles for Contributors**:
+1. **Never add domain-specific logic to Orchestrator core** (no source DB queries, no target-specific code)
+2. **Keep step configurations declarative and data-driven** (step config pattern)
+3. **Workers are self-contained** -- they own their data source connections and processing logic
+4. **The callback protocol is the contract** -- any worker that implements it can participate
+
+**Implementation:**
+
+- Workers query source systems and return data via callback
+- Orchestrator uses worker output to make coordination decisions
+- If orchestrator needs data for routing, it gets it from step outputs
+- NEVER add database connections to orchestrator for external systems
+
+---
+
+### When Making Changes
+
+1. **Always run tests** before committing
+2. **Always fix linting** (pre-commit enforces)
+3. **Update documentation** for architectural changes
+4. **Test E2E** with STE suite (`./ste/run-all.sh`)
+5. **Check backward compatibility** - Don't break existing jobs
+6. **Consider indexing** - Large queries should have indices
+7. **Idempotency** - Always check for duplicates
+8. **Error handling** - Lambda workers must always callback
+9. **Retry logic** - Use SQS retry + DLQ
+10. **Naming** - camelCase (TS), snake_case (DB)
+11. **Re-fetch after updates** - If you need updated data after DB operations, re-fetch it!
+
+### When Adding New Cascades
+
+1. Add Lambda workers: input step handler + output step handler (e.g., `validate-{cascade}.ts` + `submit-{cascade}.ts`)
+2. Update step enum in database package
+3. Update config in step definitions
+4. Add Kafka topics: `workflow.{cascade}.completed/failed`
+5. Add tests (unit + E2E)
+6. Update documentation
+
+---
+
+## Naming Conventions
+
+### TypeScript (camelCase)
+
+- Variables: `deduplicationKey`, `externalSystemId`
+- Functions: `findById()`, `processStep()`
+- Classes: `Job`, `Step`, `OrchestrationService`
+
+### Database (snake_case)
+
+- Columns: `entity_id`, `external_system_id`
+- Tables: `jobs`, `steps`
+
+### Environment Variables (SCREAMING_SNAKE_CASE)
+
+- `KAFKA_BROKER`, `ENABLE_DEV_ACK_SIMULATOR`
+
+---
+
+## Performance Notes
+
+**Current**:
+
+- Job creation: <100ms
+- Step delegation: <50ms per step
+- Idempotency check: 20-50ms (query-based)
+- Lambda execution: 2-10s (with simulated delays)
+
+**Optimization Path**:
+
+- **Phase 1** (20 mins): JSONB indices -> 2-5ms checks (10-50x faster)
+- **Phase 2** (2-4 hours): Entity columns -> 1-3ms queries (50-100x faster)
+- **Phase 3** (1-2 days): Step-level tracking -> <1ms + complete audit trail
+
+---
+
+## Docker Container Safety
+
+### Container Naming
+All project containers use `dtm-` prefix (from `COMPOSE_PROJECT_NAME=dtm` in `.env`).
+
+**ALWAYS** filter when listing: `docker ps --filter "name=dtm-"`
+**NEVER** stop/restart containers without `dtm-` prefix -- they belong to other projects.
+
+### Key Containers
+
+| Container | Purpose | Port |
+|-----------|---------|------|
+| `dtm-orchestrator` | API server | 3002 |
+| `dtm-db` | Task Service DB | 5448 |
+| `dtm-localstack` | AWS emulator (SQS, Lambda) | 4567 |
+| `dtm-dev-ack-simulator` | ACK simulator | 3003 |
+| `dtm-kafka` | Kafka broker | 9093 |
+| `dtm-sqs-poller-{N}` | SQS pollers (scalable) | - |
+
+### LocalStack Restart Implications
+`docker restart dtm-localstack` **wipes ALL state** (queues + Lambdas).
+- SQS queues auto-recreate via init hook (`scripts/localstack-init.sh` mounted to `/etc/localstack/init/ready.d/`)
+- Lambda functions must be redeployed: `./scripts/local-env.sh deploy-workers --poller --count=10`
+- Stale Lambda containers cause "Rate Exceeded" -- clean: `docker rm -f $(docker ps --format "{{.Names}}" | grep dtm-localstack-lambda)`
+
+### Dependency Order
+Start: DBs -> Kafka -> LocalStack -> SQS Init -> Orchestrator -> Pollers -> Dev ACK Simulator
+Stop: Reverse. Use `./scripts/local-env.sh stop` for correct ordering.
+
+---
+
+## Related Documentation
+
+- **`docs/MASTER-INDEX.md`** - Canonical documentation index (START HERE!)
+- **`docs/guides/system-architecture.md`** - Detailed architecture diagrams
+- **`README.md`** - Quick start and overview
+
+**Last Updated**: February 9, 2026
+**Status**: Production Ready (v2.1 - Acknowledgement Workflow Complete)

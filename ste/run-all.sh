@@ -1,0 +1,1403 @@
+#!/bin/bash
+
+################################################################################
+# Core STE Runner
+#
+# Runs all core System Test Evaluations in parallel (default) or in-band
+# (sequential) mode.
+#
+# Parallel Mode (default):
+#   - Phase 1: Runs safe evals concurrently
+#   - Phase 2: Runs isolated evals sequentially (05, 06, 07, 08, 09)
+#   - Reason: Phase 2 evals use global maintenance tasks, are destructive, or need isolated resources
+#
+# In-Band Mode:
+#   - Runs all evals sequentially (safe for all scenarios)
+#
+# Dynamic Lambda Pre-Warming:
+#   - Automatically scales Lambda workers based on eval count
+#   - Default: 3 instances per worker type per eval
+#   - 1 eval:  12 workers (3 instances x 4 worker types)
+#   - 5 evals: 60 workers (15 instances x 4 worker types) - capped
+#   - 15 evals: 60 workers (15 instances x 4 worker types) - capped
+#   - Override: --worker-instances=N to change instances per eval
+#   - Control: --skip-warmup to skip warm-up, --skip-checks still warms up
+#
+# Usage:
+#   ./ste/run-all.sh [--parallel|--in-band] [options]
+#
+# Modes:
+#   --parallel         Run safe evals in parallel, destructive sequentially (default)
+#   --in-band          Run all evals sequentially
+#
+# Options:
+#   --skip-purge            Don't purge before running (use with caution)
+#   --skip-checks           Skip preflight checks (still warms up Lambdas)
+#   --skip-warmup           Skip Lambda pre-warming (saves time if already warm)
+#   --purge-between         Purge between each eval (in-band mode only)
+#   --category <cat>        Run specific category (stability/feature/scalability/maintenance/all)
+#   --eval <id>             Run specific eval (e.g., 01 or 01-retry-transient-failure)
+#   --worker-instances=N    Lambda instances per worker type per eval (default: 3)
+#   --add-timeout=N         Add N seconds to the timeout of each eval (default: 0)
+#   --max-parallel=N        Max concurrent evals in parallel mode (default: 6, 0=unlimited)
+#   --all-workflows         After core STEs, discover and run workflows/*/ste/run-all.sh
+#   --ci-mode               CI/CD mode (JSON output, no colors)
+#   --help                  Show this help
+#
+################################################################################
+
+set -e
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+# Default settings
+MODE="parallel"  # Default mode
+SKIP_PURGE=false
+SKIP_CHECKS=false
+SKIP_WARMUP=false
+PURGE_BETWEEN=false
+CATEGORY="all"
+SPECIFIC_EVALS=()
+SKIP_EVALS=()
+CI_MODE=false
+ALL_WORKFLOWS=false
+WORKER_INSTANCES_PER_EVAL=3  # Default: 3 instances per worker type per eval
+MAX_PARALLEL=6  # Default: max 6 concurrent evals in parallel mode (0=unlimited)
+export ADDITIONAL_TIMEOUT=0  # Default: 0 additional seconds (Exported globally)
+
+# Result Arrays (Associative to handle "08", "09" string keys correctly)
+declare -A RESULTS
+declare -A DURATIONS
+declare -A PIDS
+declare -A JOB_IDS
+declare -A CORRELATION_IDS
+declare -A NOTES
+declare -A ORDER_IDS
+declare -A CUSTOMER_IDS
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --parallel)
+      MODE="parallel"
+      shift
+      ;;
+    --in-band)
+      MODE="in-band"
+      shift
+      ;;
+    --skip-purge)
+      SKIP_PURGE=true
+      shift
+      ;;
+    --skip-checks)
+      SKIP_CHECKS=true
+      shift
+      ;;
+    --skip-warmup)
+      SKIP_WARMUP=true
+      shift
+      ;;
+    --purge-between)
+      PURGE_BETWEEN=true
+      shift
+      ;;
+    --category)
+      CATEGORY="$2"
+      shift 2
+      ;;
+    --eval)
+      shift
+      while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+        SPECIFIC_EVALS+=("$1")
+        shift
+      done
+      ;;
+    --skip)
+      shift
+      while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+        SKIP_EVALS+=("$1")
+        shift
+      done
+      ;;
+    --ci-mode)
+      CI_MODE=true
+      shift
+      ;;
+    --all-workflows)
+      ALL_WORKFLOWS=true
+      shift
+      ;;
+    --worker-instances=*)
+      WORKER_INSTANCES_PER_EVAL="${1#*=}"
+      if ! [[ "$WORKER_INSTANCES_PER_EVAL" =~ ^[0-9]+$ ]] || [ "$WORKER_INSTANCES_PER_EVAL" -lt 1 ]; then
+        echo "Error: --worker-instances must be a positive integer"
+        exit 1
+      fi
+      shift
+      ;;
+    --add-timeout=*)
+      export ADDITIONAL_TIMEOUT="${1#*=}"
+      if ! [[ "$ADDITIONAL_TIMEOUT" =~ ^[0-9]+$ ]]; then
+        echo "Error: --add-timeout must be a non-negative integer"
+        exit 1
+      fi
+      shift
+      ;;
+    --max-parallel=*)
+      MAX_PARALLEL="${1#*=}"
+      if ! [[ "$MAX_PARALLEL" =~ ^[0-9]+$ ]]; then
+        echo "Error: --max-parallel must be a non-negative integer (0=unlimited)"
+        exit 1
+      fi
+      shift
+      ;;
+    --help)
+      sed -n '3,45p' "$0"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Run with --help for usage information"
+      exit 1
+      ;;
+  esac
+done
+
+# Setup results directory based on mode
+RESULTS_DIR="$SCRIPT_DIR/.results/$MODE/$TIMESTAMP"
+mkdir -p "$RESULTS_DIR"
+
+# Redirect all output to a log file in addition to stdout
+exec > >(tee -a "$RESULTS_DIR/run.log") 2>&1
+
+# Source shared helpers for strip_ansi_codes function
+source "$SCRIPT_DIR/shared/helpers.sh"
+
+################################################################################
+# Eval Definitions (moved up to calculate count before preflight)
+################################################################################
+
+# ALL evals - 13 core STEs
+ALL_EVALS=(
+  # === RECOVERY (stuck state detection & auto-fix) ===
+  "01:01-retry-transient-failure"
+  "02:02-dlq-permanent-failure"
+  "03:03-deduplication"
+  "04:04-ack-delays"
+  "05:05-concurrent-jobs"
+  "06:06-stuck-in-progress-detection"
+  "07:07-stuck-ack-recovery"
+  "08:08-health-metrics"
+  "09:09-orphaned-job-recovery"
+  "10:10-stuck-waiting-for-children-recovery"
+  "11:11-stuck-delegated-recovery"
+  "12:12-stuck-pending-recovery"
+  "13:13-in-progress-auto-timeout"
+)
+
+# SAFE evals (can run in parallel without interfering)
+SAFE_EVALS=(
+  "01:01-retry-transient-failure"
+  "02:02-dlq-permanent-failure"
+  "03:03-deduplication"
+  "04:04-ack-delays"
+  "10:10-stuck-waiting-for-children-recovery"
+  "11:11-stuck-delegated-recovery"
+  "12:12-stuck-pending-recovery"
+  "13:13-in-progress-auto-timeout"
+)
+
+# SEQUENTIAL evals (must run isolated - cannot run in parallel with ANY other evals)
+DESTRUCTIVE_EVALS=(
+  "05:05-concurrent-jobs"
+  "06:06-stuck-in-progress-detection"
+  "07:07-stuck-ack-recovery"
+  "08:08-health-metrics"
+  "09:09-orphaned-job-recovery"
+)
+
+# Category arrays (for --category filter)
+STABILITY_EVALS=(
+  "01:01-retry-transient-failure"
+  "02:02-dlq-permanent-failure"
+  "04:04-ack-delays"
+)
+
+FEATURE_EVALS=(
+  "03:03-deduplication"
+)
+
+SCALABILITY_EVALS=(
+  "05:05-concurrent-jobs"
+)
+
+MAINTENANCE_EVALS=(
+  "06:06-stuck-in-progress-detection"
+  "07:07-stuck-ack-recovery"
+  "08:08-health-metrics"
+  "09:09-orphaned-job-recovery"
+  "10:10-stuck-waiting-for-children-recovery"
+  "11:11-stuck-delegated-recovery"
+  "12:12-stuck-pending-recovery"
+  "13:13-in-progress-auto-timeout"
+)
+
+################################################################################
+# Select Evals to Run (moved up to calculate count before preflight)
+################################################################################
+
+EVALS_TO_RUN=()
+
+if [ ${#SPECIFIC_EVALS[@]} -gt 0 ]; then
+  # Find each requested eval
+  for specific_eval in "${SPECIFIC_EVALS[@]}"; do
+    found=false
+    for eval_spec in "${ALL_EVALS[@]}"; do
+      IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+      if [[ "$eval_dir" == *"$specific_eval"* ]] || [[ "$eval_id" == "$specific_eval" ]]; then
+        # Avoid duplicates
+        already_added=false
+        for existing in "${EVALS_TO_RUN[@]}"; do
+          if [ "$existing" == "$eval_spec" ]; then
+            already_added=true
+            break
+          fi
+        done
+
+        if [ "$already_added" = false ]; then
+          EVALS_TO_RUN+=("$eval_spec")
+        fi
+        found=true
+        break
+      fi
+    done
+
+    if [ "$found" = false ]; then
+      echo -e "${RED}Eval not found: $specific_eval${NC}"
+      exit 1
+    fi
+  done
+elif [ "$CATEGORY" == "all" ]; then
+  EVALS_TO_RUN=("${ALL_EVALS[@]}")
+elif [ "$CATEGORY" == "stability" ]; then
+  EVALS_TO_RUN=("${STABILITY_EVALS[@]}")
+elif [ "$CATEGORY" == "feature" ]; then
+  EVALS_TO_RUN=("${FEATURE_EVALS[@]}")
+elif [ "$CATEGORY" == "scalability" ]; then
+  EVALS_TO_RUN=("${SCALABILITY_EVALS[@]}")
+elif [ "$CATEGORY" == "maintenance" ]; then
+  EVALS_TO_RUN=("${MAINTENANCE_EVALS[@]}")
+else
+  echo -e "${RED}Unknown category: ${CATEGORY}${NC}"
+  echo "Available categories: all, stability, feature, scalability, maintenance"
+  exit 1
+fi
+
+# Filter out skipped evals
+if [ ${#SKIP_EVALS[@]} -gt 0 ]; then
+  FILTERED_EVALS=()
+  for eval_spec in "${EVALS_TO_RUN[@]}"; do
+    should_skip=false
+    IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+
+    for skip_val in "${SKIP_EVALS[@]}"; do
+      if [[ "$eval_dir" == *"$skip_val"* ]] || [[ "$eval_id" == "$skip_val" ]]; then
+        should_skip=true
+        break
+      fi
+    done
+
+    if [ "$should_skip" = false ]; then
+      FILTERED_EVALS+=("$eval_spec")
+    fi
+  done
+  EVALS_TO_RUN=("${FILTERED_EVALS[@]}")
+fi
+
+# Export eval count and worker instances for preflight check to use for dynamic Lambda warm-up
+export E2E_EVAL_COUNT=${#EVALS_TO_RUN[@]}
+export E2E_WORKER_INSTANCES_PER_EVAL=${WORKER_INSTANCES_PER_EVAL}
+
+################################################################################
+# Pre-Flight Check (unless skipped)
+################################################################################
+
+if [ "$SKIP_CHECKS" = true ] && [ "$SKIP_WARMUP" = true ]; then
+  # Skip everything (old --skip-checks behavior)
+  echo ""
+  echo -e "${YELLOW}Skipping all pre-flight checks and Lambda warm-up${NC}"
+  echo -e "${BLUE}Selected ${E2E_EVAL_COUNT} eval(s) to run${NC}"
+  echo ""
+  log_warning "Skipping Docker, worker, health checks, and Lambda warm-up"
+  log_info "Use only when confident your environment is ready and warm"
+  echo ""
+elif [ "$SKIP_CHECKS" = true ]; then
+  # Skip checks but still warm up Lambdas
+  echo ""
+  echo -e "${YELLOW}Skipping pre-flight checks (--skip-checks flag set)${NC}"
+  echo -e "${BLUE}Selected ${E2E_EVAL_COUNT} eval(s) to run${NC}"
+  echo ""
+  log_info "Skipping Docker, worker, and health checks"
+  log_info "Running Lambda warm-up to ensure capacity..."
+  echo ""
+
+  # Run only Lambda warm-up
+  PREFLIGHT_SCRIPT="$SCRIPT_DIR/preflight-check.sh"
+  if [ -f "$PREFLIGHT_SCRIPT" ]; then
+    # Pass --warmup-only flag to run only the warm-up check
+    "$PREFLIGHT_SCRIPT" --warmup-only
+  fi
+  echo ""
+elif [ "$SKIP_PURGE" = false ]; then
+  PREFLIGHT_SCRIPT="$SCRIPT_DIR/preflight-check.sh"
+
+  if [ -f "$PREFLIGHT_SCRIPT" ]; then
+    echo ""
+    echo -e "${CYAN}========================================================${NC}"
+    echo -e "${CYAN}Running Pre-Flight Checks...${NC}"
+    echo -e "${CYAN}========================================================${NC}"
+    echo ""
+    echo -e "${BLUE}Selected ${E2E_EVAL_COUNT} eval(s) to run${NC}"
+    echo ""
+
+    # Build preflight command with optional flags
+    PREFLIGHT_CMD="$PREFLIGHT_SCRIPT"
+    if [ "$SKIP_WARMUP" = true ]; then
+      PREFLIGHT_CMD="$PREFLIGHT_CMD --skip-warmup"
+    fi
+
+    # Run preflight check (exit code 0 = pass, 1 = critical fail, 2 = warnings)
+    if $PREFLIGHT_CMD; then
+      echo ""
+      echo -e "${GREEN}All pre-flight checks passed - proceeding with evals${NC}"
+      echo ""
+    else
+      PREFLIGHT_EXIT=$?
+
+      if [ $PREFLIGHT_EXIT -eq 2 ]; then
+        # Warnings only - ask user to proceed
+        echo ""
+        echo -e "${YELLOW}Pre-flight warnings detected${NC}"
+        echo -e "${YELLOW}Evals may fail or behave unexpectedly${NC}"
+        echo ""
+        echo "Options:"
+        echo "  1) Continue anyway (may fail)"
+        echo "  2) Fix issues and re-run"
+        echo ""
+
+        if [ "$CI_MODE" = true ]; then
+          # In CI mode, proceed with warnings
+          echo "CI mode: Proceeding despite warnings"
+        else
+          # Interactive mode: ask user
+          read -p "Continue? (y/N): " -n 1 -r
+          echo ""
+
+          if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Aborted. Fix issues and re-run."
+            exit 1
+          fi
+        fi
+
+        echo -e "${YELLOW}Proceeding despite warnings...${NC}"
+        echo ""
+      else
+        # Critical failures - abort
+        echo ""
+        echo -e "${RED}Pre-flight check failed with critical errors${NC}"
+        echo ""
+        echo "Fix the issues above and re-run this script."
+        echo "Or run with --skip-checks to bypass pre-flight checks (not recommended)"
+        echo ""
+        exit 1
+      fi
+    fi
+  else
+    echo -e "${YELLOW}Pre-flight check script not found (skipping)${NC}"
+  fi
+else
+  echo ""
+  echo -e "${YELLOW}Skipping pre-flight checks (--skip-purge implies no checks)${NC}"
+  echo -e "${BLUE}Selected ${E2E_EVAL_COUNT} eval(s) to run${NC}"
+  echo ""
+fi
+
+################################################################################
+# Helper Functions
+################################################################################
+
+log_section() {
+  echo -e "\n${CYAN}=======================================================================${NC}"
+  echo -e "${CYAN}$1${NC}"
+  echo -e "${CYAN}=======================================================================${NC}\n"
+}
+
+log_info() {
+  echo -e "${BLUE}$1${NC}"
+}
+
+log_success() {
+  echo -e "${GREEN}$1${NC}"
+}
+
+log_warning() {
+  echo -e "${YELLOW}$1${NC}"
+}
+
+log_error() {
+  echo -e "${RED}$1${NC}"
+}
+
+
+# Forensic logging function
+collect_failure_logs() {
+  local eval_id="$1"
+  local job_id="$2"
+  local output_dir="$3"
+  local timestamp=$(date +%Y%m%d_%H%M%S)
+  local log_file="${output_dir}/forensics_${eval_id}.log"
+
+  echo "Collecting failure logs for Eval ${eval_id} (Job: ${job_id:-N/A})..." > "$log_file"
+
+  local services=("${COMPOSE_PROJECT_NAME:-dtm}-orchestrator" "${COMPOSE_PROJECT_NAME:-dtm}-localstack" "${COMPOSE_PROJECT_NAME:-dtm}-dev-ack-simulator")
+
+  # Dynamically add all worker containers (SQS Pollers and Spawned Lambdas)
+  if command -v docker &> /dev/null; then
+    # 1. SQS Pollers (Optional - enabled via env var)
+    if [[ "${E2E_EVALS_FORENSICS_ADD_POLLER_LOGS}" == "true" ]]; then
+      while IFS= read -r container_name; do
+        if [[ -n "$container_name" ]]; then
+          services+=("$container_name")
+        fi
+      done < <(docker ps -a --filter "name=sqs-poller" --format "{{.Names}}")
+    fi
+
+    # 2. Spawned Lambda Containers (LocalStack usually includes function name in container name)
+    # We look for containers matching our known worker function names
+    worker_patterns=("validate-customer" "validate-order" "submit-customer" "submit-order")
+    for pattern in "${worker_patterns[@]}"; do
+      while IFS= read -r container_name; do
+        # Avoid adding the poller itself again if it matches the pattern (though unlikely given specific naming)
+        # and avoid duplicates
+        if [[ -n "$container_name" ]] && [[ ! " ${services[*]} " =~ " ${container_name} " ]]; then
+           services+=("$container_name")
+        fi
+      done < <(docker ps -a --filter "name=$pattern" --format "{{.Names}}")
+    done
+  fi
+
+  # Track if we found any lambda containers. If NOT, and we are likely in ESM mode,
+  # we should add filtered views of LocalStack logs for each worker type.
+  has_lambda_containers=false
+  for svc in "${services[@]}"; do
+    if [[ "$svc" == *"validate-"* ]] || [[ "$svc" == *"submit-"* ]]; then
+      has_lambda_containers=true
+      break
+    fi
+  done
+
+  # If no separate lambda containers found, we assume they run inside LocalStack.
+  # We add "virtual" services that are actually just grep filters on dtm-localstack.
+  if [ "$has_lambda_containers" = false ]; then
+     # These are virtual names that the loop below will handle specially
+     services+=("VIRTUAL:Validate Customer" "VIRTUAL:Validate Order" "VIRTUAL:Submit Customer" "VIRTUAL:Submit Order")
+  fi
+
+  for service in "${services[@]}"; do
+    # Handle Virtual Services (Filtered LocalStack Logs)
+    if [[ "$service" == "VIRTUAL:"* ]]; then
+      worker_name="${service#VIRTUAL:}"
+
+      # Check for logs first before writing section header
+      localstack_svc="${COMPOSE_PROJECT_NAME:-dtm}-localstack"
+      local worker_logs
+      worker_logs=$(docker logs --since 15m "$localstack_svc" 2>&1 | grep -i "\[${worker_name}\]" | tail -n 500 | strip_ansi_codes)
+
+      # Only write section if there are logs
+      if [ -n "$worker_logs" ]; then
+        echo "" >> "$log_file"
+        echo "================================================================" >> "$log_file"
+        echo "SERVICE: ${worker_name} (Filtered from LocalStack)" >> "$log_file"
+        echo "================================================================" >> "$log_file"
+        echo "--- [Logs for ${worker_name}] ---" >> "$log_file"
+        echo "$worker_logs" >> "$log_file"
+      fi
+      # If no logs found, skip this worker entirely (no output)
+
+    else
+      # Standard Service Container
+      # Focused forensics: Search by BOTH job ID and correlation ID
+      if [ -n "$job_id" ]; then
+        # Step 1: Get logs by job ID
+        local job_logs
+        job_logs=$(docker logs --since 30m "$service" 2>&1 | grep -i "${job_id}" | strip_ansi_codes)
+
+        # Step 2: Extract correlation ID from the logs (NestJS format: [correlation-id])
+        local correlation_id=""
+        if [ -n "$job_logs" ]; then
+          # Extract UUID from [xxxxx-xxxx-xxxx-xxxx-xxxxx] pattern in logs
+          correlation_id=$(echo "$job_logs" | grep -oE '\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]' | head -n 1 | tr -d '[]')
+        fi
+
+        # Step 3: Search by correlation ID to get complete request trace
+        local correlation_logs=""
+        if [ -n "$correlation_id" ] && [ "$correlation_id" != "$job_id" ]; then
+          correlation_logs=$(docker logs --since 30m "$service" 2>&1 | grep -i "${correlation_id}" | strip_ansi_codes)
+        fi
+
+        # Only write service section header if there are actual logs
+        if [ -n "$job_logs" ] || [ -n "$correlation_logs" ]; then
+          echo "" >> "$log_file"
+          echo "================================================================" >> "$log_file"
+          echo "SERVICE: ${service}" >> "$log_file"
+          echo "================================================================" >> "$log_file"
+
+          if [ -n "$job_logs" ]; then
+            echo "--- [Logs matching Job ID: ${job_id}] ---" >> "$log_file"
+            echo "$job_logs" | tail -n 500 >> "$log_file"
+          fi
+
+          if [ -n "$correlation_id" ] && [ "$correlation_id" != "$job_id" ]; then
+            echo "" >> "$log_file"
+            echo "--- [Additional logs by Correlation ID: ${correlation_id}] ---" >> "$log_file"
+            echo "(NestJS request tracing - captures complete request flow)" >> "$log_file"
+            # Show correlation logs that aren't already in job_logs (deduplicate)
+            comm -13 <(echo "$job_logs" | sort) <(echo "$correlation_logs" | sort) | tail -n 500 >> "$log_file"
+          fi
+        fi
+        # If no logs found, skip this service entirely (no output)
+      else
+        # No job ID available - check for recent errors
+        local error_logs
+        error_logs=$(docker logs --since 15m "$service" 2>&1 | grep -iE "Error|Exception|Fail" | grep -v "Found 0 errors" | strip_ansi_codes)
+
+        # Only write service section if there are errors
+        if [ -n "$error_logs" ]; then
+          echo "" >> "$log_file"
+          echo "================================================================" >> "$log_file"
+          echo "SERVICE: ${service}" >> "$log_file"
+          echo "================================================================" >> "$log_file"
+          echo "--- [Recent Errors (No Job ID available)] ---" >> "$log_file"
+          echo "$error_logs" | tail -n 100 >> "$log_file"
+        fi
+        # If no errors found, skip this service entirely (no output)
+      fi
+    fi
+  done
+
+  echo "" >> "$log_file"
+  echo "Log capture complete." >> "$log_file"
+}
+
+################################################################################
+# Parallel Timeouts for Evals
+################################################################################
+
+# Parallel timeouts for each eval
+# Note: Retry-based tests need longer timeouts (SQS Visibility Timeout = 30s)
+# With 30s visibility and 15s Lambda timeout, retries happen much faster!
+# We also add a buffer to account for poller intervals (200ms) and system jitter.
+declare -A PARALLEL_TIMEOUTS=(
+  ["01"]=185   # Retries
+  ["02"]=335   # Retries
+  ["03"]=95    # Deduplication
+  ["04"]=95    # Ack delays
+  ["05"]=125   # Concurrent
+  ["06"]=120   # Stuck in progress
+  ["07"]=95    # Stuck ack
+  ["08"]=150   # Health metrics
+  ["09"]=95    # Orphaned job
+  ["10"]=120   # Stuck waiting for children
+  ["11"]=120   # Stuck delegated
+  ["12"]=120   # Stuck pending
+  ["13"]=120   # In-progress auto-timeout
+)
+
+################################################################################
+# Purge System
+################################################################################
+
+if [ "$SKIP_PURGE" = false ]; then
+  log_section "PURGING SYSTEM"
+  log_info "Fast purge: Clearing DB only (SQS/Kafka left intact)..."
+  "$REPO_ROOT/scripts/local-env.sh" purge > /dev/null 2>&1
+  log_success "Fast purge complete"
+
+  log_info "Waiting 2 seconds for system to stabilize..."
+  sleep 2
+else
+  log_warning "Skipping purge (--skip-purge flag set)"
+fi
+
+################################################################################
+# Note: Deduplication Control
+################################################################################
+# Global deduplication is ENABLED (ENABLE_DEDUPLICATION=true)
+#
+# Per-request override via testOptions.enableDeduplication:
+#   - All evals (except 03) pass enableDeduplication: false to bypass deduplication
+#   - Eval 03 (deduplication test) passes enableDeduplication: true to test it
+#
+# This allows:
+#   1. Global deduplication for production safety
+#   2. Evals to run multiple times without 409 conflicts
+#   3. Eval 03 to specifically test deduplication behavior
+################################################################################
+
+echo ""
+
+################################################################################
+# Display Mode Information
+################################################################################
+
+log_section "EXECUTION MODE: ${MODE^^}"
+
+if [ "$MODE" = "parallel" ]; then
+  # Split evals into safe and destructive
+  SAFE_TO_RUN=()
+  DESTRUCTIVE_TO_RUN=()
+
+  for eval_spec in "${EVALS_TO_RUN[@]}"; do
+    IFS=':' read -r eval_id _ <<< "$eval_spec"
+
+    # Check if eval is in destructive list
+    IS_DESTRUCTIVE=false
+    for dest_eval in "${DESTRUCTIVE_EVALS[@]}"; do
+      IFS=':' read -r dest_id _ <<< "$dest_eval"
+      if [ "$eval_id" = "$dest_id" ]; then
+        IS_DESTRUCTIVE=true
+        break
+      fi
+    done
+
+    if [ "$IS_DESTRUCTIVE" = true ]; then
+      DESTRUCTIVE_TO_RUN+=("$eval_spec")
+    else
+      SAFE_TO_RUN+=("$eval_spec")
+    fi
+  done
+
+  echo "Execution Plan:"
+  echo ""
+  if [ $MAX_PARALLEL -gt 0 ]; then
+    echo "  Phase 1 (Parallel, max $MAX_PARALLEL): ${#SAFE_TO_RUN[@]} safe evals"
+  else
+    echo "  Phase 1 (Parallel, unlimited): ${#SAFE_TO_RUN[@]} safe evals"
+  fi
+  for eval_spec in "${SAFE_TO_RUN[@]}"; do
+    IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+    echo "    - [$eval_id] $eval_dir"
+  done
+  echo ""
+
+  if [ ${#DESTRUCTIVE_TO_RUN[@]} -gt 0 ]; then
+    echo "  Phase 2 (Sequential): ${#DESTRUCTIVE_TO_RUN[@]} destructive evals"
+    for eval_spec in "${DESTRUCTIVE_TO_RUN[@]}"; do
+      IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+      echo "    - [$eval_id] $eval_dir"
+    done
+    echo ""
+
+    log_warning "Phase 2 evals run sequentially due to global state interactions:"
+    echo "    - Eval 05: Concurrent jobs - needs isolated resources"
+    echo "    - Eval 06: Stuck detection (simulates Lambda crash, container auto-restarts)"
+    echo "    - Eval 07: Stuck ack recovery - global maintenance task scan"
+    echo "    - Eval 08: Health metrics (global job scan)"
+    echo "    - Eval 09: Orphaned job recovery - global maintenance task scan"
+    echo ""
+    log_info "For purely sequential execution, use: --in-band"
+  fi
+else
+  echo "Execution Plan:"
+  echo ""
+  echo "  Sequential execution: ${#EVALS_TO_RUN[@]} evals"
+  for eval_spec in "${EVALS_TO_RUN[@]}"; do
+    IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+    echo "    - [$eval_id] $eval_dir"
+  done
+  echo ""
+fi
+
+sleep 2
+
+################################################################################
+# Run Evals - Parallel Mode
+################################################################################
+
+if [ "$MODE" = "parallel" ]; then
+
+  PASS_COUNT=0
+  FAIL_COUNT=0
+  TIMEOUT_COUNT=0
+  ERROR_COUNT=0
+  TOTAL_DURATION=0
+
+  #############################################################################
+  # PHASE 1: Run safe evals in parallel
+  #############################################################################
+
+  if [ ${#SAFE_TO_RUN[@]} -gt 0 ]; then
+    log_section "PHASE 1: PARALLEL EXECUTION (SAFE EVALS)"
+    if [ $MAX_PARALLEL -gt 0 ] && [ ${#SAFE_TO_RUN[@]} -gt $MAX_PARALLEL ]; then
+      log_info "Starting ${#SAFE_TO_RUN[@]} evals with max $MAX_PARALLEL concurrent..."
+    else
+      log_info "Starting ${#SAFE_TO_RUN[@]} evals concurrently..."
+    fi
+    echo ""
+
+    for eval_spec in "${SAFE_TO_RUN[@]}"; do
+      # Throttle: wait if we've hit the max-parallel limit
+      if [ $MAX_PARALLEL -gt 0 ]; then
+        while true; do
+          running=0
+          for pid_key in "${!PIDS[@]}"; do
+            if kill -0 "${PIDS[$pid_key]}" 2>/dev/null; then
+              running=$((running + 1))
+            fi
+          done
+          if [ $running -lt $MAX_PARALLEL ]; then
+            break
+          fi
+          sleep 0.5
+        done
+      fi
+
+      IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+      eval_name=$(basename "$eval_dir")
+      result_file="$RESULTS_DIR/${eval_id}_${eval_name}_${TIMESTAMP}.log"
+
+      base_timeout=${PARALLEL_TIMEOUTS[$eval_id]:-180}
+      timeout_val=$((base_timeout + ADDITIONAL_TIMEOUT))
+
+      (
+        start_time=$(date +%s)
+        cd "$SCRIPT_DIR/$eval_dir"
+      # Pass ADDITIONAL_TIMEOUT to the test script via environment variable
+      # This allows the test script to adjust its internal timeouts/polls
+      export ADDITIONAL_TIMEOUT
+
+      if timeout "$timeout_val" ./test.sh > "$result_file" 2>&1; then
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+          echo "PASS:$duration" >> "$result_file"
+        else
+          exit_code=$?
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+
+          if [ $exit_code -eq 124 ]; then
+            echo "TIMEOUT:$duration" >> "$result_file"
+          else
+            echo "FAIL:$duration" >> "$result_file"
+          fi
+        fi
+      ) &
+
+      PIDS[$eval_id]=$!
+    done
+
+    # Monitor progress
+    COMPLETED=0
+    RUNNING=${#SAFE_TO_RUN[@]}
+    DISPLAY_COUNT=0
+
+    while [ $RUNNING -gt 0 ]; do
+      sleep 0.5
+
+      RUNNING=0
+      COMPLETED=0
+
+      for eval_spec in "${SAFE_TO_RUN[@]}"; do
+        IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+
+        if [ -n "${PIDS[$eval_id]}" ]; then
+          if kill -0 "${PIDS[$eval_id]}" 2>/dev/null; then
+            RUNNING=$((RUNNING + 1))
+          else
+            if [ -z "${RESULTS[$eval_id]}" ]; then
+              wait "${PIDS[$eval_id]}" 2>/dev/null || true
+              eval_name=$(basename "$eval_dir")
+              result_file="$RESULTS_DIR/${eval_id}_${eval_name}_${TIMESTAMP}.log"
+
+              if [ -f "$result_file" ]; then
+                result_line=$(tail -n 1 "$result_file")
+                RESULTS[$eval_id]=$(echo "$result_line" | cut -d':' -f1)
+                DURATIONS[$eval_id]=$(echo "$result_line" | cut -d':' -f2)
+
+                # Strip ANSI codes from log file
+                temp_file=$(mktemp)
+                strip_ansi_codes < "$result_file" > "$temp_file"
+                mv "$temp_file" "$result_file"
+
+                # Extract Job ID
+                job_id=$(grep -o "Job ID: [a-f0-9-]*" "$result_file" | cut -d' ' -f3 | head -n 1)
+                if [ -n "$job_id" ]; then
+                    JOB_IDS[$eval_id]="$job_id"
+                fi
+
+                # Extract Correlation ID
+                correlation_id=$(grep -o "Correlation ID: [a-f0-9-]*" "$result_file" | cut -d' ' -f3 | head -n 1)
+                if [ -n "$correlation_id" ]; then
+                    CORRELATION_IDS[$eval_id]="$correlation_id"
+                fi
+
+                # Extract Membership No and Consumer No
+                mem_no=$(grep -i "Membership Number:\|Using membershipNo:" "$result_file" | head -n 1 | grep -o "[0-9]\{10\}" || true)
+                cons_no=$(grep -i "Consumer No:\|Consumer Number:" "$result_file" | head -n 1 | grep -o "[0-9]\{4\}" || true)
+
+                if [ -n "$mem_no" ]; then ORDER_IDS[$eval_id]="$mem_no"; fi
+                if [ -n "$cons_no" ]; then CUSTOMER_IDS[$eval_id]="$cons_no"; fi
+
+                # Extract Notes (last failure message or relevant info)
+                if [ "${RESULTS[$eval_id]}" != "PASS" ] && [ "${RESULTS[$eval_id]}" != "PASSED" ]; then
+                    # Try to find specific error message
+                    error_msg=$(grep -i "error" "$result_file" | tail -n 1 | sed 's/.*Error: //')
+                    if [ -z "$error_msg" ]; then
+                         error_msg=$(tail -n 1 "$result_file")
+                    fi
+                    NOTES[$eval_id]="${error_msg:0:50}..."
+                fi
+
+                # Collect forensics if failed
+                if [ "${RESULTS[$eval_id]}" != "PASS" ] && [ "${RESULTS[$eval_id]}" != "PASSED" ]; then
+                    collect_failure_logs "$eval_id" "$job_id" "$RESULTS_DIR"
+                fi
+              else
+                RESULTS[$eval_id]="ERROR"
+                DURATIONS[$eval_id]=0
+              fi
+
+              COMPLETED=$((COMPLETED + 1))
+            else
+              COMPLETED=$((COMPLETED + 1))
+            fi
+          fi
+        fi
+      done
+
+      # Display progress with eval names and status
+      DISPLAY_COUNT=$((DISPLAY_COUNT + 1))
+      if [ $((DISPLAY_COUNT % 6)) -eq 0 ]; then
+        # Clear and display current status of all evals (3 per line)
+        count=0
+        for eval_spec in "${SAFE_TO_RUN[@]}"; do
+          IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+          eval_name=$(basename "$eval_dir")
+          status="${RESULTS[$eval_id]:-RUNNING}"
+
+          if [ "$status" = "RUNNING" ] || [ -z "$status" ]; then
+            printf "[%s] %s: %s     " "$eval_id" "$eval_name" "RUNNING"
+          else
+            printf "[%s] %s: %s     " "$eval_id" "$eval_name" "DONE"
+          fi
+
+          count=$((count + 1))
+          if [ $((count % 3)) -eq 0 ]; then
+            echo ""
+          fi
+        done
+
+        echo ""
+        echo "Progress: $COMPLETED/${#SAFE_TO_RUN[@]} completed, $RUNNING running"
+        echo ""
+      fi
+    done
+
+    # Clear progress line and show completion
+    printf "\r\033[K"
+    log_success "Phase 1 complete - all safe evals finished!"
+    echo ""
+  fi
+
+  #############################################################################
+  # PHASE 2: Run destructive evals sequentially
+  #############################################################################
+
+  if [ ${#DESTRUCTIVE_TO_RUN[@]} -gt 0 ]; then
+    log_section "PHASE 2: SEQUENTIAL EXECUTION (DESTRUCTIVE EVALS)"
+    log_warning "These evals kill shared resources and must run one at a time"
+    echo ""
+
+    DESTRUCTIVE_EVAL_INDEX=0
+    for eval_spec in "${DESTRUCTIVE_TO_RUN[@]}"; do
+      IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+      eval_name=$(basename "$eval_dir")
+      result_file="$RESULTS_DIR/${eval_id}_${eval_name}_${TIMESTAMP}.log"
+
+      # No purge between destructive evals - rely on initial purge only
+      # Note: fromBeginning: false in consumers means new messages only
+      DESTRUCTIVE_EVAL_INDEX=$((DESTRUCTIVE_EVAL_INDEX + 1))
+
+      log_info "Running [$eval_id] $eval_name..."
+
+      start_time=$(date +%s)
+      cd "$SCRIPT_DIR/$eval_dir"
+
+      if ./test.sh > "$result_file" 2>&1; then
+        end_time=$(date +%s)
+        duration=$((end_time - start_time))
+        echo "PASS:$duration" >> "$result_file"  # Append marker for analyze-results.sh
+        RESULTS[$eval_id]="PASS"
+        DURATIONS[$eval_id]=$duration
+        log_success "[$eval_id] PASSED (${duration}s)"
+      else
+        end_time=$(date +%s)
+        duration=$((end_time - start_time))
+        echo "FAIL:$duration" >> "$result_file"  # Append marker for analyze-results.sh
+        RESULTS[$eval_id]="FAIL"
+        DURATIONS[$eval_id]=$duration
+        log_error "[$eval_id] FAILED (${duration}s)"
+      fi
+
+      # Strip ANSI codes from log file
+      temp_file=$(mktemp)
+      strip_ansi_codes < "$result_file" > "$temp_file"
+      mv "$temp_file" "$result_file"
+
+      # Extract Job ID
+      job_id=$(grep -o "Job ID: [a-f0-9-]*" "$result_file" | cut -d' ' -f3 | head -n 1)
+      if [ -n "$job_id" ]; then
+          JOB_IDS[$eval_id]="$job_id"
+      fi
+
+      # Extract Membership No and Consumer No
+      mem_no=$(grep -i "Membership Number:\|Using membershipNo:" "$result_file" | head -n 1 | grep -o "[0-9]\{10\}" || true)
+      cons_no=$(grep -i "Consumer No:\|Consumer Number:" "$result_file" | head -n 1 | grep -o "[0-9]\{4\}" || true)
+
+      if [ -n "$mem_no" ]; then ORDER_IDS[$eval_id]="$mem_no"; fi
+      if [ -n "$cons_no" ]; then CUSTOMER_IDS[$eval_id]="$cons_no"; fi
+
+      # Extract Notes
+      if [ "${RESULTS[$eval_id]}" != "PASS" ] && [ "${RESULTS[$eval_id]}" != "PASSED" ]; then
+          error_msg=$(grep -i "error" "$result_file" | tail -n 1 | sed 's/.*Error: //')
+          if [ -z "$error_msg" ]; then
+                error_msg=$(tail -n 1 "$result_file")
+          fi
+          NOTES[$eval_id]="${error_msg:0:50}..."
+      fi
+
+      # Collect forensics if failed
+      if [ "${RESULTS[$eval_id]}" != "PASS" ] && [ "${RESULTS[$eval_id]}" != "PASSED" ]; then
+          collect_failure_logs "$eval_id" "$job_id" "$RESULTS_DIR"
+      fi
+
+      # Stabilization after eval 06 (stuck-in-progress-detection)
+      # This eval kills Lambda workers and the system needs time to recover
+      # before running eval 07 (stuck-ack-recovery). LocalStack needs ~20s to
+      # spin up new Lambda containers after a container is killed.
+      if [ "$eval_id" == "06" ]; then
+        log_info "Stabilizing after eval 06 (Lambda workers recovering)..."
+        sleep 20
+        log_success "Stabilization complete"
+      fi
+
+      echo ""
+    done
+
+    log_success "Phase 2 complete - all destructive evals finished!"
+    echo ""
+  fi
+
+  #############################################################################
+  # Collect Results from both phases
+  #############################################################################
+
+  log_section "COLLECTING RESULTS"
+
+  for eval_spec in "${EVALS_TO_RUN[@]}"; do
+    IFS=':' read -r eval_id _ <<< "$eval_spec"
+
+    result="${RESULTS[$eval_id]}"
+    duration="${DURATIONS[$eval_id]:-0}"
+    # Ensure duration is numeric and force base-10
+    duration="${duration//[^0-9]/}"
+    duration="${duration:-0}"
+    duration=$((10#$duration))
+
+    case "$result" in
+      PASS)
+        PASS_COUNT=$((PASS_COUNT + 1))
+        ;;
+      FAIL)
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        ;;
+      TIMEOUT)
+        TIMEOUT_COUNT=$((TIMEOUT_COUNT + 1))
+        ;;
+      ERROR)
+        ERROR_COUNT=$((ERROR_COUNT + 1))
+        ;;
+    esac
+
+    TOTAL_DURATION=$((TOTAL_DURATION + duration))
+  done
+
+################################################################################
+# Run Evals - In-Band Mode
+################################################################################
+
+else
+  # In-band sequential execution
+
+  PASS_COUNT=0
+  FAIL_COUNT=0
+  TOTAL_DURATION=0
+
+  log_section "RUNNING EVALUATIONS"
+
+  eval_num=0
+  total_evals=${#EVALS_TO_RUN[@]}
+
+  for eval_spec in "${EVALS_TO_RUN[@]}"; do
+    eval_num=$((eval_num + 1))
+    IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+    eval_name=$(basename "$eval_dir")
+
+    echo ""
+    log_info "[$eval_num/$total_evals] Running: $eval_name"
+    echo ""
+
+    result_file="$RESULTS_DIR/${eval_id}_${eval_name}_${TIMESTAMP}.log"
+
+    start_time=$(date +%s)
+    cd "$SCRIPT_DIR/$eval_dir"
+
+    # Pass ADDITIONAL_TIMEOUT to the test script via environment variable
+    export ADDITIONAL_TIMEOUT
+
+    if ./test.sh > "$result_file" 2>&1; then
+      end_time=$(date +%s)
+      duration=$((end_time - start_time))
+      RESULTS[$eval_id]="PASSED"
+      DURATIONS[$eval_id]=$duration
+      PASS_COUNT=$((PASS_COUNT + 1))
+      echo "PASS:$duration" >> "$result_file"
+      log_success "$eval_name completed in ${duration}s"
+    else
+      end_time=$(date +%s)
+      duration=$((end_time - start_time))
+      RESULTS[$eval_id]="FAILED"
+      DURATIONS[$eval_id]=$duration
+      FAIL_COUNT=$((FAIL_COUNT + 1))
+      echo "FAIL:$duration" >> "$result_file"
+      log_error "$eval_name failed after ${duration}s"
+    fi
+
+    # Strip ANSI codes from log file
+    temp_file=$(mktemp)
+    strip_ansi_codes < "$result_file" > "$temp_file"
+    mv "$temp_file" "$result_file"
+
+    # Extract Job ID
+    job_id=$(grep -o "Job ID: [a-f0-9-]*" "$result_file" | cut -d' ' -f3 | head -n 1)
+    if [ -n "$job_id" ]; then
+        JOB_IDS[$eval_id]="$job_id"
+    fi
+
+    # Extract Correlation ID
+    correlation_id=$(grep -o "Correlation ID: [a-f0-9-]*" "$result_file" | cut -d' ' -f3 | head -n 1)
+    if [ -n "$correlation_id" ]; then
+        CORRELATION_IDS[$eval_id]="$correlation_id"
+    fi
+
+    # Extract Notes
+    if [ "${RESULTS[$eval_id]}" != "PASSED" ]; then
+        error_msg=$(grep -i "error" "$result_file" | tail -n 1 | sed 's/.*Error: //')
+        if [ -z "$error_msg" ]; then
+              error_msg=$(tail -n 1 "$result_file")
+        fi
+        NOTES[$eval_id]="${error_msg:0:50}..."
+    fi
+
+    TOTAL_DURATION=$((TOTAL_DURATION + duration))
+
+    # Stabilization after eval 06 (stuck-in-progress-detection)
+    # This eval kills Lambda workers and the system needs time to recover
+    # before running eval 07 (stuck-ack-recovery)
+    if [ "$eval_id" == "06" ]; then
+      log_info "Stabilizing after eval 06 (Lambda workers recovering)..."
+      sleep 10
+      log_success "Stabilization complete"
+    fi
+
+    # Purge between evals if explicitly requested (not recommended)
+    if [ "$PURGE_BETWEEN" = true ] && [ $eval_num -lt $total_evals ]; then
+      log_info "Purging system before next eval (--purge-between flag)..."
+      "$REPO_ROOT/scripts/local-env.sh" purge --fast > /dev/null 2>&1
+      sleep 2
+    fi
+  done
+fi
+
+################################################################################
+# Display Results Summary
+################################################################################
+
+log_section "EVALUATION SUMMARY"
+
+echo ""
+echo "+===========================================================================================================================================================================+"
+echo "|                                                    CORE STE RESULTS                                                                                                      |"
+echo "+===========================================================================================================================================================================+"
+echo "| ID  | Name                         | Time   | Status   | Job ID                               | Correlation ID                       | Notes            |"
+echo "+===========================================================================================================================================================================+"
+
+for eval_spec in "${EVALS_TO_RUN[@]}"; do
+  IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+  eval_name=$(basename "$eval_dir")
+
+  result="${RESULTS[$eval_id]}"
+  duration="${DURATIONS[$eval_id]:-0}"
+  job_id="${JOB_IDS[$eval_id]:--}"
+  correlation_id="${CORRELATION_IDS[$eval_id]:--}"
+  notes="${NOTES[$eval_id]:-}"
+
+  # Ensure duration is numeric
+  duration="${duration//[^0-9]/}"
+  duration="${duration:-0}"
+
+  if [ "$duration" -ge 60 ]; then
+    duration_str=$(printf "%dm %02ds" $((duration / 60)) $((duration % 60)))
+  else
+    duration_str="${duration}s"
+  fi
+
+  if [ "$result" = "PASS" ] || [ "$result" = "PASSED" ]; then
+    status="${GREEN}PASS${NC}"
+  elif [ "$result" = "TIMEOUT" ]; then
+    status="${YELLOW}TIME${NC}"
+  elif [ "$result" = "ERROR" ]; then
+    status="${RED}ERR ${NC}"
+  else
+    status="${RED}FAIL${NC}"
+  fi
+
+  # Format line with columns (ID | Name | Time | Status | Job ID | Correlation ID | Notes)
+  printf "| %-3s | %-28s | %-6s | %-8s | %-36s | %-36s | %-16s |\n" "$eval_id" "${eval_name:0:28}" "$duration_str" "$status" "${job_id}" "${correlation_id}" "${notes:0:16}"
+done
+
+echo "+===========================================================================================================================================================================+"
+
+echo -e "| ${GREEN}PASSED:${NC}  $(printf "%-3d" "${PASS_COUNT:-0}")    ${RED}FAILED:${NC}  $(printf "%-3d" "${FAIL_COUNT:-0}")    ${CYAN}TOTAL:${NC} $(printf "%4ds" "${TOTAL_DURATION:-0}")                                                                                                             |"
+
+echo "+===========================================================================================================================================================================+"
+
+# Ensure TOTAL_DURATION is numeric
+TOTAL_DURATION="${TOTAL_DURATION:-0}"
+if [ "$TOTAL_DURATION" -ge 60 ]; then
+  total_duration_str=$(printf "%dm %02ds" $((TOTAL_DURATION / 60)) $((TOTAL_DURATION % 60)))
+else
+  total_duration_str="${TOTAL_DURATION}s"
+fi
+
+echo -e "| Total Duration: $(printf "%-161s" "$total_duration_str")|"
+echo "| Execution Mode: $(printf "%-161s" "${MODE^^}")|"
+echo "+===========================================================================================================================================================================+"
+echo ""
+
+################################################################################
+# Generate Machine-Readable JSON Results
+################################################################################
+
+RESULTS_JSON="$RESULTS_DIR/results.json"
+{
+  echo "{"
+  echo "  \"timestamp\": \"$TIMESTAMP\","
+  echo "  \"mode\": \"$MODE\","
+  echo "  \"totalDurationSeconds\": ${TOTAL_DURATION:-0},"
+  echo "  \"summary\": {"
+  echo "    \"total\": ${#EVALS_TO_RUN[@]},"
+  echo "    \"passed\": ${PASS_COUNT:-0},"
+  echo "    \"failed\": ${FAIL_COUNT:-0},"
+  echo "    \"timedOut\": ${TIMEOUT_COUNT:-0},"
+  echo "    \"errors\": ${ERROR_COUNT:-0}"
+  echo "  },"
+  echo "  \"evals\": ["
+  json_first=true
+  for eval_spec in "${EVALS_TO_RUN[@]}"; do
+    IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+    eval_name=$(basename "$eval_dir")
+    result="${RESULTS[$eval_id]}"
+    duration="${DURATIONS[$eval_id]:-0}"
+    duration="${duration//[^0-9]/}"
+    duration="${duration:-0}"
+    job_id="${JOB_IDS[$eval_id]:-}"
+    correlation_id="${CORRELATION_IDS[$eval_id]:-}"
+    note="${NOTES[$eval_id]:-}"
+    # Escape double quotes in notes for valid JSON
+    note="${note//\"/\\\"}"
+
+    [ "$json_first" = true ] && json_first=false || echo ","
+    echo -n "    {\"id\":\"$eval_id\",\"name\":\"$eval_name\",\"result\":\"$result\",\"durationSeconds\":$duration,\"jobId\":\"$job_id\",\"correlationId\":\"$correlation_id\",\"notes\":\"$note\"}"
+  done
+  echo ""
+  echo "  ]"
+  echo "}"
+} > "$RESULTS_JSON"
+
+log_info "JSON results saved to: $RESULTS_JSON"
+
+# In CI mode, also output JSON to stdout for pipeline consumption
+if [ "$CI_MODE" = true ]; then
+  echo ""
+  echo "--- JSON_RESULTS_START ---"
+  cat "$RESULTS_JSON"
+  echo "--- JSON_RESULTS_END ---"
+  echo ""
+fi
+
+################################################################################
+# Display Failure Details
+################################################################################
+
+if [ "${FAIL_COUNT:-0}" -gt 0 ] || [ "${TIMEOUT_COUNT:-0}" -gt 0 ] || [ "${ERROR_COUNT:-0}" -gt 0 ]; then
+  log_section "FAILURE DETAILS"
+
+  for eval_spec in "${EVALS_TO_RUN[@]}"; do
+    IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+    result="${RESULTS[$eval_id]}"
+
+    if [ "$result" = "FAIL" ] || [ "$result" = "FAILED" ] || [ "$result" = "ERROR" ] || [ "$result" = "TIMEOUT" ]; then
+      eval_name=$(basename "$eval_dir")
+      result_file="$RESULTS_DIR/${eval_id}_${eval_name}_${TIMESTAMP}.log"
+
+      echo -e "${RED}------------------------------------------------------------------${NC}"
+      echo -e "${RED}[$eval_id] $eval_name - $result${NC}"
+      echo -e "${RED}------------------------------------------------------------------${NC}"
+
+      echo -e "${CYAN}Last 30 lines of output:${NC}"
+      tail -n 30 "$result_file"
+      echo ""
+
+      echo -e "${BLUE}Full log: $result_file${NC}"
+      echo ""
+    fi
+  done
+fi
+
+################################################################################
+# Final Status Summary
+################################################################################
+
+log_section "FINAL STATUS"
+
+if [ "${PASS_COUNT:-0}" -eq ${#EVALS_TO_RUN[@]} ]; then
+  log_success "ALL EVALUATIONS PASSED!"
+  log_info "Results saved to: $RESULTS_DIR"
+  FINAL_EXIT_CODE=0
+elif [ "${FAIL_COUNT:-0}" -eq 0 ]; then
+  log_warning "SOME EVALUATIONS TIMED OUT OR HAD ERRORS"
+  log_info "Review failure details above"
+  log_info "Results saved to: $RESULTS_DIR"
+  FINAL_EXIT_CODE=1
+else
+  log_error "SOME EVALUATIONS FAILED"
+  log_info "Review failure details above"
+  log_info "Results saved to: $RESULTS_DIR"
+  FINAL_EXIT_CODE=1
+fi
+
+echo ""
+
+################################################################################
+# Detailed Analysis Table (shown last for easy summary view)
+################################################################################
+
+log_section "DETAILED ANALYSIS"
+
+  # Run the analyzer on the results
+if [ -x "$SCRIPT_DIR/analyze-results.sh" ]; then
+  # Force output flush and ensure it's visible
+  # Run analyzer, tee to stdout (for run.log/console) and also pipe to sed -> analysis_report.log (stripped of ANSI codes)
+  "$SCRIPT_DIR/analyze-results.sh" "$RESULTS_DIR" 2>&1 | tee >(sed 's/\x1b\[[0-9;]*m//g' > "$RESULTS_DIR/analysis_report.log") || {
+    log_error "Analyzer failed with exit code: $?"
+    log_info "Run manually: ./ste/analyze-results.sh $RESULTS_DIR"
+  }
+else
+  log_warning "Analyzer script not found or not executable"
+  log_info "Run manually: ./ste/analyze-results.sh $RESULTS_DIR"
+fi
+
+echo ""
+
+################################################################################
+# Workflow STEs (--all-workflows flag)
+################################################################################
+
+if [ "$ALL_WORKFLOWS" = true ]; then
+  log_section "WORKFLOW STEs"
+
+  WORKFLOW_RUNNERS=()
+  if [ -d "$REPO_ROOT/workflows" ]; then
+    for workflow_runner in "$REPO_ROOT"/workflows/*/ste/run-all.sh; do
+      if [ -f "$workflow_runner" ]; then
+        # Skip template directories (00-* prefix)
+        wf_dir=$(basename "$(dirname "$(dirname "$workflow_runner")")")
+        if [[ "$wf_dir" == 00-* ]]; then
+          continue
+        fi
+        WORKFLOW_RUNNERS+=("$workflow_runner")
+      fi
+    done
+  fi
+
+  if [ ${#WORKFLOW_RUNNERS[@]} -eq 0 ]; then
+    log_info "No workflow STEs found in workflows/*/ste/run-all.sh"
+  else
+    log_info "Found ${#WORKFLOW_RUNNERS[@]} workflow STE runner(s)"
+    echo ""
+
+    WORKFLOW_FAILURES=0
+    for runner in "${WORKFLOW_RUNNERS[@]}"; do
+      workflow_name=$(basename "$(dirname "$(dirname "$runner")")")
+      log_info "Running workflow STE: $workflow_name"
+      echo "  Runner: $runner"
+      echo ""
+
+      # Build workflow runner args: pass through mode and max-parallel
+      workflow_args=""
+      if [ "$MODE" = "in-band" ]; then
+        workflow_args="$workflow_args --in-band"
+      fi
+      if [ $MAX_PARALLEL -gt 0 ]; then
+        workflow_args="$workflow_args --max-parallel=$MAX_PARALLEL"
+      fi
+      workflow_args="$workflow_args --skip-warmup"
+
+      if "$runner" $workflow_args; then
+        log_success "Workflow '$workflow_name' STEs passed"
+      else
+        log_error "Workflow '$workflow_name' STEs failed"
+        WORKFLOW_FAILURES=$((WORKFLOW_FAILURES + 1))
+      fi
+      echo ""
+    done
+
+    if [ $WORKFLOW_FAILURES -gt 0 ]; then
+      log_error "$WORKFLOW_FAILURES workflow STE suite(s) failed"
+      FINAL_EXIT_CODE=1
+    else
+      log_success "All workflow STEs passed"
+    fi
+  fi
+
+  echo ""
+fi
+
+################################################################################
+# Final Exit
+################################################################################
+
+exit $FINAL_EXIT_CODE

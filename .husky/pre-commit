@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+echo "🔍 Running pre-commit checks..."
+
+# Only run format check on commit (fast)
+# Lint check moved to pre-push (slower)
+echo "📝 Format check..."
+pnpm run format:check || {
+  echo "❌ Format check failed. Run 'pnpm run format' to fix."
+  exit 1
+}
+
+echo "✅ Pre-commit checks passed!"
+echo "ℹ️  Lint checks will run on push"
+exit 0

@@ -1,0 +1,383 @@
+---
+description: "Code quality standards and linting rules for DTM"
+globs: ["**/*.ts", "**/*.js", "**/*.json"]
+alwaysApply: true
+---
+
+# Code Quality Standards
+
+**Last Updated**: November 16, 2025  
+**Linter**: ESLint with TypeScript  
+**Formatter**: Prettier
+
+---
+
+## 🎨 Code Style
+
+### TypeScript Standards
+- **Strict mode**: Enabled (`strict: true` in `tsconfig.json`)
+- **No explicit any**: Avoid `any`, use specific types or `unknown`
+- **Explicit return types**: For public methods
+- **Interface over type**: Prefer `interface` for object shapes
+- **Const assertions**: Use `as const` for literal types
+
+### Naming Conventions
+```typescript
+// ✅ Good
+class JobService { }
+interface UserData { }
+type StatusType = 'active' | 'inactive';
+const MAX_RETRIES = 3;
+function calculateTotal(items: Item[]): number { }
+const userRepository = new UserRepository();
+
+// ❌ Bad
+class job_service { }  // Use PascalCase for classes
+interface user_data { }      // Use PascalCase for interfaces
+const maxretries = 3;        // Use SCREAMING_SNAKE_CASE for constants
+function CalculateTotal() { } // Use camelCase for functions
+```
+
+### File Naming
+- **Entities**: `job.entity.ts`
+- **Services**: `orchestration.service.ts`
+- **Controllers**: `ingestion.controller.ts`
+- **DTOs**: `create-job.dto.ts`
+- **Tests**: `job.spec.ts`, `ingestion.e2e-spec.ts`
+- **Interfaces**: `message-handler.interface.ts`
+
+---
+
+## 🔍 ESLint Configuration
+
+### Enabled Rules
+```json
+{
+  "@typescript-eslint/no-explicit-any": "warn",
+  "@typescript-eslint/no-unsafe-assignment": "warn",
+  "@typescript-eslint/no-unsafe-member-access": "warn",
+  "@typescript-eslint/no-unused-vars": "error",
+  "@typescript-eslint/explicit-function-return-type": "warn",
+  "@typescript-eslint/no-floating-promises": "error",
+  "no-console": "warn",
+  "prefer-const": "error"
+}
+```
+
+### When to Suppress
+```typescript
+// ✅ Acceptable: Type assertion when parsing external data
+const data = JSON.parse(message) as NpdConsumerEvent;
+
+// ✅ Acceptable: Suppress for workspace compatibility
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+KafkaConsumerModule.forRoot(config) as any;
+
+// ❌ Bad: Suppressing without reason
+// eslint-disable-next-line
+const data: any = getValue();
+```
+
+---
+
+## 💅 Prettier Configuration
+
+### Format Settings
+```json
+{
+  "semi": true,
+  "trailingComma": "all",
+  "singleQuote": true,
+  "printWidth": 100,
+  "tabWidth": 2,
+  "arrowParens": "always"
+}
+```
+
+### Auto-format Commands
+```bash
+# Format all files
+pnpm format
+
+# Check formatting
+pnpm format:check
+
+# Format specific files
+prettier --write "src/**/*.ts"
+```
+
+---
+
+## 🚨 Critical Quality Rules
+
+### 1. No Hardcoded Values
+```typescript
+// ❌ Bad
+if (status === 'completed') { }
+const maxRetries = 3;
+
+// ✅ Good
+if (status === JobStatus.COMPLETED) { }
+const maxRetries = process.env.MAX_RETRIES || DEFAULT_MAX_RETRIES;
+```
+
+### 2. Always Handle Errors
+```typescript
+// ❌ Bad
+async function processJob(jobId: string) {
+  const job = await jobRepository.findById(jobId);
+  return job.process();
+}
+
+// ✅ Good
+async function processJob(jobId: string): Promise<ProcessResult> {
+  try {
+    const job = await jobRepository.findById(jobId);
+    if (!job) {
+      throw new NotFoundException(`Job ${jobId} not found`);
+    }
+    return await job.process();
+  } catch (error) {
+    this.logger.error(`Failed to process job ${jobId}`, error);
+    throw error;
+  }
+}
+```
+
+### 3. Validate Inputs
+```typescript
+// ❌ Bad
+function createJob(payload: any) {
+  return this.repository.save(payload);
+}
+
+// ✅ Good
+@Post()
+async createJob(@Body() dto: CreateJobDto): Promise<JobResponse> {
+  // class-validator automatically validates DTO
+  const job = await this.service.createJob(dto);
+  return this.mapper.toResponse(job);
+}
+```
+
+### 4. Use Typed Responses
+```typescript
+// ❌ Bad
+async function getJob(id: string) {
+  return this.repository.findOne({ where: { id } });
+}
+
+// ✅ Good
+async function getJob(id: string): Promise<Job | null> {
+  return this.repository.findOne({ where: { id } });
+}
+```
+
+### 5. Avoid Magic Numbers
+```typescript
+// ❌ Bad
+if (retryCount > 3) { }
+setTimeout(callback, 5000);
+
+// ✅ Good
+const MAX_RETRY_COUNT = 3;
+const CALLBACK_DELAY_MS = 5000;
+
+if (retryCount > MAX_RETRY_COUNT) { }
+setTimeout(callback, CALLBACK_DELAY_MS);
+```
+
+---
+
+## 📋 Code Review Checklist
+
+### Before Committing
+- [ ] All linting errors fixed (`pnpm lint:fix`)
+- [ ] Code formatted (`pnpm format`)
+- [ ] Tests passing (`pnpm test`)
+- [ ] No `console.log` statements (use `logger`)
+- [ ] No hardcoded values
+- [ ] Error handling in place
+- [ ] Types explicit (no `any` unless suppressed with reason)
+- [ ] Documentation added for complex logic
+
+### PR Review Points
+- [ ] Architecture aligned with established patterns
+- [ ] No breaking changes (or documented)
+- [ ] Database migrations if schema changed
+- [ ] Tests cover new functionality
+- [ ] Documentation updated
+- [ ] Performance considered
+- [ ] Security implications reviewed
+- [ ] Backward compatibility maintained
+
+---
+
+## 🎯 Specific Patterns
+
+### DTOs (Data Transfer Objects)
+```typescript
+import { IsString, IsNumber, IsOptional, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class CreateJobDto {
+  @IsString()
+  entityKey: string;
+
+  @IsString()
+  externalSystemId: string;
+
+  @IsOptional()
+  @IsString()
+  requestedBy?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TestOptionsDto)
+  testOptions?: TestOptionsDto;
+}
+```
+
+### Services
+```typescript
+@Injectable()
+export class JobService {
+  private readonly logger = new Logger(JobService.name);
+
+  constructor(
+    private readonly repository: JobRepository,
+    private readonly orchestration: OrchestrationService,
+  ) {}
+
+  async createJob(dto: CreateJobDto): Promise<Job> {
+    this.logger.log(`Creating job for entity ${dto.entityKey}`);
+
+    try {
+      const job = await this.repository.createJob({
+        type: JobType.DEFAULT,
+        payload: dto,
+        submittedBy: 'api',
+        submittedAt: new Date(),
+      });
+
+      await this.orchestration.startJob(job.id);
+
+      return job;
+    } catch (error) {
+      this.logger.error(`Failed to create job`, error);
+      throw error;
+    }
+  }
+}
+```
+
+### Repositories
+```typescript
+@Injectable()
+export class JobRepository {
+  constructor(
+    @InjectRepository(Job)
+    private readonly repo: Repository<Job>,
+  ) {}
+
+  async findById(id: string): Promise<Job | null> {
+    return this.repo.findOne({ where: { id } });
+  }
+
+  async findByEntityKeyToday(entityKey: string): Promise<Job | null> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return this.repo
+      .createQueryBuilder('job')
+      .where("job.payload->>'entityKey' = :entityKey", { entityKey })
+      .andWhere('job.submitted_at >= :today', { today })
+      .orderBy('job.submitted_at', 'DESC')
+      .getOne();
+  }
+}
+```
+
+---
+
+## 🛡️ Security Best Practices
+
+### Input Validation
+- **Always validate** with class-validator
+- **Sanitize inputs** before database queries
+- **Use parameterized queries** (TypeORM does this automatically)
+- **Validate environment variables** on startup
+
+### Logging
+```typescript
+// ✅ Good: Structured logging with context
+this.logger.log('Job created', { jobId, consumerNo });
+this.logger.error('Job failed', { jobId, error: error.message });
+
+// ❌ Bad: Logging sensitive data
+this.logger.log('User data:', user);  // May contain PII
+this.logger.log('Password:', password);  // Never log credentials
+```
+
+### Error Messages
+```typescript
+// ✅ Good: Safe error messages
+throw new NotFoundException(`Job ${jobId} not found`);
+throw new BadRequestException('Invalid consumer number');
+
+// ❌ Bad: Exposing internal details
+throw new Error(`Database connection failed at ${dbHost}:${dbPort}`);
+throw new Error(`Query failed: ${sqlQuery}`);
+```
+
+---
+
+## 📊 Performance Considerations
+
+### Avoid N+1 Queries
+```typescript
+// ❌ Bad: N+1 queries
+const jobs = await this.jobRepo.find();
+for (const job of jobs) {
+  job.steps = await this.stepRepo.find({ where: { jobId: job.id } });
+}
+
+// ✅ Good: Single query with join
+const jobs = await this.jobRepo
+  .createQueryBuilder('job')
+  .leftJoinAndSelect('job.steps', 'step')
+  .getMany();
+```
+
+### Use Pagination
+```typescript
+// ❌ Bad: Load all records
+const jobs = await this.repo.find();
+
+// ✅ Good: Paginate
+const jobs = await this.repo.find({
+  take: 50,
+  skip: page * 50,
+  order: { submittedAt: 'DESC' },
+});
+```
+
+### Cache When Appropriate
+```typescript
+// ✅ Good: Cache static/rarely changing data
+@Cacheable('workflow-config', 3600)  // 1 hour TTL
+async getWorkflowConfig(): Promise<WorkflowConfig> {
+  return this.configService.loadConfig();
+}
+```
+
+---
+
+## 🎓 Resources
+
+- **TypeScript Handbook**: https://www.typescriptlang.org/docs/
+- **ESLint Rules**: https://eslint.org/docs/rules/
+- **Prettier**: https://prettier.io/docs/
+- **NestJS Best Practices**: https://docs.nestjs.com/
+
+**Status**: ✅ Enforced via pre-commit/pre-push hooks

@@ -1,0 +1,54 @@
+sequenceDiagram
+    participant O as Orchestrator
+    participant SQS as SQS Queue
+    participant DW as Discovery Worker
+    participant P1W as Phase 1 Worker (x N)
+    participant P2W as Phase 2 Worker (x N)
+    participant K as Kafka
+    participant DB as DTM Database
+
+    Note over O,DB: Phase 1: Discovery
+
+    O->>SQS: Dispatch DiscoverLineItems step
+    SQS->>DW: DiscoverLineItems message
+    DW->>DW: Query source DB for line item IDs
+    DW->>O: Callback: SUCCESS + [itemId1, itemId2, itemId3]
+
+    Note over O,DB: Phase 2: Fan-Out (child step creation)
+
+    O->>DB: Set DiscoverLineItems → WAITING_FOR_CHILDREN
+    O->>DB: Create ValidateLineItem + SubmitLineItem steps for each itemId
+    O->>O: Delegate all ValidateLineItem steps (parallel)
+
+    par For each itemId
+        O->>SQS: Dispatch ValidateLineItem (itemId1)
+        O->>SQS: Dispatch ValidateLineItem (itemId2)
+        O->>SQS: Dispatch ValidateLineItem (itemId3)
+    end
+
+    Note over O,DB: Phase 3: Child Execution (parallel)
+
+    par itemId1 flow
+        SQS->>P1W: ValidateLineItem (itemId1)
+        P1W->>O: Callback: SUCCESS + line item data
+        O->>SQS: Dispatch SubmitLineItem (itemId1)
+        SQS->>P2W: SubmitLineItem (itemId1)
+        P2W->>O: Callback: SUCCESS + submitted data
+        O->>K: Publish to lineItem.completed
+        O->>DB: SubmitLineItem → WAITING_FOR_ACK
+    end
+
+    Note over O,DB: Phase 4: ACK + Aggregation
+
+    K->>O: lineItem.ack (itemId1)
+    O->>DB: SubmitLineItem (itemId1) → COMPLETED
+
+    O->>O: Check: all children of DiscoverLineItems done?
+
+    alt All children COMPLETED
+        O->>DB: DiscoverLineItems → COMPLETED
+    else Some children FAILED
+        O->>DB: DiscoverLineItems → PARTIAL_SUCCESS
+    end
+
+    O->>O: continueJob() — check for more steps

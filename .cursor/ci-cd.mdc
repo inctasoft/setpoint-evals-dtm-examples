@@ -1,0 +1,110 @@
+---
+description: CI/CD Pipeline Rules and Best Practices
+globs: 
+  - "**/.github/workflows/**"
+  - "**/*.yml"
+  - "**/*.yaml"
+alwaysApply: true
+---
+
+# CI/CD Pipeline Rules
+
+## Step Dependency Validation
+
+**CRITICAL**: Always validate step dependencies when modifying or creating CI/CD workflows.
+
+### Dependency Check Rules
+
+1. **Before adding or modifying any step, verify:**
+   - Does this step require a tool/command that must be installed first?
+   - Does this step need environment variables or outputs from previous steps?
+   - Does this step use caching that requires the tool to be installed first?
+   - Does this step run scripts that depend on previous setup steps?
+
+2. **Common dependency patterns to check:**
+   - `setup-node` with `cache: 'pnpm'` → **REQUIRES** `setup-pnpm` to run first
+   - `setup-node` with `cache: 'npm'` → Node.js must be set up first
+   - Running `pnpm install` → **REQUIRES** both `setup-pnpm` and `setup-node` first
+   - Running `./bin/init.sh` → **REQUIRES** `setup-pnpm` first (init.sh checks for pnpm)
+   - Running `docker compose` → **REQUIRES** Docker to be available (usually pre-installed on runners)
+   - Running tests → **REQUIRES** dependencies installed, build completed, services started
+
+3. **When modifying workflows:**
+   - Read the entire workflow from top to bottom
+   - Identify all dependencies for each step
+   - Ensure dependent steps are ordered BEFORE steps that need them
+   - Document any non-obvious dependencies in comments
+
+4. **Example dependencies to verify:**
+   ```
+   ✅ Correct order:
+   - Checkout code
+   - Setup pnpm
+   - Setup Node.js (with pnpm cache) ← needs pnpm
+   - Install dependencies ← needs both pnpm and Node.js
+   
+   ❌ Wrong order:
+   - Checkout code
+   - Setup Node.js (with pnpm cache) ← ERROR: pnpm not installed yet!
+   - Setup pnpm
+   ```
+
+## GitHub Actions Best Practices
+
+1. **Tool Installation Order:**
+   - Package managers (pnpm, npm, yarn) should be set up before Node.js caching
+   - Node.js version should be set up before installing dependencies
+   - Build tools should be set up before building
+
+2. **Environment Setup:**
+   - Initialize environment (Docker network, etc.) before starting services
+   - Start services before running tests that depend on them
+   - Wait for services to be ready before running tests
+
+3. **Caching Dependencies:**
+   - When using `cache: 'pnpm'` in `setup-node`, pnpm must be installed first
+   - Cache restoration happens automatically, but tool must exist
+   - Verify cache dependencies are correct (lock file paths, etc.)
+
+## Workflow Validation Checklist
+
+When creating or modifying workflows, always verify:
+
+- [ ] All tools are installed before they're used
+- [ ] Environment variables are set before they're needed
+- [ ] Services are started before tests that depend on them
+- [ ] Caching is configured correctly and tools are available
+- [ ] Scripts that check for prerequisites have those prerequisites set up first
+- [ ] Dependencies are installed before building
+- [ ] Builds complete before running tests
+- [ ] Services are ready before running integration tests
+
+## Common Pitfalls
+
+1. **Caching before installation:**
+   - `setup-node` with `cache: 'pnpm'` before `setup-pnpm` → ❌ FAILS
+   - Solution: Install pnpm first, then setup Node.js with caching
+
+2. **Script prerequisites:**
+   - Running `./bin/init.sh` before pnpm is installed → ❌ FAILS (init.sh checks for pnpm)
+   - Solution: Setup pnpm before running init.sh
+
+3. **Service dependencies:**
+   - Running tests before services are ready → ❌ FAILS (connection errors)
+   - Solution: Wait for health checks before running tests
+
+4. **Build dependencies:**
+   - Building before installing dependencies → ❌ FAILS
+   - Solution: Install dependencies before building
+
+## Documentation
+
+Always add comments for non-obvious dependencies:
+```yaml
+- name: Setup Node.js from .nvmrc
+  # Note: pnpm must be set up first for caching to work
+  uses: actions/setup-node@v4
+  with:
+    node-version-file: '.nvmrc'
+    cache: 'pnpm'
+```

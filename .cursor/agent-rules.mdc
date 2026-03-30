@@ -1,0 +1,312 @@
+---
+description: "General AI assistant behavior and decision-making guidelines"
+globs: []
+alwaysApply: true
+---
+
+# AI Assistant Guidelines
+
+**Last Updated**: February 9, 2026
+**Purpose**: Guiding principles for AI assistants working on this codebase
+
+---
+
+## 🎯 Core Principles
+
+### 1. Understand Before Changing
+
+- **Read existing code** before suggesting changes
+- **Check architecture docs** (`.cursor/architecture.mdc`, and all `*.md` files in `ste/` and `docs/` directories) for patterns
+- **Review recent changes** (`CHANGELOG/README.md` and `DTM-PROGRESS.md`)
+- **Test understanding** by explaining current behavior
+
+### 2. Maintain Consistency
+
+- **Follow established patterns** - Don't introduce new patterns without reason
+- **Match naming conventions** - camelCase (TS), snake_case (DB)
+- **Respect architecture** - Two-phase step pattern, parallel execution
+- **Use existing utilities** - Don't reinvent what exists
+
+### 3. Quality Over Speed
+
+- **Write tests** for new functionality
+- **Document changes** in code and markdown
+- **Consider edge cases** and error scenarios
+- **Think about performance** and scalability
+
+---
+
+## 🏗️ Architecture Awareness
+
+### System Understanding
+
+This is a **distributed task orchestration service**:
+
+- **Two-phase step pattern** (input + output) with parallel execution from day one
+- **Kafka integration** for events (producer + consumer)
+- **TypeORM** for database (2 databases, different purposes)
+- **Lambda workers** (specialized per workflow entity)
+- **pnpm monorepo** (workspace protocol critical)
+
+### Key Architectural Decisions
+
+1. **All workers store in `step.output`** (JSONB) - Input + Output step data
+2. **Job summary in `job.results`** (JSONB) - Calculated on completion
+3. **Orchestrator evaluates all steps on ingestion** (enables parallelization)
+4. **Query-based idempotency** (24-hour window, consumerId in payload)
+5. **Graceful Kafka degradation** (system works without Kafka)
+
+### Don't Assume
+
+- ❌ This is a generic ETL system
+- ❌ Steps are sequential only
+- ❌ One Lambda worker handles all steps
+- ❌ Database IDs are custom strings (they're UUIDs)
+
+---
+
+## 💻 Implementation Guidelines
+
+### When Adding Features
+
+1. **Check if it exists** - Search codebase first
+2. **Read related docs** - Check `docs/MASTER-INDEX.md`
+3. **Follow patterns** - Look at similar existing features
+4. **Update all layers**:
+   - Entity (if database change)
+   - Repository (if query change)
+   - Service (business logic)
+   - Controller (API endpoints)
+   - DTO (validation)
+   - Tests (unit + E2E)
+   - Documentation (README, feature docs)
+
+### When Fixing Bugs
+
+1. **Understand root cause** - Don't just treat symptoms
+2. **Add test to reproduce** - Prevents regression
+3. **Fix minimal scope** - Don't refactor while fixing bugs
+4. **Document if valuable** - Add to troubleshooting guides
+5. **Update execution history** - If retry/tracking related
+
+### When Refactoring
+
+1. **Have clear goal** - Performance? Readability? Maintainability?
+2. **Test before and after** - Ensure behavior unchanged
+3. **Do incrementally** - Small, reviewable changes
+4. **Update documentation** - Keep docs in sync
+5. **Check backward compatibility** - Don't break existing integrations
+
+---
+
+## 🧪 Testing Guidelines
+
+### Always Test
+
+- **Unit tests** for services, repositories, utilities
+- **E2E tests** for complete workflows
+- **Manual tests** for user-facing features
+- **Performance tests** for optimizations
+
+### Test Coverage Goals
+
+- **Critical paths**: 100% (job creation, step delegation, callbacks)
+- **Happy paths**: 90%+ (all main features)
+- **Error paths**: 80%+ (exception handling)
+
+### Testing Commands
+
+```bash
+pnpm test                    # Unit tests
+pnpm test:e2e                # E2E tests
+pnpm test:cov                # With coverage
+./ste/run-all.sh             # Core STEs
+./ste/run-all.sh --all-workflows  # All STEs
+```
+
+---
+
+## 📚 Documentation Guidelines
+
+### When to Document
+
+- **New features** - Always
+- **Architecture changes** - Always
+- **Bug fixes** - If valuable for troubleshooting
+- **Performance optimizations** - With benchmarks
+- **Breaking changes** - Migration guide
+
+### Where to Document
+
+1. **Inline comments** - Complex logic
+2. **JSDoc** - Public APIs
+3. **README.md** - User-facing changes
+4. **Feature docs** - New capabilities
+5. **.cursor/architecture.mdc** - Architectural decisions
+6. **CHANGELOG/README.md** - Change history
+
+---
+
+## 🚨 Critical Rules
+
+### ALWAYS
+
+1. **Run tests** before marking complete
+2. **Fix linting** before committing
+3. **Check backward compatibility** for API changes
+4. **Use parameterized queries** for database
+5. **Validate inputs** with class-validator
+6. **Handle errors** with try-catch
+7. **Log appropriately** (not too much, not too little)
+8. **Follow naming conventions** (camelCase, snake_case)
+9. **Update documentation** for changes
+10. **Check existing patterns** before inventing new ones
+
+### NEVER
+
+1. **Hardcode secrets** or sensitive data
+2. **Use `any` type** without suppression comment
+3. **Skip error handling** in Lambda workers
+4. **Ignore test failures**
+5. **Break backward compatibility** without discussion
+6. **Use raw SQL queries** (use TypeORM)
+7. **Log PII** (personal identifiable information)
+8. **Commit without linting** (pre-commit hook enforces)
+9. **Delete .env files** from .gitignore
+10. **Change migration timestamps** (once created)
+11. **Stop/restart non-`dtm-` containers** — other projects may share the Docker host
+12. **Restart LocalStack** without redeploying Lambda workers afterward (queues auto-recreate via init hook, but Lambdas must be redeployed)
+13. **Run `docker ps` without filtering** — always use `docker ps --filter "name=dtm-"` to avoid confusion with other projects' containers
+
+---
+
+## 🎓 Learning Resources
+
+### For This Project
+
+1. **Navigate**: `docs/MASTER-INDEX.md` (canonical documentation index - START HERE!)
+2. **Architecture**: `.cursor/architecture.mdc` (complete technical reference)
+3. **STEs**: `ste/README.md` (living documentation and test scenarios)
+4. **Changelog**: `CHANGELOG/README.md` (organized change history by category)
+
+> **⚠️ IMPORTANT**: If you see conflicting documentation, verify against actual code.
+> The source of truth for database columns is the TypeORM entities in `packages/database/src/entities/`.
+
+### For Technologies
+
+- **NestJS**: https://docs.nestjs.com
+- **TypeORM**: https://typeorm.io
+- **KafkaJS**: https://kafka.js.org
+- **pnpm**: https://pnpm.io
+- **Jest**: https://jestjs.io
+
+---
+
+## 🤝 Communication Style
+
+### When Explaining
+
+- **Be concise** but complete
+- **Use examples** from this codebase
+- **Link to documentation** for details
+- **Explain trade-offs** for decisions
+- **Show alternatives** when applicable
+
+### When Asking Clarification
+
+- **Be specific** about what's unclear
+- **Provide context** for why you need to know
+- **Suggest options** based on understanding
+- **Reference similar cases** if applicable
+
+### When Reporting Issues
+
+- **Describe problem** clearly
+- **Show error messages** fully
+- **Explain what you tried** to fix it
+- **Suggest potential causes** based on knowledge
+- **Link to related code** or documentation
+
+---
+
+## 🎯 Decision-Making Framework
+
+### When Uncertain
+
+1. **Check architecture docs** - Is pattern established?
+2. **Search codebase** - How is it done elsewhere?
+3. **Read recent changes** - Was this discussed recently?
+4. **Consider impact** - Breaking change? Performance impact?
+5. **Ask if needed** - Better to clarify than guess
+
+### When Multiple Options
+
+1. **List options** with pros/cons
+2. **Recommend based on**:
+   - Consistency with existing code
+   - Performance implications
+   - Maintenance burden
+   - Security considerations
+   - Testing ease
+3. **Explain reasoning** for recommendation
+4. **Respect user's choice** if they prefer different option
+
+---
+
+## 📊 Success Metrics
+
+### Code Quality
+
+- ✅ All tests passing
+- ✅ Linting clean
+- ✅ No security vulnerabilities
+- ✅ Documentation updated
+- ✅ Patterns consistent
+
+### Feature Complete
+
+- ✅ Requirements met
+- ✅ Edge cases handled
+- ✅ Errors handled gracefully
+- ✅ Performance acceptable
+- ✅ Backward compatible (or migration provided)
+
+### User Experience
+
+- ✅ Clear error messages
+- ✅ Intuitive API design
+- ✅ Good documentation
+- ✅ Easy to test/debug
+- ✅ Monitoring in place
+
+---
+
+## 🔄 Continuous Improvement
+
+### After Each Session
+
+- Document what was done (session summary)
+- Update architecture docs if changed
+- Note any technical debt created
+- Identify optimization opportunities
+- Update project state document
+
+### Regularly Review
+
+- Test coverage (aim for 90%+)
+- Performance metrics (identify bottlenecks)
+- Documentation completeness (update outdated)
+- Security posture (check for vulnerabilities)
+- Code quality (refactor if needed)
+
+---
+
+**Status**: ✅ Guidelines established, continuously refined
+
+**Remember**: These guidelines serve the project's goals. When in doubt, prioritize:
+
+1. **Correctness** over speed
+2. **Simplicity** over cleverness
+3. **Consistency** over personal preference
+4. **Testing** over assumptions
+5. **Documentation** over memory

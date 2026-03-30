@@ -1,0 +1,352 @@
+---
+description: "TypeORM and database best practices for DTM"
+globs: ["packages/database/**", "workflows/*/source-db/**", "**/entities/**", "**/repositories/**"]
+alwaysApply: true
+---
+
+# TypeORM & Database Best Practices
+
+**Last Updated**: November 16, 2025  
+**Databases**: 2 (migration_service + order_processing_db)  
+**ORM**: TypeORM 0.3.x
+
+---
+
+## 🗄️ Database Architecture
+
+### Task Service DB
+**Package**: `packages/database/`
+**Purpose**: Job state tracking and orchestration
+**Tables**:
+- `dtm_jobs` (Job) - Job tracking (includes `results` JSONB for job summary)
+- `dtm_steps` (Step) - Step tracking (includes `output` JSONB for all worker data)
+
+### Source DB (Workflow-Specific)
+**Package**: `workflows/order-processing/source-db/` (for workflow source)
+**Purpose**: Workflow data source (read-only)
+**Note**: Source database entities are workflow-specific. See workflow `.cursor/` rules for details.
+
+---
+
+## 📐 Entity Definition Standards
+
+### Entity File Structure
+**Location**: `packages/database/src/entities/`  
+**Naming**: `{entity-name}.entity.ts`  
+**Example**: `migration-job.entity.ts`
+
+```typescript
+import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+
+@Entity('dtm_jobs')  // snake_case table name
+@Index(['status', 'type'])  // Composite index
+export class MigrationJob {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;  // camelCase property name
+
+  @Column({ name: 'consumer_no', type: 'int', nullable: true })
+  @Index()  // Single column index
+  consumerNo: number;  // camelCase, matches snake_case column
+
+  @Column({ type: 'jsonb', default: {} })
+  payload: Record<string, any>;
+
+  @Column({ 
+    type: 'enum', 
+    enum: JobStatus,
+    default: JobStatus.PENDING 
+  })
+  status: JobStatus;
+
+  @Column({ name: 'submitted_at', type: 'timestamp' })
+  submittedAt: Date;
+}
+```
+
+### Critical Rules
+1. **Table names**: Always `snake_case` in `@Entity()`
+2. **Property names**: Always `camelCase` in TypeScript
+3. **Column mapping**: Use `name: 'snake_case'` when different from property
+4. **Indexes**: Add `@Index()` for frequently queried columns
+5. **Enums**: Use TypeScript enums, map to PostgreSQL enums
+6. **JSONB**: Use `Record<string, any>` or specific types
+
+---
+
+## 🔍 Repository Patterns
+
+### Repository File Structure
+**Location**: `packages/database/src/repositories/`  
+**Naming**: `{entity-name}.repository.ts`  
+**Example**: `migration-job.repository.ts`
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { MigrationJob } from '../entities/migration-job.entity';
+
+@Injectable()
+export class JobRepository {
+  constructor(
+    @InjectRepository(MigrationJob)
+    private readonly repo: Repository<MigrationJob>,
+  ) {}
+
+  // ✅ Typed methods, not raw queries
+  async findById(id: string): Promise<MigrationJob | null> {
+    return this.repo.findOne({ where: { id } });
+  }
+
+  // ✅ Use QueryBuilder for complex queries
+  async findByConsumerIdToday(consumerId: string): Promise<MigrationJob | null> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return this.repo
+      .createQueryBuilder('job')
+      .where("job.payload->'_trigger'->>'consumerId' = :consumerId", { consumerId })
+      .andWhere('job.submitted_at >= :today', { today })
+      .orderBy('job.submitted_at', 'DESC')
+      .getOne();
+  }
+}
+```
+
+### Critical Rules
+1. **Use repositories**: Never raw `dataSource.query()` unless absolutely necessary
+2. **Type safety**: Methods should return typed entities
+3. **QueryBuilder**: Use for complex queries (joins, JSONB, aggregations)
+4. **Parameterized queries**: Always use placeholders (`:param`)
+5. **Error handling**: Let NestJS exception filters handle TypeORM errors
+
+---
+
+## 🗂️ Migration Best Practices
+
+### Migration File Structure
+**Location**: `packages/database/src/migrations/`  
+**Naming**: `{timestamp}-{Description}.ts`  
+**Example**: `1700000000001-InitialSchema.ts`
+
+```typescript
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+export class AddRetryTracking1700000000004 implements MigrationInterface {
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    // ✅ Check existence before adding
+    await queryRunner.query(`
+      ALTER TABLE dtm_steps
+      ADD COLUMN IF NOT EXISTS retry_count INT NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS max_retry_count INT NOT NULL DEFAULT 3,
+      ADD COLUMN IF NOT EXISTS execution_history JSONB DEFAULT '[]'::jsonb;
+    `);
+
+    // ✅ Create index after adding columns
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_dtm_steps_retry
+      ON dtm_steps (retry_count, max_retry_count);
+    `);
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    // ✅ Always provide rollback
+    await queryRunner.query(`
+      DROP INDEX IF EXISTS idx_dtm_steps_retry;
+    `);
+
+    await queryRunner.query(`
+      ALTER TABLE dtm_steps
+      DROP COLUMN IF EXISTS execution_history,
+      DROP COLUMN IF EXISTS max_retry_count,
+      DROP COLUMN IF EXISTS retry_count;
+    `);
+  }
+}
+```
+
+### Critical Rules
+1. **Use IF NOT EXISTS**: Idempotent migrations
+2. **Provide down()**: Always implement rollback
+3. **Test migrations**: Test both up and down on fresh DB
+4. **Order matters**: Add columns before indices
+5. **Timestamp ordering**: Never change existing migration timestamps
+
+---
+
+## 📊 Indexing Strategy
+
+### Current Indices
+**See**: `INDEXING-STRATEGY-ANALYSIS.md` for complete analysis
+
+**Existing**:
+- `idx_dtm_jobs_status` on `dtm_jobs(status)`
+- `idx_dtm_steps_job_id` on `dtm_steps(job_id)`
+- `idx_dtm_steps_status` on `dtm_steps(status)`
+
+**Future (Phase 1 - 20 minutes)**:
+```sql
+-- JSONB functional index for fast consumerId lookups
+CREATE INDEX idx_dtm_jobs_trigger_consumer_id 
+ON dtm_jobs ((payload->'_trigger'->>'consumerId'));
+
+-- Composite for time-based queries
+CREATE INDEX idx_dtm_jobs_status_completed 
+ON dtm_jobs (status, completed_at DESC) 
+WHERE completed_at IS NOT NULL;
+```
+
+### Indexing Rules
+1. **Index foreign keys**: Always
+2. **Index status columns**: For filtering
+3. **Index timestamp columns**: For ordering
+4. **Composite indices**: For common query patterns
+5. **JSONB indices**: Use functional indices for JSONB queries
+6. **Partial indices**: Use `WHERE` clause for sparse data
+
+---
+
+## 🎯 Query Optimization
+
+### Use QueryBuilder for Complex Queries
+```typescript
+// ✅ Good: Efficient query with joins
+const results = await this.repo
+  .createQueryBuilder('job')
+  .leftJoinAndSelect('job.steps', 'step')
+  .where('job.status = :status', { status: 'completed' })
+  .andWhere('step.records_processed > :count', { count: 0 })
+  .orderBy('job.completed_at', 'DESC')
+  .limit(50)
+  .getMany();
+
+// ❌ Bad: N+1 queries
+const jobs = await this.repo.find({ where: { status: 'completed' } });
+for (const job of jobs) {
+  const steps = await this.stepRepo.find({ where: { jobId: job.id } });
+}
+```
+
+### JSONB Query Patterns
+```typescript
+// ✅ Query JSONB field
+const job = await this.repo
+  .createQueryBuilder('job')
+  .where("job.payload->>'consumerNo' = :consumerNo", { consumerNo: '1000' })
+  .getOne();
+
+// ✅ Query nested JSONB
+const job = await this.repo
+  .createQueryBuilder('job')
+  .where("job.payload->'_trigger'->>'consumerId' = :id", { id })
+  .getOne();
+
+// ✅ JSONB array contains
+const jobs = await this.repo
+  .createQueryBuilder('job')
+  .where("job.payload->'tags' @> :tag", { tag: JSON.stringify(['urgent']) })
+  .getMany();
+```
+
+---
+
+## 🚨 Critical Database Rules
+
+### When Querying
+1. **Always use parameterized queries** - Prevent SQL injection
+2. **Limit results** - Use `.limit()` or `.take()` for large datasets
+3. **Use transactions** for multi-table operations
+4. **Avoid SELECT *** - Select only needed columns
+5. **Index before querying** - Check for indices on WHERE clauses
+
+### When Updating
+1. **Use transactions** for consistency
+2. **Validate input** before updating
+3. **Handle concurrency** - Use optimistic locking if needed
+4. **Audit changes** - Log important updates
+5. **Cascade carefully** - Understand foreign key cascades
+
+### When Creating Entities
+1. **Validate DTOs** - Use class-validator
+2. **Set defaults** - In entity definition
+3. **Handle JSONB** - Validate structure
+4. **Generate IDs** - Let DB generate UUIDs
+5. **Track timestamps** - Use `@CreateDateColumn`, `@UpdateDateColumn`
+
+---
+
+## 📚 Workflow Source DB (Read-Only)
+
+### Access Pattern
+**Package**: `workflows/order-processing/source-db/`  
+**Access**: **Read-only** - never write to workflow source DB
+
+```typescript
+// ✅ Good: Read-only queries
+const consumer = await this.digitalHubRepo
+  .createQueryBuilder('c')
+  .where('c.consumer_no = :no', { no: consumerNo })
+  .getOne();
+
+// ❌ Bad: Never write to workflow source DB
+await this.digitalHubRepo.save(consumer); // DON'T DO THIS
+```
+
+### Querying Legacy Schema
+```typescript
+// Table names include schema prefix
+@Entity('dbo.consumer')
+export class Consumer {
+  @Column({ name: 'consumer_no', primary: true })
+  consumerNo: number;
+
+  @Column({ name: 'forename' })
+  forename: string;
+}
+
+// Query using schema-qualified names
+const consumers = await this.repo
+  .createQueryBuilder('c')
+  .from('dbo.consumer', 'c')
+  .where('c.consumer_no = :no', { no })
+  .getRawMany();
+```
+
+---
+
+## 🔧 Environment Configuration
+
+### Connection Setup
+```typescript
+// packages/database/src/database.config.ts
+export const databaseConfig = {
+  type: 'postgres',
+  host: process.env.POSTGRES_HOST,
+  port: parseInt(process.env.POSTGRES_PORT, 10),
+  username: process.env.POSTGRES_USER,
+  password: process.env.POSTGRES_PASSWORD,
+  database: process.env.POSTGRES_DATABASE,
+  entities: ['dist/**/*.entity.js'],
+  migrations: ['dist/migrations/*.js'],
+  synchronize: false,  // ✅ Never true in production
+  logging: process.env.NODE_ENV === 'development',
+};
+```
+
+### Critical Rules
+1. **Never use synchronize: true** in production
+2. **Use migrations** for schema changes
+3. **Separate connections** for different databases
+4. **Environment-based logging** - verbose in dev, minimal in prod
+5. **Connection pooling** - Configure for your load
+
+---
+
+## 🎓 Resources
+
+- **TypeORM Docs**: https://typeorm.io
+- **PostgreSQL Docs**: https://www.postgresql.org/docs/
+- **Indexing Guide**: See `INDEXING-STRATEGY-ANALYSIS.md`
+- **Migration Guide**: See `packages/database/README.md`
+
+**Status**: ✅ Well-architected, optimization path documented

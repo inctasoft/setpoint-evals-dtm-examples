@@ -1,0 +1,173 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "🐳 Attach to NestJS Orchestrator (Docker)",
+      "type": "node",
+      "request": "attach",
+      "restart": true,
+      "port": 9230,
+      "address": "localhost",
+      "localRoot": "${workspaceFolder}/services/orchestrator",
+      "remoteRoot": "/app/services/orchestrator",
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "outFiles": ["/app/services/orchestrator/dist/**/*.js"],
+      "resolveSourceMapLocations": [
+        "!/node_modules/**",
+        "/app/services/orchestrator/**/*.js"
+      ],
+      "presentation": {
+        "group": "docker",
+        "order": 1
+      }
+    },
+    {
+      "name": "🔧 Debug Lambda Worker Locally",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx/esm"],
+      "args": [
+        "${workspaceFolder}/workflows/order-processing/workers/src/handlers/validate-customer.ts"
+      ],
+      "cwd": "${workspaceFolder}/workflows/order-processing/workers",
+      "env": {
+        "ORCHESTRATOR_URL": "http://localhost:3002",
+        "AWS_REGION": "us-east-1",
+        "NODE_ENV": "development"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "lambda",
+        "order": 1
+      }
+    },
+    {
+      "name": "🚀 Debug Orchestrator (Local - No Docker)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": [
+        "-i",
+        "-c",
+        "set -a && source ${workspaceFolder}/.env.local && set +a && source ~/.nvm/nvm.sh && nvm use 22 && cd ${workspaceFolder} && pnpm --filter ./services/orchestrator run start:debug"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env.local",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/services/orchestrator/dist/**/*.js"],
+      "presentation": {
+        "group": "local",
+        "order": 1
+      }
+    },
+    {
+      "name": "🔬 Debug Lambda Workers (Debug-Server)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": [
+        "-i",
+        "-c",
+        "set -a && source ${workspaceFolder}/.env.local && set +a && source ~/.nvm/nvm.sh && nvm use 22 && cd ${workspaceFolder}/tools/sqs-poller && npx tsx src/poller.ts"
+      ],
+      "cwd": "${workspaceFolder}/tools/sqs-poller",
+      "env": {
+        "DEBUG_SERVER_MODE": "true",
+        "AWS_SQS_ENDPOINT": "http://localhost:4567",
+        "AWS_LAMBDA_ENDPOINT": "http://localhost:4567",
+        "AWS_REGION": "us-east-1",
+        "POLL_INTERVAL_MS": "1000",
+        "MAX_MESSAGES_PER_POLL": "1",
+        "WAIT_TIME_SECONDS": "5"
+      },
+      "envFile": "${workspaceFolder}/.env.local",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "presentation": {
+        "group": "debug-server",
+        "order": 1
+      }
+    },
+    {
+      "name": "🧪 Debug Jest Tests (Current File)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "./services/orchestrator",
+        "run",
+        "test",
+        "--",
+        "--runInBand",
+        "--no-cache",
+        "${relativeFile}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "testing",
+        "order": 1
+      }
+    },
+    {
+      "name": "🧪 Debug E2E Tests",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "./services/orchestrator",
+        "run",
+        "test:e2e",
+        "--",
+        "--runInBand"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "group": "testing",
+        "order": 2
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "🎯 Debug Full Stack (Docker + Worker)",
+      "configurations": [
+        "🐳 Attach to NestJS Orchestrator (Docker)",
+        "🔧 Debug Lambda Worker Locally"
+      ],
+      "presentation": {
+        "order": 2
+      }
+    },
+    {
+      "name": "🎯 Full Stack Debug (Orchestrator + Workers)",
+      "configurations": [
+        "🚀 Debug Orchestrator (Local - No Docker)",
+        "🔬 Debug Lambda Workers (Debug-Server)"
+      ],
+      "stopAll": true,
+      "presentation": {
+        "order": 1
+      }
+    }
+  ]
+}

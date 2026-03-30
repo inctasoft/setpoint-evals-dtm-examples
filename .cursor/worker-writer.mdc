@@ -1,0 +1,375 @@
+---
+description: "Comprehensive guide for creating new Lambda worker pairs (Source + Processing / Input + Output) for new entity types"
+globs: ["tools/**", "workflows/*/workers/**"]
+alwaysApply: true
+---
+
+# Worker Writer
+
+**Purpose**: Guide creation of new Lambda worker pairs (Input + Output) for processing entity types in any workflow.
+
+## Overview
+
+Each entity type requires a **worker pair** (or trio for fan-out):
+- **Input Worker** (source phase): Loads data from source system (e.g., Validate, Register, Plan)
+- **Output Worker** (processing phase): Processes data to target schema and publishes to Kafka (e.g., Submit, Provision, Apply)
+- **Discovery Worker** (fan-out only): Discovers entity IDs, triggers N child input/output pairs
+
+**Modes:**
+- **Single**: One entity per job (e.g., primary entities)
+- **Batch**: Multiple entities in one Lambda call (legacy pattern)
+- **Fan-Out**: Discovery -> individual child steps for granular tracking/retry
+
+---
+
+## CRITICAL REMINDER - Read This First!
+
+**BEFORE implementing ANY new entity, you MUST:**
+
+1. Add testOptions fields to `TestOptionsDto` in `initiate-workflow-job.dto.ts`
+2. Add 2-3 OpenAPI/Swagger examples showing testOptions in action
+3. Update Dev ACK Simulator (if entity requires acknowledgements)
+4. For fan-out: Implement failure filter check in output worker
+
+**Without these, the entity will NOT be testable!** Simulated delays/failures won't work, and STEs will fail.
+
+---
+
+## Complete Implementation Checklist
+
+When adding a new entity (e.g., "your-entity"), follow this checklist in order:
+
+### Phase 1: Source Database Entity
+
+- [ ] **1.1** Create TypeORM entity for source database
+- [ ] **1.2** Export entity from `entities/index.ts`
+- [ ] **1.3** Add entity to DataSource configuration
+- [ ] **1.4** Add seed data for testing
+
+### Phase 2: Lambda Workers
+
+- [ ] **2.1** Create input (source) worker handler
+- [ ] **2.2** Create output (processing) worker handler
+- [ ] **2.3** Implement source query logic (database query)
+- [ ] **2.4** Implement processing logic (target schema mapping)
+- [ ] **2.5** Add unit tests for processing functions
+- [ ] **2.6** Add testOptions fields to `TestOptionsDto` (see CRITICAL section below)
+- [ ] **2.7** For fan-out workers: Implement failure filter check
+
+### Phase 3: Infrastructure Configuration
+
+- [ ] **3.1** Add steps to step config (enum + definitions)
+- [ ] **3.2** Add entity to dependency config (FK fields, topics)
+- [ ] **3.3** Update `callback.service.ts` to recognize new output step
+- [ ] **3.4** Update Dev ACK Simulator (REQUIRED if entity uses `requiresAcknowledgement: true`)
+- [ ] **3.5** Add queues to SQS Poller (`poller.ts`)
+- [ ] **3.6** Update Lambda deployment script
+- [ ] **3.7** Add Kafka topics to `docker-compose.kafka.yml` (`.completed`, `.failed`, `.ack`)
+- [ ] **3.8** Add SQS queues to `docker-compose.workers.yml` (main queue + DLQ)
+- [ ] **3.9** Update `preflight-check.sh` with new queues
+- [ ] **3.10** Update `setup-esm.sh` with queue->lambda mappings (if using ESM mode)
+
+### Phase 4: Testing & Documentation
+
+- [ ] **4.1** Build and deploy workers
+- [ ] **4.2** Create STE(s) for new entity
+- [ ] **4.3** Update TEST-DATA-REGISTRY.md
+- [ ] **4.4** Run STEs to verify
+
+---
+
+## Input (Source) Worker Pattern
+
+```typescript
+import { SQSEvent, SQSBatchResponse, Context, SQSRecord } from "aws-lambda";
+import {
+  createLogger,
+  sendSuccessCallback,
+  sendFailureCallback,
+  getSQSMessageAttributes,
+  buildRetryMetadata,
+  getSimulatedDelays,
+  createBatchItemFailure,
+} from "@dtm/worker-sdk";
+
+interface SourceWorkMessage {
+  jobId: string;
+  stepId: string;
+  input: {
+    // Workflow-specific fields from job payload
+    testOptions?: Record<string, unknown>;
+  };
+  callbackUrl: string;
+}
+
+const STEP_NAME = "ValidateYourEntity";
+
+export async function handler(
+  event: SQSEvent,
+  context: Context,
+): Promise<SQSBatchResponse> {
+  const batchItemFailures: { itemIdentifier: string }[] = [];
+  for (const record of event.Records) {
+    try {
+      await processRecord(record);
+    } catch (error) {
+      batchItemFailures.push(createBatchItemFailure(record));
+    }
+  }
+  return { batchItemFailures };
+}
+
+async function processRecord(record: SQSRecord): Promise<void> {
+  const startTime = Date.now();
+  const message: SourceWorkMessage = JSON.parse(record.body);
+  const { jobId, stepId, input, callbackUrl } = message;
+  const logger = createLogger(jobId, STEP_NAME);
+  const retryMetadata = buildRetryMetadata(record, getSQSMessageAttributes(record), startTime);
+
+  try {
+    // Handle simulated delays for testing
+    const delays = getSimulatedDelays(input.testOptions, "validateYourEntity");
+    if (delays.delay > 0) {
+      await new Promise((r) => setTimeout(r, delays.delay));
+    }
+
+    // Query data from source system
+    const data = await querySourceSystem(input.entityId);
+
+    // Send success callback
+    await sendSuccessCallback(
+      callbackUrl, jobId, stepId,
+      { records: data, retrievedAt: new Date().toISOString() },
+      data.length, retryMetadata, STEP_NAME,
+    );
+  } catch (error) {
+    await sendFailureCallback(
+      callbackUrl, jobId, stepId,
+      error instanceof Error ? error.message : String(error),
+      retryMetadata, STEP_NAME,
+    );
+    throw error;
+  }
+}
+```
+
+---
+
+## Output (Processing) Worker Pattern
+
+```typescript
+import { SQSEvent, SQSBatchResponse, Context, SQSRecord } from "aws-lambda";
+import {
+  createLogger,
+  sendSuccessCallback,
+  sendFailureCallback,
+  getSQSMessageAttributes,
+  buildRetryMetadata,
+  getSimulatedDelays,
+  createBatchItemFailure,
+} from "@dtm/worker-sdk";
+
+const STEP_NAME = "SubmitYourEntity";
+
+async function processRecord(record: SQSRecord): Promise<void> {
+  const startTime = Date.now();
+  const message = JSON.parse(record.body);
+  const { jobId, stepId, input, callbackUrl } = message;
+  const logger = createLogger(jobId, STEP_NAME);
+  const retryMetadata = buildRetryMetadata(record, getSQSMessageAttributes(record), startTime);
+
+  try {
+    const delays = getSimulatedDelays(input.testOptions, "submitYourEntity");
+    if (delays.delay > 0) {
+      await new Promise((r) => setTimeout(r, delays.delay));
+    }
+
+    // Get source data from dependency (input step)
+    const sourceData = input.dependencyData?.ValidateYourEntity;
+    if (!sourceData?.records) {
+      throw new Error("Missing data from ValidateYourEntity step");
+    }
+
+    // Process all records
+    const processed = sourceData.records.map(processRecord);
+
+    await sendSuccessCallback(
+      callbackUrl, jobId, stepId,
+      { processedRecords: processed },  // Key must match callback service!
+      processed.length, retryMetadata, STEP_NAME,
+    );
+  } catch (error) {
+    await sendFailureCallback(
+      callbackUrl, jobId, stepId,
+      error instanceof Error ? error.message : String(error),
+      retryMetadata, STEP_NAME,
+    );
+    throw error;
+  }
+}
+```
+
+---
+
+## CRITICAL: TestOptions Support
+
+**This is the #1 forgotten step when creating new workers!**
+
+Every new worker that supports simulated delays/failures needs corresponding fields in `TestOptionsDto`.
+
+### Step: Add TestOptions Fields to Orchestrator DTO
+
+**File:** `services/orchestrator/src/ingestion/dto/initiate-workflow-job.dto.ts`
+
+For EACH new worker, add these fields to `TestOptionsDto`:
+
+```typescript
+export class TestOptionsDto {
+  // For each entity, add (using workflow domain verbs):
+  @IsOptional() @IsNumber() @Type(() => Number)
+  validateYourEntity?: number;        // Input step processing delay (ms)
+
+  @IsOptional() @IsNumber() @Type(() => Number)
+  submitYourEntity?: number;          // Output step processing delay (ms)
+
+  @IsOptional() @IsNumber() @Type(() => Number)
+  submitYourEntityAckDelay?: number;  // ACK delay (ms)
+
+  @IsOptional() @IsArray() @IsNumber({}, { each: true }) @Type(() => Number)
+  submitYourEntityFailOnAttempts?: number[];  // Retry control
+
+  // FOR FAN-OUT WORKERS: Add singular versions + filter field!
+  @IsOptional() @IsNumber() @Type(() => Number)
+  validateYourItem?: number;    // Singular for fan-out child (input step)
+
+  @IsOptional() @IsNumber() @Type(() => Number)
+  submitYourItem?: number;      // Singular for fan-out child (output step)
+
+  @IsOptional() @IsArray() @IsString({ each: true })
+  submitYourItemFailForIds?: string[];  // Failure filter for partial failure testing!
+}
+```
+
+### Why This Matters
+
+Without these DTO fields, the testOptions get **silently stripped** by class-validator during request parsing. Your test payload will include the options, but the workers will never receive them!
+
+---
+
+## Fan-Out vs Batch Workers
+
+### Batch Workers (plural name)
+Process **multiple** entities in one invocation:
+- `ValidateEntities` -> validates ALL entities for a parent
+- `SubmitEntities` -> submits ALL validated entities
+
+### Fan-Out Child Workers (singular name)
+Process **ONE** entity per invocation:
+- `ValidateEntity` -> validates ONE entity (created by Discovery fan-out)
+- `SubmitEntity` -> submits ONE entity
+
+### Key Differences
+
+| Aspect | Batch Worker | Fan-Out Child Worker |
+|--------|--------------|---------------------|
+| Input | Parent key | Single entity ID |
+| Output | `{ entities: [...] }` (array) | `{ entity: {...} }` (single) |
+| testOptions field | `validateEntities`, `submitEntities` | `validateEntity`, `submitEntity` |
+| Failure filter | N/A | `submitEntityFailForIds` |
+| Parallel execution | No (one Lambda call) | Yes (N entities = N parallel Lambdas) |
+
+### Fan-Out Worker Failure Filtering
+
+**CRITICAL**: Fan-out workers MUST implement failure filtering to support partial failure tests:
+
+```typescript
+const failForIds = simulatedDelays?.["submitYourItemFailForIds"] as string[] | undefined;
+const shouldFail = !failForIds || failForIds.includes(entityId);
+if (shouldFail) {
+  await simulateFailure(...);
+} else {
+  logger.log(`Skipping simulated failure for ${entityId} (not in filter list)`);
+}
+```
+
+**Without this filter logic**, setting `submitYourItemFailOnAttempts: [1,2,3]` would fail ALL entities instead of just the targeted ones!
+
+---
+
+## Infrastructure Updates
+
+### Callback Service Recognition (CRITICAL!)
+
+**File:** `services/orchestrator/src/callback/callback.service.ts`
+
+**This is the #1 cause of "job stuck in processing" issues!**
+
+Your new entity must be recognized in the output step name matching logic for Kafka publishing.
+
+### Step Config
+
+**File:** `services/orchestrator/src/config/migration-steps.config.ts`
+
+Add enum values and step definitions with dependencies, queue names, and `requiresAcknowledgement` flag.
+
+### SQS Poller
+
+**File:** `tools/sqs-poller/src/poller.ts`
+
+Add your queue names to the QUEUES array.
+
+---
+
+## Common Pitfalls
+
+### Pitfall 0: TestOptions Fields Not Added to DTO (MOST COMMON!)
+**Symptom:** `simulateWork` and `simulateFailure` have no effect.
+**Fix:** Add ALL new testOptions fields to `TestOptionsDto`.
+
+### Pitfall 0b: Fan-Out Failure Filter Not Implemented
+**Symptom:** All fan-out children fail instead of just the targeted one.
+**Fix:** Implement filter check in worker before triggering failure.
+
+### Pitfall 1: Callback Service Doesn't Recognize Output Step
+**Symptom:** Job stuck in 'processing', all steps show 'completed' but job never completes.
+**Fix:** Add output step recognition in `callback.service.ts`.
+
+### Pitfall 2: Entity Not Found in DataSource
+**Symptom:** `EntityMetadataNotFoundError`
+**Fix:** Export entity from `entities/index.ts` and add to datasource config.
+
+### Pitfall 3: SQS Poller Not Picking Up Messages
+**Symptom:** Messages in SQS queue but Lambda never invoked.
+**Fix:** Add queue to `poller.ts` QUEUES array.
+
+### Pitfall 4: Wrong Output Key in Callback
+**Symptom:** Next step receives empty data.
+**Fix:** Ensure output key matches what callback service expects (e.g., `processedRecords`).
+
+### Pitfall 5: Missing Dependency in Step Definition
+**Symptom:** Steps run out of order or don't receive dependency data.
+**Fix:** Ensure `dependencies` array in step definition is correct.
+
+---
+
+## Validation Checklist
+
+Before considering implementation complete:
+
+- [ ] Entity builds without TypeORM errors
+- [ ] Input (source) worker compiles and runs in LocalStack
+- [ ] Output (processing) worker compiles and runs in LocalStack
+- [ ] Orchestrator recognizes new steps in job creation
+- [ ] Callback service publishes to Kafka correctly
+- [ ] SQS Poller invokes both workers
+- [ ] TestOptions fields added to `TestOptionsDto`
+- [ ] For fan-out: Failure filter implemented
+- [ ] STE passes with new entity (happy path)
+- [ ] STE passes with simulated delays
+- [ ] STE passes with simulated failure
+- [ ] For fan-out: Partial failure test works
+- [ ] FK injection works for dependent entities (if applicable)
+
+---
+
+**Remember:** The most common issue is forgetting to update `callback.service.ts` for the new output step. If your job gets stuck with all steps "completed" but job status "processing", check there first!

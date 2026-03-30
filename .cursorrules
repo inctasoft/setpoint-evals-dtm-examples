@@ -1,0 +1,49 @@
+# Repo Rules
+
+## Expert Knowledge Index
+
+This file serves as the master index for the project's AI coding rules. Refer to the specific `.mdc` files in the `.cursor/` directory for detailed guidelines.
+
+### Architecture & Core Logic
+
+- **[System Architecture](.cursor/architecture.mdc)**: The source of truth for the Extract-Transform pattern, Kafka/SQS flows, Lambda workers, and the Acknowledgement workflow.
+- **[API & Standards](.cursor/api-standards.mdc)**: Rules for `/api/v1`, `jobId` usage, legacy code removal, and Correlation ID tracing.
+
+### Testing & Validation
+
+- **[STE Testing Strategy](.cursor/ste-testing.mdc)**: **CRITICAL**. How to run and debug the State Transition Evals (`ste/`), understanding Parallel vs. In-Band modes, and using automated forensics.
+- **[STE Writer](.cursor/ste-writer.mdc)**: Comprehensive guide for creating new STEs with correct payloads, helpers, and verification patterns.
+- **[Testing Standards](.cursor/testing.mdc)**: Unit and integration testing guidelines using Jest.
+
+### Deployment & Environment
+
+- **[Deployment Ecosystem](.cursor/deployment.mdc)**: Mastering `docker-compose`, `local-env.sh`, and `Makefile`. Detailed guide on ESM vs. Poller worker modes and scaling.
+
+### Documentation
+
+- **[Documentation Standards](.cursor/docs.mdc)**: Where to put docs (`docs/` vs `CHANGELOG`), naming conventions, and Mermaid diagram rules.
+
+### Workflow-Specific Rules
+
+Each workflow may have its own `.cursor/` directory with architecture, STE, and worker guides:
+- `workflows/order-processing/.cursor/` — E-commerce pipeline (architecture)
+- `workflows/infra-provisioning/.cursor/` — Infrastructure provisioning pipeline
+- `workflows/iot-sensor-pipeline/.cursor/` — IoT data ingestion pipeline
+
+---
+
+## Key Directives (The "Golden Rules")
+
+1.  **No Legacy Code**: Aggressively identify and remove unused code/endpoints.
+2.  **STEs as Living Docs**: The `ste/` and `workflows/<name>/ste/` directories are not just tests; they are the documentation of our capabilities. Keep `README.md` files updated.
+3.  **Parallel by Default**: The STE system runs in parallel. Any new test must be categorized as Safe (Phase 1) or Destructive (Phase 2).
+4.  **Trace Everything**: Every log line must have a Correlation ID. Orchestrator, Workers, and DevAckSimulator are all trace-enabled.
+5.  **Secure Simulation**: Test options (delays, chaos) are strictly guarded by `ENABLE_REQUESTS_FOR_SIMULATED_DELAYS`.
+
+---
+
+## General Rules
+
+- **Clean Structure**: Use `CHANGELOG` for transient updates. Keep `docs/guides` for persistent knowledge.
+- **Diagrams**: Use Mermaid. Avoid numbered lists with dots (use `(1)` instead).
+- **Stack**: TypeScript for everything. `pnpm` for package management.

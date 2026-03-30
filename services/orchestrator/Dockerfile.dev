@@ -1,0 +1,76 @@
+FROM node:22-alpine
+
+RUN npm install -g pnpm@10.13.1
+
+WORKDIR /app
+
+# Copy workspace configuration files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
+
+# Copy all package.json files from workspaces for dependency resolution
+COPY packages/core/package.json ./packages/core/
+COPY packages/errors/package.json ./packages/errors/
+COPY packages/database/package.json ./packages/database/
+COPY packages/kafka-producer/package.json ./packages/kafka-producer/
+COPY packages/kafka-consumer/package.json ./packages/kafka-consumer/
+COPY workflows/order-processing/package.json ./workflows/order-processing/
+COPY workflows/iot-sensor-pipeline/package.json ./workflows/iot-sensor-pipeline/
+COPY workflows/infra-provisioning/package.json ./workflows/infra-provisioning/
+COPY services/orchestrator/package.json ./services/orchestrator/
+
+# Install dependencies for all workspaces (skip scripts like husky)
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+# Copy workspace package sources
+COPY packages/core/tsconfig.json ./packages/core/
+COPY packages/core/src ./packages/core/src
+
+COPY packages/errors/tsconfig.json ./packages/errors/
+COPY packages/errors/src ./packages/errors/src
+
+COPY packages/database/tsconfig.json ./packages/database/
+COPY packages/database/src ./packages/database/src
+
+COPY packages/kafka-producer/tsconfig.json ./packages/kafka-producer/
+COPY packages/kafka-producer/src ./packages/kafka-producer/src
+
+COPY packages/kafka-consumer/tsconfig.json ./packages/kafka-consumer/
+COPY packages/kafka-consumer/src ./packages/kafka-consumer/src
+
+# Copy workflow configs (needed by orchestrator at runtime)
+COPY workflows/order-processing/tsconfig.json ./workflows/order-processing/
+COPY workflows/order-processing/workflow.config.ts ./workflows/order-processing/
+
+COPY workflows/iot-sensor-pipeline/tsconfig.json ./workflows/iot-sensor-pipeline/
+COPY workflows/iot-sensor-pipeline/workflow.config.ts ./workflows/iot-sensor-pipeline/
+
+COPY workflows/infra-provisioning/tsconfig.json ./workflows/infra-provisioning/
+COPY workflows/infra-provisioning/workflow.config.ts ./workflows/infra-provisioning/
+
+# Build workspace dependencies (order matters: core first, then packages, then workflow)
+RUN pnpm --filter @dtm/core run build
+RUN pnpm --filter @dtm/errors run build
+RUN pnpm --filter @dtm/database run build
+RUN pnpm --filter @dtm/kafka-producer run build
+RUN pnpm --filter @dtm/kafka-consumer run build
+RUN pnpm --filter @dtm-workflows/order-processing run build
+RUN pnpm --filter @dtm-workflows/iot-sensor-pipeline run build
+RUN pnpm --filter @dtm-workflows/infra-provisioning run build
+
+# Copy orchestrator source files (exclude node_modules, dist, etc.)
+COPY services/orchestrator/tsconfig.json ./services/orchestrator/
+COPY services/orchestrator/tsconfig.build.json ./services/orchestrator/
+COPY services/orchestrator/nest-cli.json ./services/orchestrator/
+COPY services/orchestrator/src ./services/orchestrator/src
+COPY services/orchestrator/test ./services/orchestrator/test
+
+# Set working directory to orchestrator
+WORKDIR /app/services/orchestrator
+
+# Expose the application port and debugger port
+EXPOSE 3000
+EXPOSE 9229
+
+# Start in development mode (migrations handled by init container)
+# Can be overridden by docker-compose.dev.yml for debug mode
+CMD ["pnpm", "run", "start:dev"]

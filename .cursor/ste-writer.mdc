@@ -1,0 +1,1092 @@
+---
+description: "Comprehensive guide for creating new STEs (State Transition Evals), including test structure, SQS/DLQ patterns, and seed data integration"
+globs: ["ste/**", "workflows/*/ste/**"]
+alwaysApply: true
+---
+
+# STE Writer (State Transition Evals)
+
+**Purpose**: Guide creation of new STE tests for DTM, ensuring consistency, completeness, and adherence to established patterns.
+
+## Overview
+
+STEs (State Transition Evals) serve dual purposes:
+1. **Automated Testing**: Verify system behavior across all components
+2. **Living Documentation**: Each STE is a verified, documented scenario
+
+**Core Principle**: Every STE should be runnable standalone OR in parallel with other safe STEs.
+
+---
+
+## Complete Workflow Diagram
+
+```mermaid
+graph TD
+    A[Want to create new STE] --> B[Read ste-writer.mdc]
+    B --> C[Copy 00-template/]
+    C --> D{Need custom seed data?}
+    D -->|Yes| E[Read seed-data-writer.mdc]
+    D -->|No| F[Use existing test data]
+    E --> G[Write SQL seed script]
+    G --> H[Update TEST-DATA-REGISTRY.md]
+    F --> H2[Update TEST-DATA-REGISTRY.md]
+    H --> I[Write test.sh logic]
+    H2 --> I
+    I --> J[Write README.md with Mermaid]
+    J --> K[Register in run-all.sh]
+    K --> L[Test standalone]
+    L --> M[Test in parallel]
+    M --> N[Complete!]
+
+    style A fill:#e1f5ff
+    style N fill:#d4edda
+    style D fill:#fff3cd
+    style E fill:#f8d7da
+    style G fill:#f8d7da
+```
+
+**This diagram shows the complete process for creating a new STE.** Follow the steps in order, and reference the detailed sections below for each step.
+
+---
+
+## Starting Point: The Template
+
+### Location
+
+`ste/00-template/` (core engine template) or `workflows/00-template/` (workflow template)
+
+**Contents**:
+- `test.sh` - Executable test script with comprehensive structure
+- `README.md` - Documentation template with all required sections
+
+### When to Use Template
+
+**Always start with the template** for new STEs. It includes:
+- Proper script structure and error handling
+- All required sections and documentation
+- Best practice patterns for API calls, polling, verification
+- SQS/DLQ querying patterns with visibility timeout handling
+- Test data seeding guidelines
+
+### Copying the Template
+
+```bash
+# Create new STE directory
+cd ste
+cp -r 00-template XX-your-ste-name
+
+# Make test.sh executable
+chmod +x XX-your-ste-name/test.sh
+
+# Edit files
+cd XX-your-ste-name
+# Update test.sh with your test logic
+# Update README.md with your scenario details
+```
+
+---
+
+## STE Structure Requirements
+
+### Directory Naming
+
+**Pattern**: `XX-descriptive-name`
+- `XX` = Two-digit eval number (e.g., 15, 16, 17)
+- `descriptive-name` = Kebab-case description (e.g., `large-payload-handling`)
+
+**Examples**:
+- ✅ `15-orphaned-job-recovery`
+- ✅ `16-large-payload-stress`
+- ✅ `17-unicode-special-chars`
+- ❌ `15_orphaned_recovery` (use kebab-case, not snake_case)
+- ❌ `orphaned-recovery` (missing number prefix)
+
+### Required Files
+
+1. **`test.sh`** (REQUIRED)
+   - Executable bash script
+   - Sources `../shared/helpers.sh`
+   - Uses `set -e` for error propagation
+   - Includes proper banner, logging, and verification
+
+2. **`README.md`** (REQUIRED)
+   - Full documentation of scenario
+   - Mermaid diagram of flow (REQUIRED)
+   - Expected timeline
+   - Troubleshooting guide
+   - Related documentation links
+
+### Optional Files
+
+- `seed-eval-XX-name.sql` - Custom seed data (if needed beyond standard test consumers)
+- `*.json` - Sample payloads for documentation
+- Additional helper scripts (mark as executable)
+
+---
+
+## ✍️ Writing test.sh
+
+### Essential Structure
+
+```bash
+#!/bin/bash
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Eval XX: [Your Eval Name]
+# ═══════════════════════════════════════════════════════════════════════════
+
+set -e  # Exit on any error
+
+# Load shared helpers
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../shared/helpers.sh"
+
+# Configuration
+EVAL_NAME="Eval XX: [Your Eval Name]"
+EVAL_PURPOSE="[One-line purpose]"
+TEST_CUSTOMER_ID=XXXX  # From TEST-DATA-REGISTRY.md
+TEST_ORDER_ID=XXXX
+
+# Display banner
+display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
+
+# [Your test logic here]
+
+# Exit with summary
+exit_with_summary "$PASS_COUNT" "$FAIL_COUNT"
+```
+
+### Key Sections (From Template)
+
+1. **Environment Validation** (Recommended)
+   ```bash
+   if ! validate_env_for_e2e; then
+     log_error "Environment validation failed"
+     exit 1
+   fi
+   ```
+
+2. **Initiate Job** (Required)
+   ```bash
+   # Capture both jobId and correlationId
+   IFS=':' read -r JOB_ID CORRELATION_ID <<< "$(initiate_job "$PAYLOAD")" || exit 1
+   validate_job_id "$JOB_ID" || exit 1
+   ```
+
+3. **Monitor Progress** (Required)
+   ```bash
+   # poll_job JOB_ID MAX_POLLS POLL_INTERVAL
+   # MAX_POLLS * POLL_INTERVAL should exceed expected duration
+   poll_job "$JOB_ID" 30 3  # 90 seconds total
+   ```
+
+4. **Display Results** (Required)
+   ```bash
+   display_results "$JOB_ID"
+   ```
+
+5. **Verification** (Required)
+   ```bash
+   PASS_COUNT=0
+   FAIL_COUNT=0
+
+   if verify_job_status "$JOB_ID" "COMPLETED"; then
+     PASS_COUNT=$((PASS_COUNT + 1))
+   else
+     FAIL_COUNT=$((FAIL_COUNT + 1))
+   fi
+
+   # Add more verifications...
+   ```
+
+6. **Summary & Exit** (Required)
+   ```bash
+   exit_with_summary "$PASS_COUNT" "$FAIL_COUNT"
+   ```
+
+---
+
+## Test Payload Patterns
+
+### Basic Happy Path
+
+> CRITICAL: `externalSystemId` MUST be a valid UUID format!
+> The API validates this field with `@IsUUID()` decorator.
+
+```json
+{
+  "deduplicationKey": "your-entity-id",
+  "externalSystemId": "e25fae25-fae2-4ae2-ae25-fae25ae25ae2",
+  "requestedBy": "ste-XX"
+}
+```
+
+**These will cause HTTP 400:**
+```json
+"externalSystemId": "test-ste-XX-name"       // NOT a UUID!
+```
+
+**Pattern**: Use `eXXfaeXX-faeX-4aeX-aeXX-faeXXaeXXaeX` where XX is your STE number.
+
+### With Simulated Delays
+
+```json
+{
+  "deduplicationKey": "your-entity-id",
+  "externalSystemId": "eXXfaeXX-faeX-4aeX-aeXX-faeXXaeXXaeX",
+  "requestedBy": "ste-XX",
+  "testOptions": {
+    "validateYourEntity": 500,
+    "submitYourEntity": 500
+  }
+}
+```
+
+### With Simulated Failures
+
+#### Pattern 1: Retry Recovery
+
+```json
+{
+  "testOptions": {
+    "submitYourEntityFailOnAttempts": [1, 2]
+  }
+}
+```
+Fail attempts 1 and 2, succeed on attempt 3.
+
+#### Pattern 2: DLQ (Exhaust All Retries)
+
+```json
+{
+  "testOptions": {
+    "submitYourEntityFailOnAttempts": [1, 2, 3]
+  }
+}
+```
+All attempts fail -> message routed to DLQ.
+
+#### Pattern 3: Delayed Failure
+
+```json
+{
+  "testOptions": {
+    "submitYourEntityFailureAfter": 100,
+    "submitYourEntityFailOnAttempts": [1, 2, 3]
+  }
+}
+```
+
+### With ACK Delays
+
+```json
+{
+  "testOptions": {
+    "submitYourEntityAckDelay": 5000
+  }
+}
+```
+
+### With Deduplication Disabled
+
+```json
+{
+  "enableDeduplication": false
+}
+```
+
+**Note:** Most STEs should disable deduplication to prevent interference between runs.
+
+**For workflow-specific payload examples** (entity names, cascade patterns, batch vs fan-out modes), see `workflows/order-processing/.cursor/ste-writer.mdc`.
+
+---
+
+## SQS/DLQ Querying Patterns
+
+### Critical Concept: Visibility Timeout
+
+**Problem**: When you receive a message from SQS, it becomes **invisible** for 30 seconds (default). This causes race conditions in tests.
+
+**Solution**: Always use `--visibility-timeout 1` when inspecting (not deleting) messages.
+
+### Safe DLQ Query Pattern
+
+```bash
+# ✅ CORRECT: Short visibility timeout
+check_job_in_dlq() {
+  local job_id="$1"
+  local dlq_queue="order-submit-customer-dlq"
+  
+  messages=$(aws --endpoint-url=http://localhost:4566 sqs receive-message \
+    --queue-url "http://localhost:4566/000000000000/${dlq_queue}" \
+    --max-number-of-messages 10 \
+    --visibility-timeout 1 \  # ← Makes message visible again after 1s
+    --attribute-names All \
+    2>/dev/null)
+  
+  if echo "$messages" | jq -e ".Messages[]? | select(.Body | contains(\"$job_id\"))" > /dev/null 2>&1; then
+    return 0  # Found
+  fi
+  
+  return 1  # Not found
+}
+```
+
+### Retry Logic for Eventual Consistency
+
+```bash
+# Robust check with retries for LocalStack eventual consistency
+check_job_in_dlq_with_retry() {
+  local job_id="$1"
+  local max_attempts=5
+  local retry_delay=3
+  
+  for attempt in $(seq 1 $max_attempts); do
+    if check_job_in_dlq "$job_id"; then
+      return 0  # Found!
+    fi
+    
+    # Wait before retry (except on last attempt)
+    [ $attempt -lt $max_attempts ] && sleep "$retry_delay"
+  done
+  
+  return 1  # Not found after all retries
+}
+```
+
+### Parallel-Safe DLQ Verification
+
+**Problem**: Generic DLQ count checks (`dlq_count > 0`) fail in parallel runs if other tests' messages are present.
+
+**Solution**: Always search for your specific job's message:
+
+```bash
+# ❌ BAD: Generic count (not parallel-safe)
+dlq_count=$(aws sqs get-queue-attributes \
+  --queue-url "..." \
+  --attribute-names ApproximateNumberOfMessages \
+  --query 'Attributes.ApproximateNumberOfMessages' \
+  --output text)
+
+if [ "$dlq_count" -gt 0 ]; then
+  # Could be another test's message!
+fi
+
+# ✅ GOOD: Job-specific search (parallel-safe)
+if check_job_in_dlq "$JOB_ID"; then
+  log_success "This test's message found in DLQ"
+fi
+```
+
+### Complete DLQ Test Pattern (From Eval 03)
+
+See `ste/02-dlq-permanent-failure/test.sh` for the complete reference implementation including:
+- Job-specific DLQ message search
+- Retry logic with distinct exit codes (0=found, 1=not found, 2=tools unavailable)
+- SQS visibility timeout handling
+- Waiting for asynchronous DLQ routing (SQS moves message after visibility timeout expires)
+
+**Key Learning**: After job status becomes "FAILED", wait 30-50 seconds for SQS to route the message to DLQ (visibility timeout + processing delay).
+
+---
+
+## Test Data / Seed Data Integration
+
+### CRITICAL: Always Use Dedicated Seed Data for New STEs
+
+**RULE: Every new STE MUST have its own dedicated test data.**
+
+**Why?**
+- **Debugging**: When an eval fails, you can query the database for that specific consumer without interference
+- **Isolation**: Parallel test runs don't conflict with each other
+- **Traceability**: Easy to identify which records belong to which eval
+- **Maintenance**: Changing one eval's data doesn't break others
+
+**Pattern**:
+1. Choose next available consumer from the registry (1033+)
+2. Add seed data to `workflows/order-processing/source-db/init-scripts/03-isolated-eval-data.sql`
+3. Update `TEST-DATA-REGISTRY.md` with the new consumer assignment
+4. Reference your dedicated consumer in test.sh
+
+**DO NOT reuse existing consumers from other evals** (even if they seem to have the right data).
+
+### When to Create Custom Seed Data
+
+Create custom seed data when:
+- ✅ **Creating a new eval** (ALWAYS - see rule above)
+- ✅ Testing specific edge cases (nulls, special characters, boundaries)
+- ✅ Testing complex relationships (multiple memberships, cross-references)
+- ✅ Reproducing specific production scenarios
+- ✅ Testing data validation logic
+
+**Don't reuse existing test consumers**:
+- ❌ Even if an existing consumer has the "right" data structure
+- ❌ Even for "simple" tests that seem similar to existing evals
+- ❌ Even if "just testing with testOptions"
+
+### Using Existing Test Consumers
+
+**Check first**: `workflows/order-processing/ste/TEST-DATA-REGISTRY.md`
+
+Standard consumers available:
+- **1000**: Happy path (standard, clean data)
+- **1001**: Multiple memberships (array testing)
+- **1002**: Retry testing (transient failures)
+- **1003**: DLQ testing (permanent failures)
+- **1004-1014**: Various scenarios (see registry)
+
+**Example**: Reusing existing test data
+```bash
+# No need for custom seed data - use customer 1
+TEST_CUSTOMER_ID=1
+TEST_ORDER_ID=1
+
+PAYLOAD='{
+  "deduplicationKey": "test-eval-15-my-scenario",
+  "variant": "quick-order",
+  "payload": {
+    "customerId": '${TEST_CUSTOMER_ID}',
+    "orderId": '${TEST_ORDER_ID}'
+  },
+  "testOptions": {
+    "validateCustomer": 2000  # Custom delay for your test
+  }
+}'
+```
+
+### Creating Custom Seed Data
+
+**See**: `database-seed-data-writer.mdc` for complete SQL guidelines.
+
+**Quick Steps**:
+
+1. **Choose Consumer ID**: Check TEST-DATA-REGISTRY.md, use 1020-1049 range
+2. **Write SQL Script**: Use transaction safety, idempotency patterns
+3. **Run Seed Script**:
+   ```bash
+   docker exec -i dtm-order-processing-source-db psql -U order_user -d order_processing_db < seed-eval-XX.sql
+   ```
+4. **Verify**:
+   ```bash
+   docker exec dtm-order-processing-source-db psql -U order_user -d order_processing_db \
+     -c "SELECT consumer_no, forename, surname FROM dbo.consumer WHERE consumer_no = 1025;"
+   ```
+5. **Document**: Update TEST-DATA-REGISTRY.md
+
+### Referencing Seed Data in Eval
+
+In `README.md`:
+```markdown
+## Test Data
+
+See [TEST-DATA-REGISTRY.md](../TEST-DATA-REGISTRY.md) for details.
+
+- **Consumer No**: 1025 - "Large Payload Test Consumer"
+- **Entity ID**: ENTITY-1025
+- **Source**: `workflows/order-processing/source-db/init-scripts/seed-eval-15-large-payload.sql`
+- **Special Properties**: 
+  - Exceptionally long field values (testing payload limits)
+  - Multiple related records (testing batch processing)
+```
+
+---
+
+## Writing README.md
+
+### Required Sections (From Template)
+
+All sections in `00-template/README.md` are REQUIRED. Key highlights:
+
+#### 1. Purpose (REQUIRED)
+
+Clear description of what the eval tests, why it exists, and what makes it unique.
+
+#### 2. Mermaid Diagram (REQUIRED)
+
+**Every eval MUST include a Mermaid diagram** showing the test flow.
+
+Example structure:
+```markdown
+## Flow Diagram
+
+\`\`\`mermaid
+sequenceDiagram
+    participant Test as Test Script
+    participant Orch as Orchestrator
+    participant Worker as Lambda Worker
+    participant SQS as SQS Queue
+    participant DLQ as Dead Letter Queue
+    
+    Test->>Orch: POST /api/v1/workflows/:name/jobs
+    Orch-->>Test: 201 Created (jobId)
+    
+    Orch->>SQS: Publish ValidateCustomer
+    SQS->>Worker: Poll message
+    Worker-->>Worker: Process (FAIL)
+    Worker->>SQS: Retry (attempt 1)
+    
+    # ... more steps
+    
+    SQS->>DLQ: Move after maxReceiveCount
+    Test->>DLQ: Check for message
+    DLQ-->>Test: Message found ✅
+\`\`\`
+```
+
+**See**: `ste/02-dlq-permanent-failure/README.md` for comprehensive Mermaid diagram examples.
+
+#### 3. Expected Timeline (REQUIRED)
+
+Document when events should occur:
+
+```markdown
+| Time     | Event                    | Expected State       |
+|----------|--------------------------|----------------------|
+| `t=0s`   | Job initiated            | Job created          |
+| `t=~2s`  | Source steps complete    | Steps completed      |
+| `t=~5s`  | Processing steps complete | Steps completed      |
+| `t=~8s`  | ACKs received           | Job COMPLETED ✅     |
+```
+
+#### 4. SQS/DLQ Querying Guide (NEW, RECOMMENDED)
+
+If your eval involves SQS or DLQ:
+- Include visibility timeout patterns
+- Document retry logic
+- Explain eventual consistency waits
+
+**See**: `00-template/README.md` sections "Advanced Debugging: SQS/DLQ Querying"
+
+#### 5. Test Data Seeding Guide (NEW, RECOMMENDED)
+
+If your eval uses custom seed data:
+- Document the seed script location
+- Explain what makes the data special
+- Provide verification queries
+
+**See**: `00-template/README.md` section "Seeding Test Data"
+
+---
+
+## Shared Helpers Reference
+
+**Location**: `ste/shared/helpers.sh` (generic layer) + `workflows/<name>/ste/shared/helpers.sh` (workflow layer)
+
+### Two-Layer Helper Architecture
+
+STEs use a two-layer helper chain:
+1. **Generic layer** (`ste/shared/helpers.sh`): `initiate_job`, `poll_job`, `verify_step_status`, etc.
+2. **Workflow layer** (`workflows/<name>/ste/shared/helpers.sh`): Sources the generic layer and adds workflow-specific wrapper helpers with default parameters.
+
+Core STEs source the generic helpers directly. Workflow STEs source their workflow helpers (which chain to the generic layer).
+
+### Essential Functions
+
+```bash
+# Display eval banner
+display_eval_banner "Eval XX: Name" "Purpose description"
+
+# Initiate job (returns jobId:correlationId)
+IFS=':' read -r JOB_ID CORRELATION_ID <<< "$(initiate_job "$PAYLOAD")" || exit 1
+
+# Validate UUID format
+validate_job_id "$JOB_ID" || exit 1
+
+# Poll job status
+poll_job "$JOB_ID" MAX_POLLS POLL_INTERVAL
+
+# Display final results
+display_results "$JOB_ID"
+
+# Verify job status
+if verify_job_status "$JOB_ID" "COMPLETED"; then
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
+
+# Verify individual step status
+if verify_step_status "$JOB_ID" "ValidateCustomer" "COMPLETED"; then
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
+
+# Exit with summary
+exit_with_summary "$PASS_COUNT" "$FAIL_COUNT"
+```
+
+### Logging Functions
+
+```bash
+log_info "Information message"
+log_success "Success message (green)"
+log_warning "Warning message (yellow)"
+log_error "Error message (red)"
+log_section "SECTION HEADER"
+```
+
+---
+
+## Registration Checklist
+
+After creating a new STE:
+
+### 1. Update run-all.sh (REQUIRED)
+
+Add to the appropriate arrays:
+
+```bash
+# In ste/run-all.sh (or workflows/<name>/ste/run-all.sh for workflow STEs)
+
+# Add to all evals list
+ALL_EVALS=(
+  01-happy-path
+  02-transient-failure-recovery
+  # ... existing evals ...
+  15-your-new-eval  # ← Add here
+)
+
+# Add to SAFE or DESTRUCTIVE category
+SAFE_EVALS=(
+  01-happy-path
+  # ... existing safe evals ...
+  15-your-new-eval  # ← If safe (doesn't kill containers/purge)
+)
+
+# OR
+
+DESTRUCTIVE_EVALS=(
+  11-partial-ack-failure
+  # ... existing destructive evals ...
+  15-your-new-eval  # ← If destructive (kills containers, purges, etc.)
+)
+```
+
+**Safe vs. Destructive**:
+- **Safe**: Can run in parallel with other evals (most evals)
+- **Destructive**: Kills containers, purges queues/DBs, interferes with other tests
+
+### 2. Update TEST-DATA-REGISTRY.md (REQUIRED)
+
+Add your consumer to the Quick Reference table and create a detailed profile.
+
+### 3. Test Standalone (REQUIRED)
+
+```bash
+cd ste/15-your-eval-name
+./test.sh
+```
+
+Verify:
+- ✅ Script runs without errors
+- ✅ All verifications pass
+- ✅ Output is clear and informative
+- ✅ Exit code is 0 for success
+
+### 4. Test in Parallel Mode (RECOMMENDED)
+
+```bash
+./ste/run-all.sh --eval 15
+```
+
+Verify:
+- ✅ No interference with other evals
+- ✅ Passes consistently
+- ✅ Forensics collected properly on failure
+
+### 5. Update Documentation Index (OPTIONAL)
+
+If your eval introduces new patterns or concepts, consider updating:
+- `ste/README.md` - Overview of eval suite
+- `docs/guides/` - If demonstrating new flow
+- `.cursor/ste-testing.mdc` - If introducing new best practices
+
+---
+
+## Common Pitfalls
+
+### ❌ Pitfall -1: Using Non-Existent Helper Functions (CRITICAL!)
+
+**This is a common cause of immediate "parse error" failures!**
+
+```bash
+# ❌ WRONG: get_job_details DOES NOT EXIST in helpers.sh!
+JOB_STATUS=$(get_job_details "${JOB_ID}")
+STATUS=$(echo "${JOB_STATUS}" | jq -r '.job.status')
+# Result: "parse error: Invalid numeric literal at line 2, column 0"
+
+# ✅ CORRECT: Use get_job_status with JOB_ID
+JOB_STATUS=$(get_job_status "${JOB_ID}")
+STATUS=$(echo "${JOB_STATUS}" | jq -r '.status')
+```
+
+**Available Helper Functions (from `shared/helpers.sh`):**
+
+| Function | Parameters | Returns | Use Case |
+|----------|------------|---------|----------|
+| `initiate_job` | `"$PAYLOAD"` | `jobId:correlationId` | Start job |
+| `get_job_status` | `"$JOB_ID"` | Full job JSON | Get job details |
+| `poll_job` | `"$JOB_ID" MAX_POLLS INTERVAL` | void | Wait for completion |
+| `verify_job_status` | `"$JOB_ID" "STATUS"` | exit code | Check job status |
+| `verify_step_status` | `"$JOB_ID" "STEP" "STATUS"` | exit code | Check step status |
+| `display_results` | `"$JOB_ID"` | void | Show formatted results |
+| `exit_with_summary` | `$PASS $FAIL` | exit code | Exit with summary |
+
+**⛔ Functions That DON'T Exist:**
+- `get_job_details` - Use `get_job_status` instead
+- `check_status` - Use `verify_job_status` instead
+
+**Pattern**: Always check `shared/helpers.sh` for available functions before writing custom ones.
+
+---
+
+### ❌ Pitfall 0: Invalid externalSystemId format (CRITICAL!)
+
+**This is a very common cause of immediate HTTP 400 failures!**
+
+```bash
+# ❌ WRONG: Plain string (NOT a UUID)
+PAYLOAD='{
+  "externalSystemId": "test-eval-15-my-scenario",
+  ...
+}'
+# Result: HTTP 400 - "externalSystemId must be a UUID"
+
+# ✅ CORRECT: Valid UUID format
+PAYLOAD='{
+  "externalSystemId": "e15fae15-fae1-4ae1-ae15-fae15ae15ae1",
+  ...
+}'
+# Result: HTTP 201 - Job initiated
+```
+
+**Why This Happens**:
+- The `InitiateWorkflowJobDto` uses `@IsUUID()` decorator for validation
+- Any non-UUID string causes immediate rejection
+- The error message may not clearly indicate which field is invalid
+
+**Pattern**: Use `eXXfaeXX-faeX-4aeX-aeXX-faeXXaeXXaeX` where XX is your eval number
+
+### ❌ Pitfall 1: Using single-capture for initiate_job (CRITICAL!)
+
+**This is the #1 cause of immediate eval failures!**
+
+```bash
+# ❌ WRONG: Single capture results in multi-line string, not valid UUID
+JOB_ID=$(initiate_job "$PAYLOAD") || exit 1
+# JOB_ID now contains:
+# "099738e3-4cf2-4ce9-8dd6-878231fe1012
+#  faa1b0cb-5817-49d1-9493-399b28533aa1"
+# ↑ This breaks UUID validation and causes immediate failure!
+
+# ✅ CORRECT: Dual-ID capture splits jobId and correlationId
+IFS=':' read -r JOB_ID CORRELATION_ID <<< "$(initiate_job "$PAYLOAD")" || exit 1
+validate_job_id "$JOB_ID" || exit 1
+# JOB_ID: "099738e3-4cf2-4ce9-8dd6-878231fe1012" ✅
+# CORRELATION_ID: "faa1b0cb-5817-49d1-9493-399b28533aa1" ✅
+```
+
+**Why This Happens**:
+- `initiate_job` returns `jobId:correlationId` (colon-separated)
+- Single capture `$(...)` treats this as multi-line output
+- Subsequent UUID validation fails
+- Script exits with cryptic `FAIL:3` error
+
+**See**: Dual-ID capture pattern is documented in the template at `ste/00-template/test.sh`
+
+### ❌ Pitfall 2: Not validating JOB_ID format
+
+```bash
+# ❌ BAD: Malformed JOB_ID causes cryptic errors later
+IFS=':' read -r JOB_ID CORRELATION_ID <<< "$(initiate_job "$PAYLOAD")" || exit 1
+# JOB_ID might be malformed if function fails
+
+# ✅ GOOD: Validate UUID format immediately
+IFS=':' read -r JOB_ID CORRELATION_ID <<< "$(initiate_job "$PAYLOAD")" || exit 1
+validate_job_id "$JOB_ID" || exit 1  # ← Always validate!
+```
+
+### ❌ Pitfall 3: Insufficient polling duration
+
+```bash
+# ❌ BAD: Only 30 seconds for a test that needs 60s
+poll_job "$JOB_ID" 10 3  # 10 * 3 = 30 seconds (too short!)
+
+# ✅ GOOD: Generous timeout matching expected duration + buffer
+poll_job "$JOB_ID" 30 3  # 30 * 3 = 90 seconds
+```
+
+### ❌ Pitfall 4: Not handling eventual consistency
+
+```bash
+# ❌ BAD: Single DLQ check (may fail due to timing)
+if check_job_in_dlq "$JOB_ID"; then
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
+
+# ✅ GOOD: Retry logic for eventual consistency
+if check_job_in_dlq_with_retry "$JOB_ID" 5 3; then
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
+```
+
+### ❌ Pitfall 5: Using consumer IDs without checking registry
+
+```bash
+# ❌ BAD: Assumed 1025 was available (might conflict)
+TEST_CONSUMER_NO=1025
+
+# ✅ GOOD: Checked TEST-DATA-REGISTRY.md first
+TEST_CONSUMER_NO=1025  # Verified available in registry
+```
+
+### ❌ Pitfall 6: Forgetting `set -e`
+
+```bash
+# ❌ BAD: Errors don't stop execution
+#!/bin/bash
+source ../shared/helpers.sh
+# ... test continues even if helper functions fail
+
+# ✅ GOOD: Exit on any error
+#!/bin/bash
+set -e
+source ../shared/helpers.sh
+```
+
+### ❌ Pitfall 7: Not using visibility timeout for SQS inspection
+
+```bash
+# ❌ BAD: Default 30s visibility timeout causes race conditions
+messages=$(aws sqs receive-message --queue-url "..." )
+
+# ✅ GOOD: 1s visibility for inspection
+messages=$(aws sqs receive-message --queue-url "..." --visibility-timeout 1)
+```
+
+### ❌ Pitfall 8: Testing batch steps with default job type (COMMON!)
+
+**The system defaults to fan-out mode (`default` job type). Tests for batch mode will fail!**
+
+```bash
+# ❌ WRONG: No jobType specified → defaults to fan-out
+PAYLOAD='{
+  "entityKey": "ENTITY-1021",
+  "externalSystemId": "test-eval"
+}'
+# Test then checks for "ValidateOrders" / "SubmitOrders" (batch steps)
+# Result: Steps not found! Fan-out uses DiscoverOrders/ValidateOrder/SubmitOrder
+
+# ✅ CORRECT for batch testing: Explicitly set jobType
+PAYLOAD='{
+  "entityKey": "ENTITY-1021",
+  "externalSystemId": "test-eval",
+  "jobType": "batch"
+}'
+# Now ValidateOrders and SubmitOrders will be created
+```
+
+**When to use which mode:**
+- `"jobType": "batch"` - Testing `ValidateOrders` / `SubmitOrders` (batch)
+- `"jobType": "default"` or omit - Testing `DiscoverOrders` / `ValidateOrder` / `SubmitOrder` (fan-out)
+
+### ❌ Pitfall 9: Test data not verified in database
+
+**Always verify test data exists BEFORE running tests:**
+
+```bash
+# ❌ BAD: Assume consumer 1025 has orders
+TEST_CONSUMER_NO=1025
+# Run test... fails because 1025 has no orders!
+
+# ✅ GOOD: Verify data exists first
+docker exec dtm-order-processing-source-db psql -U order_user -d order_processing_db -c \
+  "SELECT COUNT(*) FROM dbo.orders WHERE consumer_no = 1025;"
+# If 0: Add orders or use different consumer
+```
+
+**Common data verification queries:**
+
+```bash
+# Check consumer exists
+docker exec dtm-order-processing-source-db psql -U order_user -d order_processing_db -c \
+  "SELECT consumer_no, forename, surname FROM dbo.consumer WHERE consumer_no = 1025;"
+
+# Check orders exist
+docker exec dtm-order-processing-source-db psql -U order_user -d order_processing_db -c \
+  "SELECT order_no, consumer_no FROM dbo.orders WHERE consumer_no = 1025;"
+
+# Check which consumers have orders
+docker exec dtm-order-processing-source-db psql -U order_user -d order_processing_db -c \
+  "SELECT consumer_no, COUNT(*) as order_count FROM dbo.orders GROUP BY consumer_no ORDER BY consumer_no;"
+```
+
+---
+
+## Best Practices Summary
+
+1. **CRITICAL**: Every new STE MUST have dedicated seed data (never reuse other STEs' test data)
+   ```bash
+   # Always add to 03-isolated-eval-data.sql with your dedicated consumer
+   # Update TEST-DATA-REGISTRY.md with your assignment
+   ```
+2. ✅ **CRITICAL**: Use only existing helper functions from `shared/helpers.sh` (see Pitfall #-1)
+   ```bash
+   # ✅ Use get_job_status (check helpers.sh for available functions)
+   JOB_STATUS=$(get_job_status "${JOB_ID}")
+   ```
+3. ✅ **CRITICAL**: `externalSystemId` must be a valid UUID (see Pitfall #0)
+   ```bash
+   "externalSystemId": "e15fae15-fae1-4ae1-ae15-fae15ae15ae1"  # ✅ Good
+   "externalSystemId": "test-eval-15-name"                      # ❌ HTTP 400!
+   ```
+4. ✅ **CRITICAL**: Use dual-ID capture format for `initiate_job` (see Pitfall #1)
+   ```bash
+   IFS=':' read -r JOB_ID CORRELATION_ID <<< "$(initiate_job "$PAYLOAD")" || exit 1
+   validate_job_id "$JOB_ID" || exit 1
+   ```
+5. ✅ **CRITICAL**: Specify `jobType` explicitly when testing Orders (see Pitfall #8)
+   ```bash
+   # For batch: "jobType": "batch"
+   # For fan-out: "jobType": "default" (or omit)
+   ```
+6. ✅ **CRITICAL**: Verify test data exists in database before running (see Pitfall #9)
+7. ✅ Always start with `00-template/`
+8. ✅ Use `set -e` for error propagation
+8. ✅ Validate `JOB_ID` format with `validate_job_id`
+9. ✅ Check TEST-DATA-REGISTRY.md before choosing consumer IDs
+10. ✅ Use `--visibility-timeout 1` for SQS message inspection
+11. ✅ Implement retry logic for eventual consistency (3-5 attempts, 2-3s delays)
+12. ✅ Search for job-specific DLQ messages (parallel-safe)
+13. ✅ Document seed data in TEST-DATA-REGISTRY.md
+14. ✅ Include Mermaid diagram in README.md
+15. ✅ Test standalone before adding to run-all.sh
+16. ✅ Use generous polling timeouts (expected duration + 50% buffer)
+17. ✅ Exit with proper summary (`exit_with_summary $PASS_COUNT $FAIL_COUNT`)
+18. ✅ Mark as SAFE or DESTRUCTIVE in run-all.sh
+19. ✅ For new entities: Check callback.service.ts recognizes your output step
+20. ✅ Test with `--max-parallel=N` to tune concurrency (default: 6)
+21. ✅ Use `--skip-checks` to skip preflight checks during rapid iteration
+
+---
+
+## Adding New Entities (Advanced)
+
+When testing a new entity type (like Orders), ensure these infrastructure pieces are in place:
+
+### Infrastructure Checklist for New Entities
+
+| Component | Location | What to Add |
+|-----------|----------|-------------|
+| **Step Enum** | `orchestrator/src/config/migration-steps.config.ts` | Add new entity input/output steps to enum |
+| **Step Definitions** | Same file | Add step objects with dependencies, queues, configs |
+| **Entity Dependencies** | `orchestrator/src/config/entity-dependencies.config.ts` | Add entity with FK fields, topics |
+| **Callback Service** | `orchestrator/src/callback/callback.service.ts` | Add `if (stepName.includes('newentity'))` handling for output step |
+| **SQS Queues** | `docker-compose.workers.yml` | Add queue creation in `init-sqs-queues` service |
+| **Lambda Workers** | `workflows/<name>/workers/src/handlers/` | Create input step handler + output step handler (e.g., `validate-newentity.ts`, `submit-newentity.ts`) |
+| **Lambda Deploy** | `workflows/<name>/workers/scripts/deploy-to-localstack.js` | Add to `QUEUE_WORKER_MAP` |
+| **ESM Setup** | `scripts/setup-esm.sh` | Add queue→lambda mappings |
+| **SQS Poller** | `tools/sqs-poller/src/poller.ts` | Add queues to `QUEUES` array |
+| **Preflight Check** | `ste/preflight-check.sh` | Add queues to `required_queues` array |
+| **Kafka Topics** | `docker-compose.kafka.yml` | Add `migration.newentity.completed/failed/ack` topics |
+| **Source DB Entity** | `workflows/<name>/source-db/src/entities/` | Add TypeORM entity for source table |
+| **Seed Data** | `workflows/<name>/source-db/init-scripts/02-data-example.sql` | Add test data for new entity |
+
+### Common Pitfall: Callback Service Not Recognizing New Entity
+
+**Symptom**: Job stuck in `processing` state, logs show:
+```
+Step SubmitNewEntity is not a known output step, skipping
+```
+
+**Fix**: Update `callback.service.ts` to handle the new entity type:
+
+```typescript
+// Order matters! Check more specific names first
+if (stepName.includes('order')) {           // ← Add new entity BEFORE customer
+  tableName = 'orders';
+  outputData = step.output.processedOrders || [];
+} else if (stepName.includes('lineitem')) {
+  tableName = 'line_items';
+  outputData = step.output.processedLineItems || [];
+} else if (stepName.includes('customer')) {
+  tableName = 'customers';
+  outputData = step.output.processedCustomers || [];
+} else {
+  this.logger.debug(`Step ${step.stepValue} is not a known output step, skipping`);
+  return;
+}
+```
+
+**Why**: The callback service must know how to extract processed data arrays from step output for Kafka publishing.
+
+---
+
+## Related Rules & Documentation
+
+### Related Cursor Rules
+
+- **`workflows/order-processing/.cursor/seed-data-writer.mdc`** - How to create SQL seed data for workflow source DB STEs
+- **`workflows/order-processing/.cursor/ste-writer.mdc`** - Workflow-specific STE patterns and entity examples
+- **`ste-testing.mdc`** - Overall STE testing strategy and architecture
+- **`testing.mdc`** - General testing best practices
+
+### Key Documentation Files
+
+- **`ste/00-template/README.md`** - Complete README template
+- **`ste/00-template/test.sh`** - Complete test script template
+- **`ste/TEST-DATA-REGISTRY.md`** - Master registry of test data
+- **`ste/shared/helpers.sh`** - All available helper functions
+
+---
+
+## Quick Start Workflow
+
+```bash
+# 1. Choose next available eval number AND consumer number
+# Check ste/ directory and workflows/order-processing/ste/TEST-DATA-REGISTRY.md
+# CRITICAL: Always assign a dedicated consumer (e.g., 1033+ range)
+
+# 2. Copy template
+cd ste
+cp -r 00-template 15-your-eval-name
+cd 15-your-eval-name
+
+# 3. Create dedicated seed data (ALWAYS REQUIRED for new evals)
+# Add to: workflows/order-processing/source-db/init-scripts/03-isolated-eval-data.sql
+# Pattern: Consumer 10XX, Membership 141000XXXX
+# Update TEST-DATA-REGISTRY.md with new assignment
+# Apply: docker exec dtm-order-processing-source-db psql -U order_user -d order_processing_db -f /docker-entrypoint-initdb.d/03-isolated-eval-data.sql
+
+# 4. Update test.sh
+# - Change EVAL_NAME, EVAL_PURPOSE
+# - Use YOUR dedicated consumer (from step 1)
+# - Implement test logic
+# - Add verification checks
+
+# 5. Update README.md
+# - Fill in all sections from template
+# - Add Mermaid diagram
+# - Reference your dedicated seed data
+# - Document expected timeline
+# - Add troubleshooting tips
+
+# 6. Test standalone
+chmod +x test.sh
+./test.sh
+
+# 💡 TIP: Check results in ste/.results/parallel/<latest-timestamp>/
+# 💡 TIP: Ensure workers are running in Poller mode with count >= 5 for debugging
+
+# 7. Register in run-all.sh
+# Add to ALL_EVALS and SAFE_EVALS (or DESTRUCTIVE_EVALS)
+
+# 8. Test in parallel
+cd ..
+./run-all.sh --eval 15
+
+# 9. Commit and document
+git add .
+git commit -m "feat(ste): add STE 15 - your-eval-name"
+```
+
+---
+
+**Remember**: STEs are living documentation. Write them as if teaching a new team member how the system works!

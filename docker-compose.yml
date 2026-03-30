@@ -1,0 +1,154 @@
+services:
+  # DTM Init Container (Development)
+  # Runs TypeORM migrations before app starts
+  init-typeorm:
+    build:
+      context: .
+      dockerfile: services/orchestrator/Dockerfile.db-init
+      network: host
+    image: dtm-init-typeorm:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-dtm}-init-typeorm
+    env_file:
+      - .env.development
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - dtm
+    profiles:
+      - db
+    restart: "no" # Run once and exit
+
+  # DTM Orchestrator (Development with Debug Mode Always Enabled)
+  orchestrator:
+    build:
+      context: .
+      dockerfile: services/orchestrator/Dockerfile.dev
+      network: host
+    image: dtm-orchestrator:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-dtm}-orchestrator
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Enable host.docker.internal on Linux/WSL2
+    env_file:
+      - .env.development
+    environment:
+      - NODE_ENV=development
+      - KAFKA_BROKER=${KAFKA_BROKER:-dtm-kafka:29092}
+    ports:
+      - "3002:3000"
+      - "9230:9229" # Node.js debugger port (always enabled)
+    volumes:
+      # Mount source code for hot reload
+      - ./services/orchestrator/src:/app/services/orchestrator/src
+      - ./packages/database/src:/app/packages/database/src
+      - ./packages/kafka-consumer/src:/app/packages/kafka-consumer/src
+      # Mount workspace package dist folders (required for workspace dependencies)
+      - ./packages/database/dist:/app/packages/database/dist
+      - ./packages/kafka-producer/dist:/app/packages/kafka-producer/dist
+      - ./packages/kafka-consumer/dist:/app/packages/kafka-consumer/dist
+      - ./packages/core/dist:/app/packages/core/dist
+      # Note: orchestrator dist folder is NOT mounted to avoid conflicts with NestJS deleteOutDir
+    # Start with debugger enabled and watch mode
+    command:
+      [
+        "sh",
+        "-c",
+        "cd /app/services/orchestrator && pnpm exec nest start --debug=0.0.0.0:9229 --watch",
+      ]
+    depends_on:
+      db:
+        condition: service_healthy
+      init-typeorm:
+        condition: service_completed_successfully
+    networks:
+      - dtm
+    profiles:
+      - orchestrator
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://localhost:3000/api/v1/health'', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on(''error'', () => process.exit(1))" ',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  db:
+    image: postgres:17-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-dtm}-db
+    environment:
+      - POSTGRES_USER=${DTM_DB_USER}
+      - POSTGRES_PASSWORD=${DTM_DB_PASSWORD}
+      - POSTGRES_DB=${DTM_DB_NAME}
+    ports:
+      - "${DTM_DB_PORT_HOST:-5448}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/docker/init-all-databases.sh:/docker-entrypoint-initdb.d/init-all-databases.sh:ro
+    networks:
+      - dtm
+    profiles:
+      - db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DTM_DB_USER} -d ${DTM_DB_NAME}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Dev Acknowledgement Simulator (Development Only - Standalone Mode)
+  # ⚠️  This service simulates external system acknowledgements for testing
+  # Only runs in standalone mode (not in integrated mode with backend-apps)
+  dev-ack-simulator:
+    build:
+      context: tools/dev-ack-simulator
+      dockerfile: Dockerfile
+      network: host
+    image: dtm-dev-ack-simulator:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-dtm}-dev-ack-simulator
+    restart: unless-stopped # Auto-restart on crashes (e.g., Kafka disconnects)
+    env_file:
+      - .env.development
+    environment:
+      - NODE_ENV=development
+      - KAFKA_BROKERS=${KAFKA_BROKER:-dtm-kafka:29092}
+      - PORT=3001
+      - WORKFLOW_CONFIG_PATHS=/app/wf-order-processing/workflow.config.js,/app/wf-iot-sensor-pipeline/workflow.config.js,/app/wf-infra-provisioning/workflow.config.js
+      - WORKFLOW_CONFIG_PATH=/app/wf-order-processing/workflow.config.js
+      - ACK_DEFAULTS_PATH=/app/wf-order-processing/dev-tools/ack-defaults.js
+    volumes:
+      - ./workflows/order-processing/dist:/app/wf-order-processing:ro
+      - ./workflows/iot-sensor-pipeline/dist:/app/wf-iot-sensor-pipeline:ro
+      - ./workflows/infra-provisioning/dist:/app/wf-infra-provisioning:ro
+      # Mount ack simulator dist for dev iteration (pnpm build + docker restart)
+      - ./tools/dev-ack-simulator/dist:/app/dist:ro
+    ports:
+      - "3003:3001"
+    networks:
+      - dtm
+    profiles:
+      - dev-tools
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://localhost:3001/health'', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on(''error'', () => process.exit(1))"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+
+networks:
+  dtm:
+    external: true

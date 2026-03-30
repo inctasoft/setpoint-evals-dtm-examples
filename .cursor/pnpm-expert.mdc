@@ -1,0 +1,356 @@
+---
+description: "pnpm monorepo best practices and workspace management"
+globs: ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", ".npmrc"]
+alwaysApply: true
+---
+
+# pnpm Monorepo Expert Guide
+
+**Last Updated**: November 16, 2025  
+**pnpm Version**: 10.x  
+**Node Version**: 22.x
+
+---
+
+## 📦 Workspace Structure
+
+### Current Workspace Configuration
+**File**: `pnpm-workspace.yaml`
+
+```yaml
+packages:
+  - 'packages/*'          # Reusable libraries
+  - 'services/*'      # Orchestrator service
+  - 'tools/*'   # Dev tools (sqs-poller, dev-ack-simulator)
+  - 'apps/*'             # Frontend applications (monitor dashboard)
+```
+
+### Package Organization
+```
+dtm/
+├── packages/                    # Shared libraries
+│   ├── database/                # @dtm/database
+│   ├── order-processing-source-db/      # Workflow-specific source DB access
+│   ├── kafka-producer/          # @dtm/kafka-producer
+│   ├── kafka-consumer/          # @dtm/kafka-consumer
+│   └── lambda-worker-utils/     # @dtm/worker-sdk
+├── services/
+│   └── orchestrator/            # @dtm/orchestrator
+├── tools/
+│   ├── dev-ack-simulator/       # DEV ONLY ACK simulator
+│   └── sqs-poller/              # DEV ONLY SQS poller
+├── workflows/                   # Workflow-specific configs
+└── apps/
+    └── monitor/                 # Preact+Vite terminal-themed dashboard
+```
+
+---
+
+## 🔗 Workspace Protocol (Critical!)
+
+### ALWAYS Use `workspace:*`
+When referencing local packages, **always** use `workspace:*`:
+
+```json
+// ✅ CORRECT
+{
+  "dependencies": {
+    "@dtm/database": "workspace:*",
+    "@dtm/kafka-consumer": "workspace:*"
+  }
+}
+
+// ❌ WRONG - Will break monorepo
+{
+  "dependencies": {
+    "@dtm/database": "1.0.0",
+    "@dtm/kafka-consumer": "^1.0.0"
+  }
+}
+```
+
+### Why `workspace:*`?
+1. **Always uses local version** - No accidental npm registry fetches
+2. **Automatic updates** - Changes in packages immediately available
+3. **Correct resolution** - pnpm resolves to local workspace packages
+4. **Build order** - pnpm understands dependencies and builds in correct order
+
+---
+
+## 🐳 Docker Compatibility
+
+### Critical: `.npmrc` Configuration
+**File**: `.npmrc` (root of repository)
+
+```
+node-linker=hoisted
+```
+
+### Why Hoisting is Required
+1. **Docker symlinks issue** - Docker doesn't handle pnpm's default symlinks well
+2. **AWS Lambda requirement** - Lambda deployment packages need flat structure
+3. **CI/CD compatibility** - Most CI systems expect traditional node_modules
+
+### What Hoisting Does
+- Creates flat `node_modules` structure (like npm/yarn)
+- All dependencies in single `node_modules` at root
+- No symlinks - real files copied
+- Slightly larger disk usage, but Docker/Lambda compatible
+
+---
+
+## 🛠️ pnpm Commands & Filters
+
+### Root Commands
+**Location**: Root `package.json` scripts
+
+```json
+{
+  "scripts": {
+    "build": "pnpm run build:packages && pnpm run build:orchestrator && pnpm run build:workers",
+    "build:packages": "pnpm --filter \"./packages/*\" run build",
+    "build:orchestrator": "pnpm --filter \"./services/orchestrator\" run build",
+    "build:workers": "pnpm --filter \"./tools/*\" run build",
+    
+    "test": "pnpm --filter \"./packages/*\" run test && pnpm --filter \"./services/orchestrator\" run test",
+    "lint:fix": "pnpm --filter \"./packages/*\" run lint:fix && pnpm --filter \"./services/orchestrator\" run lint:fix"
+  }
+}
+```
+
+### Filter Patterns
+```bash
+# Filter by path (relative to root)
+pnpm --filter "./packages/*" run build           # All packages
+pnpm --filter "./packages/database" run build    # Specific package
+
+# Filter by package name
+pnpm --filter @dtm/database run build
+pnpm --filter @dtm/* run build     # All with namespace
+
+# Multiple filters
+pnpm --filter "./packages/*" --filter "./services/*" run test
+
+# Parallel execution (default)
+pnpm -r run build  # Runs in all workspaces in parallel
+
+# Sequential execution
+pnpm -r --workspace-concurrency=1 run build
+```
+
+### Common Commands
+```bash
+# Install all dependencies (from root)
+pnpm install
+
+# Install in specific workspace
+pnpm --filter @dtm/database add typeorm
+
+# Install dev dependency
+pnpm --filter @dtm/orchestrator add -D @types/node
+
+# Install workspace dependency
+pnpm --filter @dtm/orchestrator add @dtm/database@workspace:*
+
+# Update dependencies
+pnpm update
+
+# Rebuild all
+pnpm run build
+
+# Clean node_modules
+rm -rf node_modules packages/*/node_modules services/*/node_modules
+pnpm install
+```
+
+---
+
+## 📋 Build Order & Dependencies
+
+### Dependency Graph
+```
+database ──────┐
+               ├──→ orchestrator
+kafka-consumer ┤
+               │
+order-processing-typeorm ┘
+
+kafka-producer ──→ orchestrator
+```
+
+### Build Order (Automatic)
+pnpm automatically determines build order based on `workspace:*` dependencies:
+
+1. **First**: `database`, `order-processing-typeorm`, `kafka-producer`, `kafka-consumer`
+2. **Then**: `orchestrator` (depends on all packages)
+3. **Finally**: Lambda workers (depend on database, order-processing-typeorm)
+
+### Manual Build Order (if needed)
+```bash
+# 1. Build packages first
+pnpm --filter "./packages/*" run build
+
+# 2. Build orchestrator
+pnpm --filter "./services/orchestrator" run build
+
+# 3. Build workers
+pnpm --filter "./tools/*" run build
+```
+
+---
+
+## 🔧 Package.json Best Practices
+
+### Package Naming
+```json
+{
+  "name": "@dtm/database",  // ✅ Scoped namespace
+  "version": "1.0.0",                     // ✅ Semantic versioning
+  "private": true,                        // ✅ Not published to npm
+  "main": "dist/index.js",                // ✅ Built output
+  "types": "dist/index.d.ts",             // ✅ TypeScript definitions
+  "scripts": {
+    "build": "tsc",                       // ✅ Build command
+    "test": "jest",                       // ✅ Test command
+    "lint": "eslint \"src/**/*.ts\""      // ✅ Lint command
+  }
+}
+```
+
+### Dependencies Organization
+```json
+{
+  "dependencies": {
+    // ✅ Workspace packages
+    "@dtm/database": "workspace:*",
+    
+    // ✅ External packages
+    "typeorm": "^0.3.27",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    // ✅ Build tools
+    "typescript": "^5.3.3",
+    "@types/node": "^22.0.0",
+    
+    // ✅ Testing tools
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.0"
+  },
+  "peerDependencies": {
+    // ✅ Optional: For library packages
+    "@nestjs/common": "^10.0.0"
+  }
+}
+```
+
+---
+
+## 🚨 Critical Rules
+
+### When Adding Dependencies
+1. **Use correct filter** - Target specific workspace
+2. **Use workspace protocol** - For local packages
+3. **Install from root** - `cd` to root, then use `--filter`
+4. **Check peer dependencies** - Ensure compatibility
+5. **Update lock file** - Commit `pnpm-lock.yaml`
+
+### When Creating New Package
+1. **Add to workspace** - Update `pnpm-workspace.yaml` if new directory
+2. **Use scoped name** - `@dtm/package-name`
+3. **Set private: true** - Unless publishing to npm
+4. **Add build script** - Consistent with other packages
+5. **Export properly** - Main entry point in `package.json`
+
+### When Moving Dependencies
+1. **Remove from old location** - `pnpm remove`
+2. **Add to new location** - `pnpm add`
+3. **Update imports** - Change import paths in code
+4. **Rebuild** - `pnpm run build`
+5. **Test** - Ensure everything still works
+
+---
+
+## 🐞 Troubleshooting
+
+### "Cannot find module '@dtm/package'"
+**Problem**: Workspace package not found  
+**Solutions**:
+1. Check `workspace:*` in dependencies
+2. Run `pnpm install` from root
+3. Build the package: `pnpm --filter @dtm/package run build`
+4. Check `pnpm-workspace.yaml` includes package directory
+
+### "Module not found" in Docker
+**Problem**: Docker build can't find workspace packages  
+**Solutions**:
+1. Verify `.npmrc` has `node-linker=hoisted`
+2. Copy packages in Dockerfile:
+```dockerfile
+# Copy workspace packages
+COPY packages/database/ packages/database/
+COPY packages/kafka-consumer/ packages/kafka-consumer/
+
+# Install & build
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @dtm/database run build
+```
+
+### "Package has peer dependency..."
+**Problem**: Peer dependency not satisfied  
+**Solutions**:
+1. Install peer dependency in consuming package
+2. Use `--legacy-peer-deps` if intentionally mismatched
+3. Update peer dependency version if compatible
+
+### Circular dependencies
+**Problem**: Package A depends on B, B depends on A  
+**Solutions**:
+1. **Refactor** - Extract shared code to third package
+2. **Interfaces** - Use TypeScript interfaces to break cycle
+3. **Dynamic imports** - Use `import()` instead of static imports
+
+---
+
+## 📊 Performance Tips
+
+### Faster Installs
+```bash
+# Use frozen lockfile (CI/prod)
+pnpm install --frozen-lockfile
+
+# Skip prepare scripts
+pnpm install --ignore-scripts
+
+# Prefer offline
+pnpm install --prefer-offline
+```
+
+### Faster Builds
+```bash
+# Parallel builds (default)
+pnpm -r run build
+
+# Filter to changed packages only (in CI)
+pnpm --filter "...[origin/main]" run build
+```
+
+### Cache Management
+```bash
+# Clean pnpm cache
+pnpm store prune
+
+# Verify store integrity
+pnpm store status
+```
+
+---
+
+## 🎓 Resources
+
+- **pnpm Docs**: https://pnpm.io
+- **Workspace Guide**: https://pnpm.io/workspaces
+- **Filters**: https://pnpm.io/filtering
+- **Docker Best Practices**: https://pnpm.io/docker
+
+**Status**: ✅ Properly configured, Docker-compatible
