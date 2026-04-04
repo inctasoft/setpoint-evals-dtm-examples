@@ -4,11 +4,17 @@ Feature ideas, improvements, wishes. Format: Priority (H/M/L), Effort estimate.
 
 ---
 
-### plan-execution workflow — voice-assistant chunk pipeline integration
-**Priority:** High
-**Effort:** ~14-18h (shared with voice-assistant)
+### plan-execution workflow — voice-assistant chunk pipeline integration — MOSTLY DONE
+**Priority:** High (remaining: STEs)
+**Effort:** ~2h remaining (STEs only)
 **Plan:** `server-config/plans/dtm-chunk-integration.md`
-Create a `plan-execution` workflow that uses the DTM orchestrator to execute voice-assistant plan chunks. Chunks = steps, plans = jobs. NestJS worker in voice-assistant (not Lambda) consumes SQS, calls Claude SDK (Sonnet), sends HTTP callbacks. HIGH risk chunks use Kafka ACK pattern for human review. This validates DTM as a generic orchestration engine beyond the 3 example workflows. Key adaptations: dynamic step list per job (chunk DAG varies per plan), no source DB (voice-assistant PG is the source), worker is a persistent NestJS service (not Lambda). Also write 5 STEs for the plan-execution workflow.
+**Status (2026-03-31):** Phases 0-4 complete. Workflow registered, voice-assistant worker polling SQS, events relay connected, HTTP ACK endpoint added. Key DTM engine changes:
+- `WorkflowDefinition.dynamicSteps` flag + `getStepDefinitionsForJob()` for per-job step DAGs
+- Per-step input via `stepDef.metadata.stepInput` (dynamic workflows only)
+- `orchestration.service.ts` uses dynamic step definitions in `startJob()`, `continueJob()`, `findReadySteps()`, `markDependentStepsAsSkipped()`
+- `callback.service.ts` supports cascade-free `WAITING_FOR_ACK` for dynamic workflows (no Kafka topic needed)
+- New `POST /api/v1/callback/acknowledge` HTTP endpoint for approve/reject
+**Remaining:** Write 5 STEs at `workflows/plan-execution/ste/`
 
 ### Monitor UI — embeddable component extraction
 **Priority:** Medium

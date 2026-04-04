@@ -51,6 +51,22 @@ export interface WorkflowDefinition {
 
   /** Feature flag definitions (defaults and client-overridable flags) */
   featureFlags?: FeatureFlagConfig;
+
+  /**
+   * When true, step definitions are read from job.payload.stepDefinitions
+   * instead of the static `steps` config. This enables workflows where the
+   * DAG structure varies per job (e.g., plan-execution where each plan has
+   * different chunks with different dependencies).
+   *
+   * The job submission payload must include:
+   * ```typescript
+   * payload: {
+   *   stepDefinitions: StepDefinition[],  // per-job step DAG
+   *   // ... other payload fields
+   * }
+   * ```
+   */
+  dynamicSteps?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

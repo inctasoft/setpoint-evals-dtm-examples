@@ -17,11 +17,13 @@ import { CorrelationModule } from './common/correlation/correlation.module';
 import { CorrelationMiddleware } from './common/middleware/correlation.middleware';
 import { WorkflowLoaderModule } from './workflow-loader';
 import { WebSocketModule } from './websocket';
+import { AuthModule } from './auth/auth.module';
 
 // Import workflow definitions for multi-workflow registration
 import { orderProcessingWorkflow } from '@dtm-workflows/order-processing';
 import { iotSensorPipelineWorkflow } from '@dtm-workflows/iot-sensor-pipeline';
 import { infraProvisioningWorkflow } from '@dtm-workflows/infra-provisioning';
+import { planExecutionWorkflow } from '@dtm-workflows/plan-execution';
 
 // Import typed configuration modules
 import {
@@ -77,6 +79,7 @@ logRuntimeMode();
       orderProcessingWorkflow,
       iotSensorPipelineWorkflow,
       infraProvisioningWorkflow,
+      planExecutionWorkflow,
     ]),
     AwsModule,
     DelegationModule,
@@ -91,6 +94,7 @@ logRuntimeMode();
     MaintenanceModule,
     CorrelationModule,
     WebSocketModule,
+    AuthModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [AppService],

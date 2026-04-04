@@ -323,6 +323,29 @@ export class CallbackService {
           const hasDataToPublish = this.hasTransformedDataToPublish(updatedStepForPublish, wfConfig);
 
           if (!hasDataToPublish) {
+            // Dynamic workflows (no cascades) still need WAITING_FOR_ACK for human review
+            const isDynamic = wfConfig?.getWorkflow().dynamicSteps === true;
+            if (isDynamic) {
+              this.logger.log(
+                `Step ${dto.stepId} (${step.stepValue}) is a dynamic step requiring acknowledgement — ` +
+                `setting WAITING_FOR_ACK (ACK via HTTP or Kafka)`,
+              );
+              await this.stepRepository.updateStatus(dto.stepId, StepStatus.WAITING_FOR_ACK);
+              this.eventsGateway.broadcast({
+                type: 'step_ack_waiting',
+                jobId: dto.jobId,
+                step: step.stepValue,
+                timestamp: new Date().toISOString(),
+                correlationId: this.correlationService.getCorrelationId(),
+              });
+              return {
+                success: true,
+                message: 'Step awaiting human acknowledgement (dynamic workflow)',
+                jobId: dto.jobId,
+                stepId: dto.stepId,
+              };
+            }
+
             this.logger.log(
               `Step ${dto.stepId} (${step.stepValue}) has no data to publish - completing directly (no ACK needed)`,
             );
@@ -1032,5 +1055,89 @@ export class CallbackService {
       })),
       total: jobs.length,
     };
+  }
+
+  /**
+   * HTTP-based acknowledgement for steps in WAITING_FOR_ACK.
+   * Used by dynamic workflows (e.g., plan-execution) that don't use Kafka cascade topics.
+   */
+  async handleHttpAcknowledgement(payload: {
+    jobId: string;
+    stepId: string;
+    action: 'approve' | 'reject';
+    metadata?: Record<string, unknown>;
+  }): Promise<{ success: boolean; message: string }> {
+    const { jobId, stepId, action, metadata } = payload;
+
+    const step = await this.stepRepository.findById(stepId);
+    if (!step) {
+      return { success: false, message: `Step ${stepId} not found` };
+    }
+
+    if (step.status !== StepStatus.WAITING_FOR_ACK) {
+      return {
+        success: false,
+        message: `Step ${stepId} is in ${step.status}, not WAITING_FOR_ACK`,
+      };
+    }
+
+    if (action === 'approve') {
+      await this.stepRepository.updateStatus(stepId, StepStatus.COMPLETED);
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      await (this.stepRepository as any)['repo']
+        .createQueryBuilder()
+        .update()
+        .set({
+          ackReceivedAt: new Date(),
+          ackMetadata: { ...metadata, acknowledgedBy: 'http-ack', action: 'approve' },
+        })
+        .where('id = :id', { id: stepId })
+        .execute();
+
+      this.eventsGateway.broadcast({
+        type: 'step_ack_received',
+        jobId,
+        step: step.stepValue,
+        timestamp: new Date().toISOString(),
+      });
+
+      this.logger.log(`✅ HTTP ACK: Step ${stepId} approved → COMPLETED`);
+
+      // Continue orchestration (next steps in DAG)
+      await this.orchestrationService.continueJob(jobId);
+
+      return { success: true, message: 'Step approved and completed' };
+    } else {
+      // Reject → mark as FAILED
+      await this.stepRepository.updateStatus(stepId, StepStatus.FAILED);
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      await (this.stepRepository as any)['repo']
+        .createQueryBuilder()
+        .update()
+        .set({
+          ackReceivedAt: new Date(),
+          ackMetadata: { ...metadata, acknowledgedBy: 'http-ack', action: 'reject' },
+          error: 'Rejected by human reviewer',
+        })
+        .where('id = :id', { id: stepId })
+        .execute();
+
+      this.eventsGateway.broadcast({
+        type: 'step_failed',
+        jobId,
+        step: step.stepValue,
+        error: 'Rejected by human reviewer',
+        timestamp: new Date().toISOString(),
+      });
+
+      this.logger.log(`❌ HTTP ACK: Step ${stepId} rejected → FAILED`);
+
+      // Continue orchestration (will skip dependents)
+      await this.orchestrationService.continueJob(jobId);
+
+      return { success: true, message: 'Step rejected and failed' };
+    }
   }
 }

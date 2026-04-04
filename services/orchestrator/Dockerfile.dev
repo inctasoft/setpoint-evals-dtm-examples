@@ -16,6 +16,7 @@ COPY packages/kafka-consumer/package.json ./packages/kafka-consumer/
 COPY workflows/order-processing/package.json ./workflows/order-processing/
 COPY workflows/iot-sensor-pipeline/package.json ./workflows/iot-sensor-pipeline/
 COPY workflows/infra-provisioning/package.json ./workflows/infra-provisioning/
+COPY workflows/plan-execution/package.json ./workflows/plan-execution/
 COPY services/orchestrator/package.json ./services/orchestrator/
 
 # Install dependencies for all workspaces (skip scripts like husky)
@@ -47,6 +48,9 @@ COPY workflows/iot-sensor-pipeline/workflow.config.ts ./workflows/iot-sensor-pip
 COPY workflows/infra-provisioning/tsconfig.json ./workflows/infra-provisioning/
 COPY workflows/infra-provisioning/workflow.config.ts ./workflows/infra-provisioning/
 
+COPY workflows/plan-execution/tsconfig.json ./workflows/plan-execution/
+COPY workflows/plan-execution/workflow.config.ts ./workflows/plan-execution/
+
 # Build workspace dependencies (order matters: core first, then packages, then workflow)
 RUN pnpm --filter @dtm/core run build
 RUN pnpm --filter @dtm/errors run build
@@ -56,6 +60,7 @@ RUN pnpm --filter @dtm/kafka-consumer run build
 RUN pnpm --filter @dtm-workflows/order-processing run build
 RUN pnpm --filter @dtm-workflows/iot-sensor-pipeline run build
 RUN pnpm --filter @dtm-workflows/infra-provisioning run build
+RUN pnpm --filter @dtm-workflows/plan-execution run build
 
 # Copy orchestrator source files (exclude node_modules, dist, etc.)
 COPY services/orchestrator/tsconfig.json ./services/orchestrator/

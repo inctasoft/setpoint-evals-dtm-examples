@@ -121,6 +121,26 @@ export class WorkflowConfigService {
   }
 
   /**
+   * Get step definitions for a specific job.
+   * For dynamic-step workflows, reads from job.payload.stepDefinitions.
+   * For static workflows, falls through to the variant-based config.
+   */
+  getStepDefinitionsForJob(job: { type: string; payload?: Record<string, unknown> | null }): StepDefinition[] {
+    if (this.workflow.dynamicSteps) {
+      const payload = job.payload as Record<string, unknown> | null;
+      const dynamicDefs = payload?.stepDefinitions;
+      if (Array.isArray(dynamicDefs) && dynamicDefs.length > 0) {
+        return dynamicDefs as StepDefinition[];
+      }
+      this.logger.warn(
+        `Dynamic-step workflow '${this.workflow.name}' but no stepDefinitions in job payload. ` +
+        `Falling back to static config (variant: ${job.type}).`,
+      );
+    }
+    return this.getActiveStepDefinitions(job.type);
+  }
+
+  /**
    * Get upfront step definitions (non-child steps created at job start).
    * Child steps are created dynamically by fan-out discovery steps.
    */

@@ -85,7 +85,7 @@ export class OrchestrationService {
 
         // 2. Get step definitions for this workflow type
         const wfConfig = this.getWorkflowConfig(job);
-        const allStepDefinitions = wfConfig.getActiveStepDefinitions(job.type);
+        const allStepDefinitions = wfConfig.getStepDefinitionsForJob(job);
 
         // For upfront creation, filter out child steps (they're created dynamically by fan-out)
         const stepDefinitions = allStepDefinitions.filter((sd) => !sd.isChildStep);
@@ -97,13 +97,18 @@ export class OrchestrationService {
         this.logger.log(`Creating ${stepDefinitions.length} upfront steps for job ${jobId}`);
 
         // 3. Create all upfront steps in the database (child steps are created by fan-out)
+        // For dynamic-step workflows, each step has its own input (chunk-specific data).
+        // For static workflows, all steps share the job payload.
+        const isDynamic = wfConfig.getWorkflow().dynamicSteps === true;
         const createdSteps = await this.stepRepository.createSteps(
           stepDefinitions.map((stepDef) => ({
             jobId: job.id,
             stepValue: stepDef.step,
             description: stepDef.description,
             lambdaFunctionName: stepDef.functionName,
-            input: job.payload as unknown as Record<string, unknown>, // Pass job payload as step input
+            input: isDynamic && stepDef.metadata?.stepInput
+              ? stepDef.metadata.stepInput as Record<string, unknown>
+              : job.payload as unknown as Record<string, unknown>,
           })),
         );
 
@@ -691,7 +696,7 @@ export class OrchestrationService {
           const jobFlags = (job.payload as any)?.featureFlags ?? {};
           const resolvedFlags: Record<string, unknown> = { ...defaultFlags, ...jobFlags };
 
-          const stepDefs = wfCfg.getActiveStepDefinitions(job.type);
+          const stepDefs = wfCfg.getStepDefinitionsForJob(job);
           for (const step of steps) {
             if (step.status !== StepStatus.PENDING) continue;
             const def = stepDefs.find((d) => d.step === step.stepValue);
@@ -868,7 +873,7 @@ export class OrchestrationService {
 
           // Resolve per-job workflow config
           const wfConfig = this.getWorkflowConfig(job);
-          const stepDefinitions = wfConfig.getActiveStepDefinitions(job.type);
+          const stepDefinitions = wfConfig.getStepDefinitionsForJob(job);
 
           const readySteps = this.findReadySteps(
             pendingSteps,
@@ -1088,9 +1093,9 @@ export class OrchestrationService {
       return 0;
     }
 
-    // Get step definitions to check dependencies
+    // Get step definitions to check dependencies (supports dynamic-step workflows)
     const wfConfig = this.getWorkflowConfig(job);
-    const stepDefinitions = wfConfig.getActiveStepDefinitions(job.type);
+    const stepDefinitions = wfConfig.getStepDefinitionsForJob(job);
 
     // Get ALL current steps (including already skipped ones) to handle transitive dependencies
     const allSteps = await this.stepRepository.findByJobId(jobId);
@@ -1291,7 +1296,7 @@ export class OrchestrationService {
     wfConfigOverride?: WorkflowConfigService,
   ): DbStep[] {
     const wfCfg = wfConfigOverride || this.workflowConfig;
-    const stepDefinitions = wfCfg.getActiveStepDefinitions(jobType);
+    const stepDefinitions = wfCfg.getStepDefinitionsForJob({ type: jobType, payload: jobPayload });
     const completedStepValues = new Set(completedSteps.map((s) => s.stepValue));
 
     // Build child step → fan-out parent map for resolving dependencies on fan-out children.

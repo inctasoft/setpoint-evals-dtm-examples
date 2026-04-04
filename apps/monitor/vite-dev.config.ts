@@ -1,11 +1,16 @@
+/**
+ * Dev server config — run via `/dev start dtm-monitor`
+ * Port 5181 | Proxies to production backend at :3002
+ */
 import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
 
 export default defineConfig({
   plugins: [preact()],
   server: {
-    port: 5173,
-    allowedHosts: ['dtm.akrsmv.net', 'dtm.akrsmv.local'],
+    port: 5181,
+    host: true,
+    allowedHosts: true,
     proxy: {
       '/ws': {
         target: 'ws://localhost:3002',

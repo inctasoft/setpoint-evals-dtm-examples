@@ -11,7 +11,9 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
-    "preact": "^10.25.4"
+    "preact": "^10.25.4",
+    "supertokens-auth-react": "^0.51.2",
+    "supertokens-web-js": "^0.16.0"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.4",

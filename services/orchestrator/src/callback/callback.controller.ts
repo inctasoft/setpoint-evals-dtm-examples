@@ -100,6 +100,32 @@ export class CallbackController {
   }
 
   /**
+   * HTTP acknowledgement endpoint for steps in WAITING_FOR_ACK status.
+   * Alternative to Kafka-based ACK — used by dynamic workflows (plan-execution)
+   * where there are no cascade topics.
+   *
+   * POST /api/callback/acknowledge
+   */
+  @Post('acknowledge')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Acknowledge a step via HTTP',
+    description:
+      'Approve or reject a step that is in WAITING_FOR_ACK status. ' +
+      'Used by dynamic workflows without Kafka cascade topics.',
+  })
+  @ApiResponse({ status: 200, description: 'Acknowledgement processed' })
+  @ApiResponse({ status: 404, description: 'Step not found or not in WAITING_FOR_ACK' })
+  async acknowledgeStep(
+    @Body() body: { jobId: string; stepId: string; action: 'approve' | 'reject'; metadata?: Record<string, unknown> },
+  ) {
+    this.logger.log(
+      `HTTP ACK: Job ${body.jobId}, Step ${body.stepId}, Action ${body.action}`,
+    );
+    return this.callbackService.handleHttpAcknowledgement(body);
+  }
+
+  /**
    * Health check endpoint for callbacks
    * Can be used by Lambda to verify orchestrator is reachable
    *

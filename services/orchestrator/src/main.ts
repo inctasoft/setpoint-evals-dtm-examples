@@ -6,6 +6,8 @@ import { WsAdapter } from '@nestjs/platform-ws';
 import { GlobalErrorFilter } from './error';
 import { AppLogger } from './common/logger/app-logger.service';
 import * as express from 'express';
+import supertokens from 'supertokens-node';
+import { SuperTokensExceptionFilter } from './auth/supertokens-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -19,8 +21,19 @@ async function bootstrap() {
   // Add JSON parser for various content types
   app.use(express.json({ type: ['application/json', 'application/cloudevents+json'] }));
 
-  // Set global API prefix for versioning
-  app.setGlobalPrefix('api/v1');
+  // CORS for SuperTokens auth
+  app.enableCors({
+    origin: [
+      process.env.SUPERTOKENS_WEBSITE_DOMAIN || 'http://localhost:5173',
+    ],
+    allowedHeaders: ['content-type', ...supertokens.getAllCORSHeaders()],
+    credentials: true,
+  });
+
+  // Set global API prefix for versioning, exclude /auth routes
+  app.setGlobalPrefix('api/v1', {
+    exclude: ['/auth/(.*)', '/auth'],
+  });
 
   // Configure Swagger/OpenAPI documentation
   const config = new DocumentBuilder()
@@ -87,8 +100,8 @@ async function bootstrap() {
     }),
   );
 
-  // Global error filter to catch all exceptions and handle them
-  app.useGlobalFilters(new GlobalErrorFilter());
+  // Global error filters
+  app.useGlobalFilters(new SuperTokensExceptionFilter(), new GlobalErrorFilter());
 
   // Log startup info
   const port = process.env.PORT ?? 3002;

@@ -77,6 +77,8 @@ QUEUES=(
   iot-dispatch-alert
   iot-compute-aggregate
   iot-publish-aggregate
+  # plan-execution workflow (voice-assistant chunk execution via DTM)
+  plan-execute-chunk
 )
 
 # Helper function matching docker-compose.workers.yml init-sqs-queues service
@@ -121,6 +123,7 @@ echo "Summary:"
 echo "  order-processing: 12 queues"
 echo "  infra-provisioning: 15 queues"
 echo "  iot-sensor-pipeline: 12 queues"
+echo "  plan-execution: 1 queue"
 echo "  Total: ${#QUEUES[@]} queues + ${#QUEUES[@]} DLQs = $((${#QUEUES[@]} * 2)) queues"
 echo ""
 
