@@ -11,9 +11,9 @@ export class AuthGuard implements CanActivate {
     // Allow auth routes, health checks, and WebSocket upgrades
     if (
       req.path.startsWith('/auth') ||
-      req.path === '/health' ||
-      req.path === '/health/ready' ||
-      req.path === '/health/kafka' ||
+      req.path.endsWith('/health') ||
+      req.path.endsWith('/health/ready') ||
+      req.path.endsWith('/health/kafka') ||
       req.headers.upgrade === 'websocket'
     ) {
       return true;
