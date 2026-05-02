@@ -64,7 +64,11 @@ export class CascadePublishService {
    * @param steps - All steps for the job
    * @returns true if all parent cascades have ACKs OR are empty (discovery completed with 0 items)
    */
-  areCascadeDependenciesMet(cascadeName: string, steps: DbStep[], wfConfig?: WorkflowConfigService): boolean {
+  areCascadeDependenciesMet(
+    cascadeName: string,
+    steps: DbStep[],
+    wfConfig?: WorkflowConfigService,
+  ): boolean {
     const cfg = wfConfig || this.workflowConfig;
     const ackMap = cfg.buildAckMetadataMap(steps);
     // Pass steps to check for empty parent cascades (discovery with childCount: 0)
@@ -187,9 +191,7 @@ export class CascadePublishService {
       return true;
     });
 
-    this.logger.debug(
-      `Found ${pendingPublishSteps.length} COMPLETED output steps pending publish`,
-    );
+    this.logger.debug(`Found ${pendingPublishSteps.length} COMPLETED output steps pending publish`);
 
     if (pendingPublishSteps.length === 0) {
       return { checkedSteps: steps.length, publishedSteps: 0, details: [] };

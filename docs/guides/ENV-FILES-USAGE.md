@@ -305,7 +305,7 @@ The validation schema enforces:
 ## File Structure
 
 ```
-sms/
+<repo-root>/
 ├── .env.example              # Template (committed)
 ├── .env                      # Generated from example (gitignored)
 └── services/orchestrator/src/

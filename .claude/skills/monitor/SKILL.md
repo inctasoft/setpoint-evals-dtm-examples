@@ -13,9 +13,9 @@ Options:
 - `sqs` — Start CLI-based SQS queue monitoring
 
 Commands:
-- Dashboard: `cd sms && ./scripts/local-env.sh monitor dashboard`
-- API monitor: `cd sms && ./scripts/local-env.sh monitor api`
-- SQS monitor: `cd sms && ./scripts/local-env.sh monitor sqs`
+- Dashboard: `./scripts/local-env.sh monitor dashboard`
+- API monitor: `./scripts/local-env.sh monitor api`
+- SQS monitor: `./scripts/local-env.sh monitor sqs`
 
 If no argument is given, start the web dashboard.
 

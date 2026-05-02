@@ -14,8 +14,8 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "lint:check": "eslint \"src/**/*.ts\"",
-    "lint:fix": "eslint \"src/**/*.ts\" --fix",
+    "lint:check": "echo 'no lint configured (no eslint config in this package)'",
+    "lint:fix": "echo 'no lint configured (no eslint config in this package)'",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "format:fix": "prettier --write \"src/**/*.ts\""
   },

@@ -4,7 +4,7 @@
 # Runs TypeORM migrations before the simulator app starts.
 # Based on Dockerfile.db-init but without workflow packages.
 #
-# Build context: monorepo root (sms/)
+# Build context: monorepo root
 # ============================================
 
 FROM node:22-alpine

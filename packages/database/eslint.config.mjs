@@ -33,4 +33,18 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "lf" }],
     },
   },
+  {
+    // TypeORM migration `down()` methods often legitimately have no await
+    // (e.g. enum-removal migrations on PostgreSQL, where the down is a console.log
+    // because PG doesn't support removing enum values). The `queryRunner` parameter
+    // must remain in the signature to satisfy the MigrationInterface contract.
+    files: ["src/migrations/**/*.ts"],
+    rules: {
+      "@typescript-eslint/require-await": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_|^queryRunner$" },
+      ],
+    },
+  },
 );

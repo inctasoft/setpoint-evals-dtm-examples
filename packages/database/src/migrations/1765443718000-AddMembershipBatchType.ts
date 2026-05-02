@@ -9,7 +9,6 @@ export class AddMembershipBatchType1765443718000 implements MigrationInterface {
     );
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   public async down(): Promise<void> {
     // Postgres does not support removing enum values easily
     console.log(

@@ -3,7 +3,7 @@ STANDING INSTRUCTIONS (injected automatically on every prompt):
 1. DIFFICULTIES LOG: As you work, whenever you encounter any difficulty,
    unexpected behavior, confusing documentation, missing config, race condition,
    flaky test, DX friction, or anything that slowed you down or required a
-   workaround — immediately append it to sms/DIFFICULTIES-LOG.md.
+   workaround — immediately append it to DIFFICULTIES-LOG.md.
    Format: severity, status, description, root cause if known, fix/workaround.
    Do NOT wait until the end. Log difficulties as soon as you encounter them.
 

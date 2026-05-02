@@ -6,11 +6,7 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, WebSocket } from 'ws';
-import {
-  JobRepository,
-  StepRepository,
-  JobStatus,
-} from '@dtm/database';
+import { JobRepository, StepRepository, JobStatus } from '@dtm/database';
 import type { DtmEvent, JobSnapshot, StepSnapshot } from './dtm-event.types';
 
 const NON_TERMINAL_STATUSES = [JobStatus.PENDING, JobStatus.PROCESSING];
@@ -73,9 +69,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private async sendSnapshot(client: WebSocket): Promise<void> {
     // Fetch non-terminal jobs (PENDING + PROCESSING) plus recent completed (last 20)
     const [activeJobs, recentJobs] = await Promise.all([
-      Promise.all(
-        NON_TERMINAL_STATUSES.map((s) => this.jobRepository.findByStatus(s, 50)),
-      ).then((arrs) => arrs.flat()),
+      Promise.all(NON_TERMINAL_STATUSES.map((s) => this.jobRepository.findByStatus(s, 50))).then(
+        (arrs) => arrs.flat(),
+      ),
       this.jobRepository.findRecentJobs(20),
     ]);
 
@@ -96,9 +92,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         status: s.status.toLowerCase() as StepSnapshot['status'],
         stepNumber: i + 1,
         error: s.error ?? undefined,
-        duration: s.startedAt && s.completedAt
-          ? new Date(s.completedAt).getTime() - new Date(s.startedAt).getTime()
-          : undefined,
+        duration:
+          s.startedAt && s.completedAt
+            ? new Date(s.completedAt).getTime() - new Date(s.startedAt).getTime()
+            : undefined,
         attempt: s.retryCount ?? undefined,
       }));
 
@@ -111,14 +108,16 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         createdAt: job.submittedAt?.toISOString() ?? new Date().toISOString(),
         completedAt: job.completedAt?.toISOString(),
         error: job.error ?? undefined,
-        results: job.results ? {
-          totalRecordsProcessed: job.results.totalRecordsProcessed,
-          totalRecordsFailed: job.results.totalRecordsFailed,
-          stepsCompleted: job.results.stepsCompleted,
-          stepsFailed: job.results.stepsFailed,
-          stepsAborted: job.results.stepsAborted ?? 0,
-          durationMs: job.results.durationMs,
-        } : undefined,
+        results: job.results
+          ? {
+              totalRecordsProcessed: job.results.totalRecordsProcessed,
+              totalRecordsFailed: job.results.totalRecordsFailed,
+              stepsCompleted: job.results.stepsCompleted,
+              stepsFailed: job.results.stepsFailed,
+              stepsAborted: job.results.stepsAborted ?? 0,
+              durationMs: job.results.durationMs,
+            }
+          : undefined,
       });
     }
 

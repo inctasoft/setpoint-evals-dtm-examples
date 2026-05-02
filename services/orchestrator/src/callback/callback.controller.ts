@@ -117,11 +117,15 @@ export class CallbackController {
   @ApiResponse({ status: 200, description: 'Acknowledgement processed' })
   @ApiResponse({ status: 404, description: 'Step not found or not in WAITING_FOR_ACK' })
   async acknowledgeStep(
-    @Body() body: { jobId: string; stepId: string; action: 'approve' | 'reject'; metadata?: Record<string, unknown> },
+    @Body()
+    body: {
+      jobId: string;
+      stepId: string;
+      action: 'approve' | 'reject';
+      metadata?: Record<string, unknown>;
+    },
   ) {
-    this.logger.log(
-      `HTTP ACK: Job ${body.jobId}, Step ${body.stepId}, Action ${body.action}`,
-    );
+    this.logger.log(`HTTP ACK: Job ${body.jobId}, Step ${body.stepId}, Action ${body.action}`);
     return this.callbackService.handleHttpAcknowledgement(body);
   }
 

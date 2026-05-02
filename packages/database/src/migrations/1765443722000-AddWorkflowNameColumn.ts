@@ -27,8 +27,14 @@ export class AddWorkflowNameColumn1765443722000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_migration_jobs_workflow_name_status";`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_migration_jobs_workflow_name";`);
-    await queryRunner.query(`ALTER TABLE migration_jobs DROP COLUMN IF EXISTS workflow_name;`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_migration_jobs_workflow_name_status";`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_migration_jobs_workflow_name";`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE migration_jobs DROP COLUMN IF EXISTS workflow_name;`,
+    );
   }
 }

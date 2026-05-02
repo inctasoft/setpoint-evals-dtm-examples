@@ -47,24 +47,20 @@ export class WorkflowLoaderModule {
    *   - default: Name of the default workflow (for backward-compatible WORKFLOW_DEFINITION token).
    *     If not specified, uses the first workflow in the array.
    */
-  static forRoot(
-    workflows?: WorkflowDefinition[],
-    options?: { default?: string },
-  ): DynamicModule {
+  static forRoot(workflows?: WorkflowDefinition[], options?: { default?: string }): DynamicModule {
     // Resolve the list of workflows to register
     if ((!workflows || workflows.length === 0) && !orderProcessingWorkflow) {
       throw new Error(
         'WorkflowLoaderModule.forRoot() called without workflows and @dtm-workflows/order-processing is not installed. ' +
-        'In simulator mode, always pass workflows explicitly.',
+          'In simulator mode, always pass workflows explicitly.',
       );
     }
-    const workflowList = workflows && workflows.length > 0
-      ? workflows
-      : [orderProcessingWorkflow!];
+    const workflowList = workflows && workflows.length > 0 ? workflows : [orderProcessingWorkflow!];
 
     // Determine the default workflow
     const defaultWorkflowName = options?.default || workflowList[0].name;
-    const defaultWorkflow = workflowList.find((w) => w.name === defaultWorkflowName) || workflowList[0];
+    const defaultWorkflow =
+      workflowList.find((w) => w.name === defaultWorkflowName) || workflowList[0];
 
     logger.log(
       `Initializing with ${workflowList.length} workflow(s): [${workflowList.map((w) => w.name).join(', ')}]. ` +

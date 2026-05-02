@@ -1,13 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Test, TestingModule } from '@nestjs/testing';
 import { OrchestrationService } from './orchestration.service';
-import {
-  JobRepository,
-  StepRepository,
-  JobStatus,
-  StepStatus,
-  JobType,
-} from '@dtm/database';
+import { JobRepository, StepRepository, JobStatus, StepStatus, JobType } from '@dtm/database';
 import { DelegationService } from '../delegation/delegation.service';
 import { CorrelationService } from '../common/correlation/correlation.service';
 import { KafkaService } from '../kafka/kafka.service';
@@ -46,7 +40,9 @@ describe('OrchestrationService', () => {
 
     const mockCorrelationService = {
       getCorrelationId: jest.fn().mockReturnValue('test-correlation-id'),
-      runWithCorrelationId: jest.fn().mockImplementation(async (fn: () => Promise<unknown>) => fn()),
+      runWithCorrelationId: jest
+        .fn()
+        .mockImplementation(async (fn: () => Promise<unknown>) => fn()),
     };
 
     const mockKafkaService = {

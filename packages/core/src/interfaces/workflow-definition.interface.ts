@@ -214,7 +214,9 @@ export interface CascadeConfig {
    * Only needed when other cascades depend on a fan-out parent.
    * If not provided, no FK map entry is created for this cascade's children.
    */
-  childFkExtractor?: (ackMetadata: Record<string, unknown>) => string | undefined;
+  childFkExtractor?: (
+    ackMetadata: Record<string, unknown>,
+  ) => string | undefined;
 
   /**
    * The first-phase step that validates/fetches this cascade's data from the source system.

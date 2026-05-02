@@ -13,9 +13,7 @@ export class DropLegacyWorkflowColumns1765443725000
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Drop indexes first
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "IDX_dtm_jobs_deal_id"`,
-    );
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_dtm_jobs_deal_id"`);
     await queryRunner.query(
       `DROP INDEX IF EXISTS "IDX_dtm_jobs_membership_number"`,
     );
@@ -43,9 +41,7 @@ export class DropLegacyWorkflowColumns1765443725000
     await queryRunner.query(
       `ALTER TABLE "dtm_jobs" ADD "membership_number" varchar(255)`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "dtm_jobs" ADD "membership_id" uuid`,
-    );
+    await queryRunner.query(`ALTER TABLE "dtm_jobs" ADD "membership_id" uuid`);
 
     // Re-add indexes
     await queryRunner.query(

@@ -133,7 +133,6 @@ export class DatabaseModule {}
 After applying fixes, restart Kafka container to pick up new config:
 
 ```bash
-cd sms
 docker compose -f docker-compose.kafka.yml up -d kafka
 ```
 

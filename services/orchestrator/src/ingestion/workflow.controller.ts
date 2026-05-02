@@ -162,8 +162,8 @@ export class WorkflowController {
     }
 
     // 5. Check for duplicate job (if deduplication is enabled)
-    const deduplicationKey = dto.deduplicationKey ||
-      (dto.payload ? JSON.stringify(dto.payload) : undefined);
+    const deduplicationKey =
+      dto.deduplicationKey || (dto.payload ? JSON.stringify(dto.payload) : undefined);
 
     if (deduplicationKey) {
       const existingJob = await this.deduplicationService.findExistingJob(
@@ -194,7 +194,7 @@ export class WorkflowController {
       featureFlags: dto.featureFlags,
       ...(dto.deduplicationKey ? { deduplicationKey: dto.deduplicationKey } : {}),
       metadata: {
-        ...(dto.payload?.metadata as Record<string, unknown> || {}),
+        ...((dto.payload?.metadata as Record<string, unknown>) || {}),
         submittedVia: 'generic-workflow-endpoint',
       },
     };
@@ -207,7 +207,9 @@ export class WorkflowController {
       submittedBy: dto.submittedBy || 'api',
     });
 
-    this.logger.log(`Workflow job created: ${job.id} (workflow=${workflowName}, variant=${variant})`);
+    this.logger.log(
+      `Workflow job created: ${job.id} (workflow=${workflowName}, variant=${variant})`,
+    );
 
     // 8. Start orchestration (create steps and delegate first batch)
     const orchestrationResult = await this.orchestrationService.startJob(job.id);
@@ -216,9 +218,7 @@ export class WorkflowController {
       this.logger.error(
         `Failed to start orchestration for job ${job.id}: ${orchestrationResult.message}`,
       );
-      throw new BadRequestException(
-        `Failed to start workflow job: ${orchestrationResult.message}`,
-      );
+      throw new BadRequestException(`Failed to start workflow job: ${orchestrationResult.message}`);
     }
 
     this.logger.log(

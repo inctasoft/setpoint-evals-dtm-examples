@@ -7,7 +7,6 @@ Quick reference for testing Kafka-triggered migrations.
 ### 1. Install Dependencies (One-time)
 
 ```bash
-cd sms/
 pnpm install  # Installs kafkajs for test scripts
 ```
 

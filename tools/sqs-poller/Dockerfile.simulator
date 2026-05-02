@@ -10,7 +10,7 @@
 #
 # Queues are auto-created on startup (no localstack-init.sh needed).
 #
-# Build context: monorepo root (sms/)
+# Build context: monorepo root
 # ============================================
 
 FROM node:22-alpine

@@ -14,8 +14,8 @@ Available workflows:
 - `infra` — Deploy infra-provisioning workers only
 
 Deploy commands:
-- Full deploy: `cd sms && ./scripts/local-env.sh deploy-workers`
-- Per-workflow: `cd sms/workflows/{workflow}/workers && node scripts/deploy-to-localstack.js`
+- Full deploy: `./scripts/local-env.sh deploy-workers`
+- Per-workflow: `cd workflows/{workflow}/workers && node scripts/deploy-to-localstack.js`
 
 After deployment, verify with: `./scripts/local-env.sh list workers`
 

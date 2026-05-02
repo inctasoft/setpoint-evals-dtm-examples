@@ -9,12 +9,12 @@ Arguments: $ARGUMENTS
 
 Available suites:
 - `all` — Run all 28 STEs (13 core + 15 workflow-specific)
-- `core` — Run 13 core STEs: `cd sms/ste && ./run-all.sh`
-- `order` — Run order-processing STEs: `cd sms/workflows/order-processing/ste && ./run-all.sh`
-- `iot` — Run iot-sensor-pipeline STEs: `cd sms/workflows/iot-sensor-pipeline/ste && ./run-all.sh`
-- `infra` — Run infra-provisioning STEs: `cd sms/workflows/infra-provisioning/ste && ./run-all.sh`
-- `playwright` — Run Playwright core specs: `cd sms/ste-playwright && pnpm test`
-- `playwright:demos` — Run Playwright demos with video recording: `cd sms && pnpm ste:playwright:demos`
+- `core` — Run 13 core STEs: `cd ste && ./run-all.sh`
+- `order` — Run order-processing STEs: `cd workflows/order-processing/ste && ./run-all.sh`
+- `iot` — Run iot-sensor-pipeline STEs: `cd workflows/iot-sensor-pipeline/ste && ./run-all.sh`
+- `infra` — Run infra-provisioning STEs: `cd workflows/infra-provisioning/ste && ./run-all.sh`
+- `playwright` — Run Playwright core specs: `cd ste-playwright && pnpm test`
+- `playwright:demos` — Run Playwright demos with video recording: `pnpm ste:playwright:demos`
 
 If no argument is given, ask the user which suite to run.
 

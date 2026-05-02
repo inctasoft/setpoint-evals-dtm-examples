@@ -205,7 +205,9 @@ export class SimulatorService {
     // ackDelay accumulation that causes timeouts during parallel STE execution.
     const sendAck = async () => {
       if (ackDelay > 0) {
-        this.logger.log(`[DEV] Simulating ack delay: ${ackDelay}ms for step ${stepId}`);
+        this.logger.log(
+          `[DEV] Simulating ack delay: ${ackDelay}ms for step ${stepId}`,
+        );
         await this.delay(ackDelay);
       }
 

@@ -447,5 +447,4 @@ describe('GlobalErrorFilter', () => {
       expect(responseWithoutDetails).not.toHaveProperty('details');
     });
   });
-
 });

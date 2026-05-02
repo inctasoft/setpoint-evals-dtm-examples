@@ -21,7 +21,7 @@
 
 ```bash
 # To verify current state:
-cd sms && pnpm test  # 17 PASS, 4 FAIL, 251/301 tests passing
+pnpm test  # 17 PASS, 4 FAIL, 251/301 tests passing
 ```
 
 ---

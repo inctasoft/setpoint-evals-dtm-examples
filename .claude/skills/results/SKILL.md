@@ -18,7 +18,7 @@ Arguments: $ARGUMENTS
 
 ## How to Execute
 
-All commands run from the `sms/ste/` directory:
+All commands run from the `ste/` directory:
 
 - **Latest results**: `./analyze-results.sh`
 - **Cross-run stats**: `./analyze-results.sh --stats`

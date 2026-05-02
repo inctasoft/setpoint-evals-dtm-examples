@@ -23,7 +23,10 @@ interface CascadeConfig {
 interface WorkflowConfig {
   name: string;
   cascades: CascadeConfig[];
-  steps?: Record<string, Array<{ step: string; requiresAcknowledgement?: boolean }>>;
+  steps?: Record<
+    string,
+    Array<{ step: string; requiresAcknowledgement?: boolean }>
+  >;
 }
 
 @Injectable()
@@ -46,7 +49,10 @@ export class ConfigLoaderService {
     const singlePath = this.configService.get<string>("WORKFLOW_CONFIG_PATH");
 
     const configPaths = multiPaths
-      ? multiPaths.split(",").map((p) => p.trim()).filter(Boolean)
+      ? multiPaths
+          .split(",")
+          .map((p) => p.trim())
+          .filter(Boolean)
       : singlePath
         ? [singlePath]
         : [];
@@ -136,8 +142,7 @@ export class ConfigLoaderService {
         ackTopic: cascade.ackTopic,
         outputStep: cascade.outputStep,
         cascadeName: cascade.cascadeName,
-        alternateStepNames:
-          alternates.length > 0 ? alternates : undefined,
+        alternateStepNames: alternates.length > 0 ? alternates : undefined,
       });
     }
 

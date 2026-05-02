@@ -172,9 +172,10 @@ export class DelegationService {
     }
 
     // Get queue name from step definitions (resolve workflow per-job)
-    const wfConfig = (step.job as any).workflowName && this.workflowRegistry.has((step.job as any).workflowName)
-      ? this.workflowRegistry.get((step.job as any).workflowName)
-      : this.workflowConfig;
+    const wfConfig =
+      (step.job as any).workflowName && this.workflowRegistry.has((step.job as any).workflowName)
+        ? this.workflowRegistry.get((step.job as any).workflowName)
+        : this.workflowConfig;
     const stepDefinitions = wfConfig.getStepDefinitions(step.job.type);
     const stepDef = stepDefinitions.find((sd) => sd.step === step.stepValue);
 
