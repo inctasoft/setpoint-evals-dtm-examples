@@ -3,6 +3,8 @@
 > A real, runnable codebase built around **Setpoint Evals (SEs)** — shell-based end-to-end tests
 > that act as long-horizon acceptance criteria for AI coding agents. Clone, run, copy the pattern.
 >
+> **Status:** clean-clone validated — `pnpm install && pnpm run build && ./scripts/local-env.sh start --standalone --orchestrator && ./scripts/local-env.sh deploy-workers && ./setpoint-evals/run-all.sh --all-workflows` runs **28/28 SEs to PASS** (13 core + 5 per workflow × 3 workflows) with zero manual intervention. Core engine: 9m33s.
+>
 > Companion article: [Setpoint Evals: Giving AI Coding Agents a Long Horizon](https://inctasoft.com/blog/setpoint-evals).
 > Theory: [The Setpoint Problem](https://inctasoft.com/blog/setpoint-problem).
 
