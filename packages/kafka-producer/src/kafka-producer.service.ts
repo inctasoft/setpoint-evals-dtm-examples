@@ -41,7 +41,9 @@ export class KafkaProducerService {
       ? config.broker
       : config.broker.split(",").map((b) => b.trim());
 
-    console.log(`[KafkaProducerService] Creating producer with brokers: ${JSON.stringify(brokers)}`);
+    console.log(
+      `[KafkaProducerService] Creating producer with brokers: ${JSON.stringify(brokers)}`,
+    );
 
     this.kafka = new Kafka({
       clientId: config.clientId || "dtm-producer",
