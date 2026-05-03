@@ -9,12 +9,12 @@ Arguments: $ARGUMENTS
 
 Available suites:
 - `all` — Run all 28 SEs (13 core + 15 workflow-specific)
-- `core` — Run 13 core SEs: `cd sms/setpoint-evals && ./run-all.sh`
-- `order` — Run order-processing SEs: `cd sms/workflows/order-processing/setpoint-evals && ./run-all.sh`
-- `iot` — Run iot-sensor-pipeline SEs: `cd sms/workflows/iot-sensor-pipeline/setpoint-evals && ./run-all.sh`
-- `infra` — Run infra-provisioning SEs: `cd sms/workflows/infra-provisioning/setpoint-evals && ./run-all.sh`
-- `playwright` — Run Playwright core specs: `cd sms/setpoint-evals-playwright && pnpm test`
-- `playwright:demos` — Run Playwright demos with video recording: `cd sms && pnpm se:playwright:demos`
+- `core` — Run 13 core SEs: `cd setpoint-evals && ./run-all.sh`
+- `order` — Run order-processing SEs: `cd workflows/order-processing/setpoint-evals && ./run-all.sh`
+- `iot` — Run iot-sensor-pipeline SEs: `cd workflows/iot-sensor-pipeline/setpoint-evals && ./run-all.sh`
+- `infra` — Run infra-provisioning SEs: `cd workflows/infra-provisioning/setpoint-evals && ./run-all.sh`
+- `playwright` — Run Playwright core specs: `cd setpoint-evals-playwright && pnpm test`
+- `playwright:demos` — Run Playwright demos with video recording:  `pnpm se:playwright:demos`
 
 If no argument is given, ask the user which suite to run.
 

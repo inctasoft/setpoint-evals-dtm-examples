@@ -66,17 +66,17 @@ export API_VERSION=v2
 
 ```bash
 # Point to staging server
-ORCHESTRATOR_HOST=https://staging.migration.example.com ./scripts/test-health.sh
+ORCHESTRATOR_HOST=https://staging.dtm.example.com ./scripts/test-health.sh
 
 # Test staging with v2 API
-ORCHESTRATOR_HOST=https://staging.migration.example.com API_VERSION=v2 ./scripts/test-new-api.sh
+ORCHESTRATOR_HOST=https://staging.dtm.example.com API_VERSION=v2 ./scripts/test-new-api.sh
 ```
 
 ### Test Against Custom Environment
 
 ```bash
 # Test against a specific environment
-export ORCHESTRATOR_HOST=https://qa.migration.example.com
+export ORCHESTRATOR_HOST=https://qa.dtm.example.com
 export API_VERSION=v1
 ./scripts/test-health.sh
 ./scripts/monitor-jobs-api.sh
@@ -280,7 +280,7 @@ export API_VERSION=${CI_API_VERSION}
 
 ```bash
 # Port-forward first
-kubectl port-forward svc/migration-orchestrator 8080:3000
+kubectl port-forward svc/dtm-orchestrator 8080:3000
 
 # Test against forwarded port
 ORCHESTRATOR_HOST=http://localhost:8080 ./scripts/test-health.sh

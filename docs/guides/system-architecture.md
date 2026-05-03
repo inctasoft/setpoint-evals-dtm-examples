@@ -620,7 +620,7 @@ graph TB
   "stepId": "step-uuid-456",
   "type": "customer",
   "processedData": {
-    "npdCustomerId": "EXT-123456",
+    "targetCustomerId": "EXT-123456",
     "firstName": "John",
     "lastName": "Doe",
     "email": "john.doe@example.com"
@@ -867,7 +867,7 @@ externalId  ext_customer_id  ext_product_id
 
 4. **PaymentMethod Ack Received**
    → Stores `externalId` (as `ext_payment_method_id`)
-   → Publishes PaymentHistory with `npdProductId` + `npdPaymentMethodId` injected
+   → Publishes PaymentHistory with `targetProductId` + `npdPaymentMethodId` injected
 
 5. **PaymentHistory Ack Received**
    → All cascade branches complete → Job marked COMPLETED
@@ -909,7 +909,7 @@ When publishing Product after Customer ack:
   "tableName": "product",
   "processedProducts": [{
     "product_id": 1001,
-    "npdCustomerId": "npd-customer-789"  // ← Injected from Customer ack
+    "targetCustomerId": "target-customer-789"  // ← Injected from Customer ack
   }],
   "requiresAcknowledgement": true
 }
@@ -924,7 +924,7 @@ When publishing Orders after Product ack:
   "tableName": "orders",
   "processedOrders": [{
     "order_id": 100001,
-    "npdProductId": "npd-product-456"  // ← Injected from Product ack
+    "targetProductId": "target-product-456"  // ← Injected from Product ack
   }],
   "requiresAcknowledgement": true
 }
@@ -1245,11 +1245,11 @@ interface SubmitBenefitsPayload {
   // Data from dependent Submit steps
   dependentStepOutputs: {
     SubmitCustomer: {
-      npdCustomerId: string; // external system's ID for the customer
+      targetCustomerId: string; // external system's ID for the customer
       npdCustomerStatus: string;
     };
     SubmitProduct: {
-      npdProductId: string; // external system's ID for the product
+      targetProductId: string; // external system's ID for the product
       npdProductNumber: string;
     };
   };
@@ -1259,8 +1259,8 @@ interface SubmitBenefitsPayload {
 async function processBenefits(payload: SubmitBenefitsPayload) {
   const processedBenefits = payload.extractedBenefits.map((benefit) => ({
     // Use external system IDs from dependent submits
-    npdCustomerId: payload.dependentStepOutputs.SubmitCustomer.npdCustomerId,
-    npdProductId: payload.dependentStepOutputs.SubmitProduct.npdProductId,
+    targetCustomerId: payload.dependentStepOutputs.SubmitCustomer.targetCustomerId,
+    targetProductId: payload.dependentStepOutputs.SubmitProduct.targetProductId,
 
     // Process benefit data
     benefitType: mapBenefitType(benefit.benefit_type),
@@ -1287,7 +1287,7 @@ POST /callback/progress
   "stepId": "step-customer-456",
   "status": "completed",
   "output": {
-    "npdCustomerId": "EXT-CUSTOMER-789",
+    "targetCustomerId": "EXT-CUSTOMER-789",
     "npdCustomerStatus": "active",
     "email": "john.doe@example.com"
   }
@@ -1302,7 +1302,7 @@ UPDATE dtm_steps
 SET
   status = 'completed',
   output = '{
-    "npdCustomerId": "EXT-CUSTOMER-789",
+    "targetCustomerId": "EXT-CUSTOMER-789",
     "npdCustomerStatus": "active",
     "email": "john.doe@example.com"
   }'::jsonb,
@@ -1446,13 +1446,13 @@ Here's what the actual SQS message looks like for `SubmitBenefits`:
       ]
     },
     "SubmitCustomer": {
-      "npdCustomerId": "EXT-CUSTOMER-789",
+      "targetCustomerId": "EXT-CUSTOMER-789",
       "npdCustomerStatus": "active",
       "email": "john.doe@example.com",
       "createdAt": "2025-11-20T10:00:00Z"
     },
     "SubmitProduct": {
-      "npdProductId": "EXT-PRODUCT-456",
+      "targetProductId": "EXT-PRODUCT-456",
       "npdProductNumber": "PROD-123456",
       "npdProductType": "PREMIUM",
       "startDate": "2025-01-01",
@@ -1489,14 +1489,14 @@ export async function handler(event: SQSEvent): Promise<void> {
 
     // Extract dependency data
     const extractedBenefits = dependencyOutputs.ValidateBenefits.benefits;
-    const npdCustomerId = dependencyOutputs.SubmitCustomer.npdCustomerId;
-    const npdProductId = dependencyOutputs.SubmitProduct.npdProductId;
+    const targetCustomerId = dependencyOutputs.SubmitCustomer.targetCustomerId;
+    const targetProductId = dependencyOutputs.SubmitProduct.targetProductId;
 
     // Process the benefits using dependency data
     const processedBenefits = extractedBenefits.map((benefit) => ({
       // 🎯 Use external system IDs from dependent submits
-      npdCustomerId: npdCustomerId,
-      npdProductId: npdProductId,
+      targetCustomerId: targetCustomerId,
+      targetProductId: targetProductId,
 
       // Process benefit fields
       benefitType: mapBenefitType(benefit.benefit_type),
@@ -1547,8 +1547,8 @@ step_value          | status    | step_output                            | start
 ValidateCustomer    | completed | {"customer": {...}}                    | 10:00:00
 ValidateProduct     | completed | {"product": {...}}                     | 10:00:00
 ValidateBenefits    | completed | {"benefits": [{...}, {...}]}           | 10:00:00
-SubmitCustomer      | completed | {"npdCustomerId": "EXT-CUSTOMER-789"}  | 10:00:05
-SubmitProduct       | completed | {"npdProductId": "EXT-PRODUCT-456"}    | 10:00:05
+SubmitCustomer      | completed | {"targetCustomerId": "EXT-CUSTOMER-789"}  | 10:00:05
+SubmitProduct       | completed | {"targetProductId": "EXT-PRODUCT-456"}    | 10:00:05
 SubmitBenefits      | completed | {"benefits": [{...}], "count": 2}      | 10:00:10
                     |           | ↑ Used outputs from Customer +         |
                     |           |   Product submits                      |
@@ -1599,10 +1599,10 @@ interface SubmitBenefitsMessage {
       }>;
     };
     SubmitCustomer: {
-      npdCustomerId: string;
+      targetCustomerId: string;
     };
     SubmitProduct: {
-      npdProductId: string;
+      targetProductId: string;
     };
   };
 }
@@ -2172,9 +2172,9 @@ if (steps.length === completedSteps.length) {
 
 ```
 Customer (root)
-    ↓ npdCustomerId
+    ↓ targetCustomerId
 Product
-    ↓ npdProductId
+    ↓ targetProductId
     ├── Orders
     ├── PaymentMethod ────┐
     │       ↓ npdPaymentMethodId
@@ -2183,7 +2183,7 @@ Product
 
 **Why This Matters**:
 - Output steps receive FK values from parent cascade ACKs
-- If Product ACK hasn't arrived, Orders Submit cannot inject `npdProductId`
+- If Product ACK hasn't arrived, Orders Submit cannot inject `targetProductId`
 - `CascadePublishService` enforces this by checking `areCascadeDependenciesMet()`
 
 ---

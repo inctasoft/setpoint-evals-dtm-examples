@@ -101,7 +101,7 @@ In `packages/database/src/database.module.ts`:
 // AFTER: Only uses TypeOrmModule.forFeature() - connection configured by app
 @Module({
   imports: [
-    TypeOrmModule.forFeature([MigrationJob, MigrationStep]),
+    TypeOrmModule.forFeature([Job, MigrationStep]),
   ],
   // ...
 })
@@ -133,7 +133,7 @@ export class DatabaseModule {}
 After applying fixes, restart Kafka container to pick up new config:
 
 ```bash
-cd sms
+cd .
 docker compose -f docker-compose.kafka.yml up -d kafka
 ```
 

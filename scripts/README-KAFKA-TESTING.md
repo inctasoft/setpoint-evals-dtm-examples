@@ -1,13 +1,13 @@
 # Kafka-Triggered Migration Testing Scripts
 
-Quick reference for testing Kafka-triggered migrations.
+Quick reference for testing Kafka-triggered jobs.
 
 ## 🚀 Quick Start
 
 ### 1. Install Dependencies (One-time)
 
 ```bash
-cd sms/
+cd .
 pnpm install  # Installs kafkajs for test scripts
 ```
 
@@ -256,7 +256,7 @@ docker exec kafka kafka-consumer-groups \
 **Check:**
 
 ```bash
-# 1. Is auto-migration enabled?
+# 1. Is auto-job enabled?
 docker exec dtm-orchestrator env | grep AUTO_MIGRATE
 
 # 2. Is Kafka consumer connected?

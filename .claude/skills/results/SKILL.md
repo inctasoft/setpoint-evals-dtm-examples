@@ -18,7 +18,7 @@ Arguments: $ARGUMENTS
 
 ## How to Execute
 
-All commands run from the `sms/setpoint-evals/` directory:
+All commands run from the `setpoint-evals/` directory:
 
 - **Latest results**: `./analyze-results.sh`
 - **Cross-run stats**: `./analyze-results.sh --stats`

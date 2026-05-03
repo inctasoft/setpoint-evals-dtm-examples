@@ -888,18 +888,18 @@ purge_all() {
             print_info "Purge Kafka manually from backend-apps or Kafka UI"
             echo ""
         else
-        print_info "Fetching DTM and npd topics from Kafka (container: $KAFKA_CONTAINER)..."
+        print_info "Fetching DTM and target topics from Kafka (container: $KAFKA_CONTAINER)..."
 
-        # Get list of dtm and npd topics (exclude internal topics)
+        # Get list of dtm and target topics (exclude internal topics)
         TOPICS=$(docker exec "$KAFKA_CONTAINER" kafka-topics \
             --bootstrap-server localhost:9092 \
-            --list 2>/dev/null | grep -E "^(dtm\.|npd\.)" 2>/dev/null)
+            --list 2>/dev/null | grep -E "^(dtm\.|target\.)" 2>/dev/null)
 
         if [ -z "$TOPICS" ]; then
-            print_info "No DTM or npd topics found"
+            print_info "No DTM or target topics found"
         else
             TOPIC_COUNT=$(echo "$TOPICS" | wc -l | tr -d ' ')
-            print_info "Found $TOPIC_COUNT topic(s) to purge (dtm.* and npd.* topics)"
+            print_info "Found $TOPIC_COUNT topic(s) to purge (dtm.* and target.* topics)"
             echo ""
             
             # Delete and recreate each topic (Kafka doesn't have native purge)
@@ -979,7 +979,7 @@ purge_all() {
         print_info "All data has been cleared from:"
         echo "  • DTM database (jobs, steps, results)"
         echo "  • SQS queues (main + DLQs)"
-        echo "  • Kafka topics (dtm.* and npd.* topics)"
+        echo "  • Kafka topics (dtm.* and target.* topics)"
         echo "  • Kafka consumer groups"
     fi
     echo ""

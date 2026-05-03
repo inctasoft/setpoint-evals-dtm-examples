@@ -50,7 +50,7 @@ This document defines **required environment variables** for different scenarios
 | ------------------------ | -------- | ------------------- | ------------------------ |
 | `POSTGRES_HOST`          | ✅       | `localhost`         | PostgreSQL host          |
 | `POSTGRES_PORT`          | ✅       | `5432`              | PostgreSQL port          |
-| `POSTGRES_DB`            | ✅       | `migration_service` | Database name            |
+| `POSTGRES_DB`            | ✅       | `dtm` | Database name            |
 | `POSTGRES_USER`          | ✅       | `postgres`          | Database user            |
 | `POSTGRES_PASSWORD`      | ✅       | `postgres`          | Database password        |
 
@@ -219,7 +219,7 @@ NODE_ENV=production
 # .env file contents
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_DB=migration_service
+POSTGRES_DB=dtm
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 KAFKA_BROKER=kafka:9092
@@ -293,7 +293,7 @@ ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=false
 ### Feature Flags
 
 - Development features (simulators, delays)
-- Business features (deduplication, auto-migration)
+- Business features (deduplication, auto-job)
 - Security features (authentication, encryption)
 
 ### Application Behavior
@@ -306,7 +306,7 @@ ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=false
 
 ## 🐛 Troubleshooting
 
-### Issue: Migration Hangs at WAITING_FOR_ACK
+### Issue: Job Hangs at WAITING_FOR_ACK
 
 **Symptom:**
 
@@ -349,7 +349,7 @@ docker logs dtm-orchestrator | grep "DevAckSimulatorService"
 
 **Symptom:**
 
-- Migration completes too fast
+- Job completes too fast
 - Expected 30s, completed in 3s
 - Delays specified in `testOptions` payload
 

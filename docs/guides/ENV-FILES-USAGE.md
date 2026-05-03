@@ -158,11 +158,11 @@ configService.get<boolean>("app.autoMigration.onConsumerCreated");
 
 | Variable                 | Description                   | Used In     |
 | ------------------------ | ----------------------------- | ----------- |
-| `MIGRATION_DB_HOST`      | DB host (Docker/EKS override) | Docker, EKS |
-| `MIGRATION_DB_PORT`      | DB port (container)           | Docker, EKS |
-| `MIGRATION_DB_PORT_HOST` | DB port (host-mapped)         | Local       |
-| `MIGRATION_DB_USER`      | DB username                   | All         |
-| `MIGRATION_DB_PASSWORD`  | DB password                   | All         |
+| `DTM_DB_HOST`      | DB host (Docker/EKS override) | Docker, EKS |
+| `DTM_DB_PORT`      | DB port (container)           | Docker, EKS |
+| `DTM_DB_PORT_HOST` | DB port (host-mapped)         | Local       |
+| `DTM_DB_USER`      | DB username                   | All         |
+| `DTM_DB_PASSWORD`  | DB password                   | All         |
 
 ### Feature Flags
 
@@ -220,9 +220,9 @@ metadata:
   name: orchestrator-config
 data:
   NODE_ENV: "production"
-  MIGRATION_DB_HOST: "migration-rds.cluster.eu-west-1.rds.amazonaws.com"
-  MIGRATION_DB_PORT: "5432"
-  MIGRATION_DB_NAME: "migration_service"
+  DTM_DB_HOST: "dtm-db.cluster.eu-west-1.rds.amazonaws.com"
+  DTM_DB_PORT: "5432"
+  DTM_DB_NAME: "dtm"
   KAFKA_BROKER: "b-1.kafka.eu-west-1.amazonaws.com:9092"
   AWS_REGION: "eu-west-1"
   ENABLE_REQUESTS_FOR_SIMULATED_DELAYS: "false"
@@ -239,8 +239,8 @@ metadata:
   name: orchestrator-secrets
 type: Opaque
 stringData:
-  MIGRATION_DB_USER: "migration_app_user"
-  MIGRATION_DB_PASSWORD: "<from-aws-secrets-manager>"
+  DTM_DB_USER: "dtm_app_user"
+  DTM_DB_PASSWORD: "<from-aws-secrets-manager>"
 ```
 
 ### Deployment
@@ -290,7 +290,7 @@ The app validates environment variables at startup using Joi:
 const host = configService.get<string>("database.host");
 
 // ❌ Avoid - No type safety
-const host = process.env.MIGRATION_DB_HOST;
+const host = process.env.DTM_DB_HOST;
 ```
 
 ### 4. Production Safety Checks
@@ -305,7 +305,7 @@ The validation schema enforces:
 ## File Structure
 
 ```
-sms/
+.
 ├── .env.example              # Template (committed)
 ├── .env                      # Generated from example (gitignored)
 └── services/orchestrator/src/
@@ -349,14 +349,13 @@ sms/
 
 ---
 
-## Migration from Old System
+## Switching from multi-file env
 
-If you have legacy `.env.local`, `.env.development`, or `.env.test` files:
+If you have legacy `.env.local`, `.env.development`, or `.env.test` files in your tree:
 
-1. The new system is backward-compatible during transition
-2. Gradually migrate to single `.env` file
-3. Runtime detection handles mode switching automatically
-4. Legacy files can be removed once migration is complete
+1. The runtime auto-detects mode (local / docker / EKS) — a single `.env` covers all three
+2. Move overrides into `.env` and delete the legacy files
+3. Postinstall (`scripts/setup-env.cjs`) creates `.env` from `.env.example` if absent
 
 ---
 
