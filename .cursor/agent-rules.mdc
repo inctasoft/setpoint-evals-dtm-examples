@@ -16,7 +16,7 @@ alwaysApply: true
 ### 1. Understand Before Changing
 
 - **Read existing code** before suggesting changes
-- **Check architecture docs** (`.cursor/architecture.mdc`, and all `*.md` files in `ste/` and `docs/` directories) for patterns
+- **Check architecture docs** (`.cursor/architecture.mdc`, and all `*.md` files in `setpoint-evals/` and `docs/` directories) for patterns
 - **Review recent changes** (`CHANGELOG/README.md` and `DTM-PROGRESS.md`)
 - **Test understanding** by explaining current behavior
 
@@ -120,8 +120,8 @@ This is a **distributed task orchestration service**:
 pnpm test                    # Unit tests
 pnpm test:e2e                # E2E tests
 pnpm test:cov                # With coverage
-./ste/run-all.sh             # Core STEs
-./ste/run-all.sh --all-workflows  # All STEs
+./setpoint-evals/run-all.sh             # Core SEs
+./setpoint-evals/run-all.sh --all-workflows  # All SEs
 ```
 
 ---
@@ -186,7 +186,7 @@ pnpm test:cov                # With coverage
 
 1. **Navigate**: `docs/MASTER-INDEX.md` (canonical documentation index - START HERE!)
 2. **Architecture**: `.cursor/architecture.mdc` (complete technical reference)
-3. **STEs**: `ste/README.md` (living documentation and test scenarios)
+3. **SEs**: `setpoint-evals/README.md` (living documentation and test scenarios)
 4. **Changelog**: `CHANGELOG/README.md` (organized change history by category)
 
 > **⚠️ IMPORTANT**: If you see conflicting documentation, verify against actual code.

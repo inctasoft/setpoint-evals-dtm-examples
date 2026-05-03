@@ -201,7 +201,9 @@ export class SqsService {
       const result = await this.sqsClient.send(command);
       return result.QueueUrls ?? [];
     } catch (error) {
-      this.logger.error(`Failed to list SQS queues: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      this.logger.error(
+        `Failed to list SQS queues: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
       return [];
     }
   }
@@ -231,7 +233,9 @@ export class SqsService {
         delayed: parseInt(attrs.ApproximateNumberOfMessagesDelayed ?? '0', 10),
       };
     } catch (error) {
-      this.logger.warn(`Failed to get queue stats for ${queueUrl}: ${error instanceof Error ? error.message : 'Unknown'}`);
+      this.logger.warn(
+        `Failed to get queue stats for ${queueUrl}: ${error instanceof Error ? error.message : 'Unknown'}`,
+      );
       return { available: 0, inFlight: 0, delayed: 0 };
     }
   }

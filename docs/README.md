@@ -14,9 +14,9 @@ Engine-level architecture and protocols that apply to all workflows regardless o
 
 Domain-specific documentation for each workflow implementation. Covers source and target data schemas, entity dependency graphs, FK injection rules, and transformation logic. Each workflow defines its own entities, step configurations, and data access patterns.
 
-### Layer 3 -- STEs (`ste/` + `workflows/<name>/ste/`)
+### Layer 3 -- SEs (`setpoint-evals/` + `workflows/<name>/setpoint-evals/`)
 
-Structured Test Evaluations serve as living documentation. Core STEs validate engine-level behavior (callback handling, deduplication, retry logic). Workflow STEs validate domain-specific scenarios (entity extraction, transformation, cascade resolution). Each STE includes a README describing the scenario it validates and a runnable test script.
+Structured Test Evaluations serve as living documentation. Core SEs validate engine-level behavior (callback handling, deduplication, retry logic). Workflow SEs validate domain-specific scenarios (entity extraction, transformation, cascade resolution). Each SE includes a README describing the scenario it validates and a runnable test script.
 
 ## Quick Links
 

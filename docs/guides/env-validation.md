@@ -394,7 +394,7 @@ Environment not properly configured for E2E testing
 
 # Fix reported issues
 # Then re-run eval
-./ste/01-retry-transient-failure/test.sh
+./setpoint-evals/01-retry-transient-failure/test.sh
 ```
 
 ---
@@ -423,7 +423,7 @@ ENABLE_DEV_ACK_SIMULATOR=false ./scripts/validate-env.sh --scenario e2e-tests
 - [FEATURES.md](../FEATURES.md) - Feature flag documentation
 - [CUSTOM-ACK-PAYLOADS.md](custom-ack-payloads.md) - Acknowledgement simulator details
 - [SQS-POLLER-FIXES.md](../../CHANGELOG/SQS-POLLER-FIXES.md) - SQS configuration and retry behavior
-- [ste/README.md](../../ste/README.md) - STE testing guide
+- [setpoint-evals/README.md](../../setpoint-evals/README.md) - SE testing guide
 - [.cursorrules](.cursorrules) - Environment validation rules
 
 ---
@@ -435,7 +435,7 @@ ENABLE_DEV_ACK_SIMULATOR=false ./scripts/validate-env.sh --scenario e2e-tests
 1. **Run validation before every E2E test**
 
    ```bash
-   ./scripts/validate-env.sh && ./ste/01-retry-transient-failure/test.sh
+   ./scripts/validate-env.sh && ./setpoint-evals/01-retry-transient-failure/test.sh
    ```
 
 2. **Keep `.env.*.example` files updated**

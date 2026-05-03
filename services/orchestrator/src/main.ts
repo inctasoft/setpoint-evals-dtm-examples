@@ -23,9 +23,7 @@ async function bootstrap() {
 
   // CORS for SuperTokens auth
   app.enableCors({
-    origin: [
-      process.env.SUPERTOKENS_WEBSITE_DOMAIN || 'http://localhost:5173',
-    ],
+    origin: [process.env.SUPERTOKENS_WEBSITE_DOMAIN || 'http://localhost:5173'],
     allowedHeaders: ['content-type', ...supertokens.getAllCORSHeaders()],
     credentials: true,
   });

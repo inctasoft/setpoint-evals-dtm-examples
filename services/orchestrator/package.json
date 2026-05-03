@@ -29,7 +29,7 @@
     "migration:revert": "npx typeorm-ts-node-commonjs migration:revert -d dataSource.ts",
     "migration:show": "npx typeorm-ts-node-commonjs migration:show -d dataSource.ts",
     "migration:generate": "npx typeorm-ts-node-commonjs migration:generate -d dataSource.ts",
-    "migrate": "env $(cat ../../../.env | grep -v '^#' | grep -v '^[[:space:]]*$' | xargs) npm run migration:run"
+    "migrate": "env $(cat ../../.env | grep -v '^#' | grep -v '^[[:space:]]*$' | xargs) npm run migration:run"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.709.0",

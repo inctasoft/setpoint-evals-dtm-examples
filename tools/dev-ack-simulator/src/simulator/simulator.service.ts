@@ -202,10 +202,12 @@ export class SimulatorService {
 
     // Fire-and-forget: schedule the delay + publish without blocking the consumer.
     // This allows the next Kafka message to be processed immediately, preventing
-    // ackDelay accumulation that causes timeouts during parallel STE execution.
+    // ackDelay accumulation that causes timeouts during parallel SE execution.
     const sendAck = async () => {
       if (ackDelay > 0) {
-        this.logger.log(`[DEV] Simulating ack delay: ${ackDelay}ms for step ${stepId}`);
+        this.logger.log(
+          `[DEV] Simulating ack delay: ${ackDelay}ms for step ${stepId}`,
+        );
         await this.delay(ackDelay);
       }
 

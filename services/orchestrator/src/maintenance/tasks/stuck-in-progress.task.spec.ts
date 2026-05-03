@@ -77,7 +77,8 @@ describe('StuckInProgressTask', () => {
       // Assert
       expect(metadata).toEqual({
         name: 'stuck-in-progress',
-        description: 'Detects steps stuck in IN_PROGRESS state and auto-fails them after per-step timeout',
+        description:
+          'Detects steps stuck in IN_PROGRESS state and auto-fails them after per-step timeout',
         schedule: '0 */10 * * * *',
         priority: 85,
         category: 'recovery',

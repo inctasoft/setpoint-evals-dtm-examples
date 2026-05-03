@@ -483,7 +483,7 @@ FUTURE STATE: Pluggable Workflow Architecture
 1. **Always run tests** before committing
 2. **Always fix linting** (pre-commit enforces)
 3. **Update documentation** for architectural changes
-4. **Test E2E** with STE suite (`./ste/run-all.sh`)
+4. **Test E2E** with SE suite (`./setpoint-evals/run-all.sh`)
 5. **Check backward compatibility** - Don't break existing jobs
 6. **Consider indexing** - Large queries should have indices
 7. **Idempotency** - Always check for duplicates

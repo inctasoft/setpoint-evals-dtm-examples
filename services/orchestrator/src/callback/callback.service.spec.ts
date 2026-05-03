@@ -2,13 +2,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { CallbackService } from './callback.service';
-import {
-  JobRepository,
-  StepRepository,
-  JobStatus,
-  StepStatus,
-  JobType,
-} from '@dtm/database';
+import { JobRepository, StepRepository, JobStatus, StepStatus, JobType } from '@dtm/database';
 import { OrchestrationService } from '../orchestration/orchestration.service';
 import { CascadePublishService } from '../orchestration/cascade-publish.service';
 import { FanOutService } from '../orchestration/fan-out.service';

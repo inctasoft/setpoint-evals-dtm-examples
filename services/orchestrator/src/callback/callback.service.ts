@@ -59,7 +59,11 @@ export class CallbackService {
   /**
    * Get step definition for a specific step value and job type
    */
-  private getStepDef(stepValue: string, jobType: string, wfConfig?: WorkflowConfigService): StepDefinition | undefined {
+  private getStepDef(
+    stepValue: string,
+    jobType: string,
+    wfConfig?: WorkflowConfigService,
+  ): StepDefinition | undefined {
     const cfg = wfConfig || this.workflowConfig;
     return cfg.getStepDefinition(jobType, stepValue);
   }
@@ -189,7 +193,10 @@ export class CallbackService {
 
             for (const enrichment of stepConfig.payloadEnrichments) {
               const outputValue = dto.output[enrichment.outputField];
-              if (outputValue !== undefined && (enrichment.overwrite || !updatedPayload[enrichment.payloadField])) {
+              if (
+                outputValue !== undefined &&
+                (enrichment.overwrite || !updatedPayload[enrichment.payloadField])
+              ) {
                 updatedPayload[enrichment.payloadField] = outputValue;
                 enriched = true;
                 this.logger.log(
@@ -320,7 +327,10 @@ export class CallbackService {
 
           // Check if there's actually any data to publish before setting WAITING_FOR_ACK
           // When recordsProcessed is 0 (e.g., no orders for a consumer), skip Kafka and complete directly
-          const hasDataToPublish = this.hasTransformedDataToPublish(updatedStepForPublish, wfConfig);
+          const hasDataToPublish = this.hasTransformedDataToPublish(
+            updatedStepForPublish,
+            wfConfig,
+          );
 
           if (!hasDataToPublish) {
             // Dynamic workflows (no cascades) still need WAITING_FOR_ACK for human review
@@ -328,7 +338,7 @@ export class CallbackService {
             if (isDynamic) {
               this.logger.log(
                 `Step ${dto.stepId} (${step.stepValue}) is a dynamic step requiring acknowledgement — ` +
-                `setting WAITING_FOR_ACK (ACK via HTTP or Kafka)`,
+                  `setting WAITING_FOR_ACK (ACK via HTTP or Kafka)`,
               );
               await this.stepRepository.updateStatus(dto.stepId, StepStatus.WAITING_FOR_ACK);
               this.eventsGateway.broadcast({
@@ -390,7 +400,11 @@ export class CallbackService {
             .where('id = :id', { id: dto.stepId })
             .execute();
 
-          const publishToKafka = this.publishTransformedDataEvent(dto.jobId, updatedStepForPublish, wfConfig);
+          const publishToKafka = this.publishTransformedDataEvent(
+            dto.jobId,
+            updatedStepForPublish,
+            wfConfig,
+          );
 
           // Wait for both to complete - enriched output is saved regardless of Kafka success
           const [, kafkaResult] = await Promise.allSettled([saveEnrichedOutput, publishToKafka]);
@@ -709,8 +723,7 @@ export class CallbackService {
       }
 
       const outputDataKey = cascade.outputDataKey || 'outputData';
-      const transformedData =
-        (step.output[outputDataKey] as Array<Record<string, unknown>>) || [];
+      const transformedData = (step.output[outputDataKey] as Array<Record<string, unknown>>) || [];
 
       if (!transformedData || transformedData.length === 0) {
         this.logger.warn(
@@ -874,9 +887,7 @@ export class CallbackService {
     }
 
     const outputDataKey = cascade.outputDataKey || 'outputData';
-    const outputData = step.output[outputDataKey] as
-      | Array<Record<string, unknown>>
-      | undefined;
+    const outputData = step.output[outputDataKey] as Array<Record<string, unknown>> | undefined;
 
     // Check if there's actually data to publish
     return Array.isArray(outputData) && outputData.length > 0;

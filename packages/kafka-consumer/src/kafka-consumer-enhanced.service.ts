@@ -123,18 +123,31 @@ export class KafkaConsumerEnhancedService implements OnModuleDestroy {
       return;
     }
 
-    try {
-      await this.consumer.subscribe({
-        topic: subscription.topic,
-        fromBeginning: subscription.fromBeginning ?? false,
-      });
-      this.logger.log(`📝 Subscribed to topic: ${subscription.topic}`);
-    } catch (error) {
-      this.logger.error(
-        `Failed to subscribe to ${subscription.topic}: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-      throw error;
+    const maxAttempts = 5;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.consumer.subscribe({
+          topic: subscription.topic,
+          fromBeginning: subscription.fromBeginning ?? false,
+        });
+        this.logger.log(`📝 Subscribed to topic: ${subscription.topic}`);
+        return;
+      } catch (error) {
+        lastError = error;
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        if (attempt < maxAttempts) {
+          this.logger.warn(
+            `Subscribe to ${subscription.topic} failed (attempt ${attempt}/${maxAttempts}): ${msg}. Retrying in 1s...`,
+          );
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
     }
+    this.logger.error(
+      `Failed to subscribe to ${subscription.topic} after ${maxAttempts} attempts: ${lastError instanceof Error ? lastError.message : "Unknown error"}`,
+    );
+    throw lastError;
   }
 
   /**

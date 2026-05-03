@@ -31,7 +31,7 @@ Each entity type requires a **worker pair** (or trio for fan-out):
 3. Update Dev ACK Simulator (if entity requires acknowledgements)
 4. For fan-out: Implement failure filter check in output worker
 
-**Without these, the entity will NOT be testable!** Simulated delays/failures won't work, and STEs will fail.
+**Without these, the entity will NOT be testable!** Simulated delays/failures won't work, and SEs will fail.
 
 ---
 
@@ -72,9 +72,9 @@ When adding a new entity (e.g., "your-entity"), follow this checklist in order:
 ### Phase 4: Testing & Documentation
 
 - [ ] **4.1** Build and deploy workers
-- [ ] **4.2** Create STE(s) for new entity
+- [ ] **4.2** Create SE(s) for new entity
 - [ ] **4.3** Update TEST-DATA-REGISTRY.md
-- [ ] **4.4** Run STEs to verify
+- [ ] **4.4** Run SEs to verify
 
 ---
 
@@ -364,9 +364,9 @@ Before considering implementation complete:
 - [ ] SQS Poller invokes both workers
 - [ ] TestOptions fields added to `TestOptionsDto`
 - [ ] For fan-out: Failure filter implemented
-- [ ] STE passes with new entity (happy path)
-- [ ] STE passes with simulated delays
-- [ ] STE passes with simulated failure
+- [ ] SE passes with new entity (happy path)
+- [ ] SE passes with simulated delays
+- [ ] SE passes with simulated failure
 - [ ] For fan-out: Partial failure test works
 - [ ] FK injection works for dependent entities (if applicable)
 

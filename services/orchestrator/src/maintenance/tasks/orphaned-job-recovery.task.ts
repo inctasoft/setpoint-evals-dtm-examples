@@ -62,7 +62,7 @@ export class OrphanedJobRecoveryTask extends BaseMaintenanceTask {
     };
   }
 
-  @Cron('*/30 * * * * *')  // Every 30 seconds for development
+  @Cron('*/30 * * * * *') // Every 30 seconds for development
   async scheduledRun() {
     const acquired = await this.advisoryLock.tryAcquire(LockId.ORPHANED_JOB_RECOVERY);
     if (!acquired) return;

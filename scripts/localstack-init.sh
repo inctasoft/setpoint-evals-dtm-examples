@@ -48,6 +48,7 @@ QUEUES=(
   order-submit-payment
   order-validate-shipment
   order-submit-shipment
+  order-archive-processed-order
   # infra-provisioning workflow
   infra-plan-environment
   infra-apply-environment
@@ -64,6 +65,7 @@ QUEUES=(
   infra-apply-certificate
   infra-plan-load-balancer
   infra-apply-load-balancer
+  infra-record-provisioned-infra
   # iot-sensor-pipeline workflow
   iot-register-device
   iot-provision-device
@@ -77,6 +79,7 @@ QUEUES=(
   iot-dispatch-alert
   iot-compute-aggregate
   iot-publish-aggregate
+  iot-archive-processed-pipeline
   # plan-execution workflow (voice-assistant chunk execution via DTM)
   plan-execute-chunk
 )

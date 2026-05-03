@@ -99,9 +99,11 @@ export class SqsConfig {
     const port = parseInt(process.env.PORT || process.env.ORCHESTRATOR_PORT || '3000', 10);
     // ORCHESTRATOR_CALLBACK_HOST env var allows explicit override.
     // Otherwise auto-detect Docker bridge IP (accessible from both Docker containers and host).
-    const dockerHost = process.env.ORCHESTRATOR_CALLBACK_HOST ||
+    const dockerHost =
+      process.env.ORCHESTRATOR_CALLBACK_HOST ||
       getDockerBridgeIp() ||
-      process.env.ORCHESTRATOR_DOCKER_HOST || 'dtm-orchestrator';
+      process.env.ORCHESTRATOR_DOCKER_HOST ||
+      'dtm-orchestrator';
 
     switch (runtime) {
       case 'local':

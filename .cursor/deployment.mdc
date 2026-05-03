@@ -26,7 +26,7 @@ alwaysApply: true
 ### 2. Poller Mode (Custom SQS Poller)
 - **Command**: `make deploy-workers-poller [COUNT=N]`
 - **Mechanism**: Runs a custom Node.js container (`sqs-poller`) that long-polls SQS and invokes Lambda functions via SDK.
-- **Requirement**: **MANDATORY for Parallel STE Execution**.
+- **Requirement**: **MANDATORY for Parallel SE Execution**.
   - Use `COUNT=10` (or more) to ensure sufficient throughput.
   - Without this, tests will timeout due to resource contention and sequential processing.
 - **Behavior**: Simulates high-throughput parallel processing.
@@ -40,7 +40,7 @@ alwaysApply: true
 | :--- | :--- |
 | `make start-standalone` | Start full stack (DB, Kafka, Orch, UI) |
 | `make deploy-workers-poller COUNT=10` | Deploy workers in Poller mode |
-| `make e2e-parallel` | Run full STE suite in parallel |
+| `make e2e-parallel` | Run full SE suite in parallel |
 | `make logs` | Tail all logs |
 | `make purge` | Clear DB, SQS, Kafka (keeps services running) |
 

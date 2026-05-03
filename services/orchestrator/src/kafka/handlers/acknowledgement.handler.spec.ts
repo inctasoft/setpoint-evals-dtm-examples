@@ -39,7 +39,9 @@ describe('AcknowledgementHandler', () => {
 
     const mockCascadePublishService = {
       areCascadeDependenciesMet: jest.fn().mockReturnValue(true),
-      injectFkValues: jest.fn().mockImplementation((_et: unknown, _steps: unknown, data: unknown) => data),
+      injectFkValues: jest
+        .fn()
+        .mockImplementation((_et: unknown, _steps: unknown, data: unknown) => data),
     };
 
     const mockFanOutService = {

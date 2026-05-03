@@ -5,7 +5,7 @@
 # Extends the base simulator stack with order-processing workflow artifacts.
 #
 # This compose file demonstrates how a standalone workflow repo would use
-# the orchestrator simulator to run its STEs independently.
+# the orchestrator simulator to run its SEs independently.
 #
 # Usage:
 #   # From this directory (simulator/examples/order-processing/):

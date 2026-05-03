@@ -1,8 +1,15 @@
-# DTM - Distributed Task Manager
+# Setpoint Evals — A Working Example
 
-A generic distributed task orchestration engine with pluggable workflows. Built with NestJS, Lambda workers, PostgreSQL, Kafka, and SQS.
+> A real, runnable codebase built around **Setpoint Evals (SEs)** — shell-based end-to-end tests
+> that act as long-horizon acceptance criteria for AI coding agents. Clone, run, copy the pattern.
+>
+> Companion article: [Setpoint Evals: Giving AI Coding Agents a Long Horizon](https://inctasoft.com/blog/setpoint-evals).
+> Theory: [The Setpoint Problem](https://inctasoft.com/blog/setpoint-problem).
 
-Three pluggable workflows are included: `order-processing`, `iot-sensor-pipeline`, and `infra-provisioning`. Each demonstrates different engine capabilities including fan-out processing, cascade FK injection, conditional steps, and end-to-end testing.
+The example domain is **DTM — a Distributed Task Manager** with three pluggable workflows
+(`order-processing`, `iot-sensor-pipeline`, `infra-provisioning`). Together they showcase
+fan-out processing, cascade FK injection, conditional steps, retries, dead-letter queues,
+and end-to-end acknowledgement.
 
 ## Architecture
 
@@ -18,199 +25,196 @@ graph LR
     G --> H[Target System]
 ```
 
-**Flow**: Steps Delegate, Process, Callback repeat for each step defined in the workflow configuration.
-
-**Publish and Acknowledgement**: Steps that publish to Kafka enter `WAITING_FOR_ACK` status, blocking until the target system acknowledges receipt.
+**Flow**: Steps Delegate → Process → Callback repeat for each step in the workflow configuration.
+Steps that publish to Kafka enter `WAITING_FOR_ACK`, blocking until the target system acknowledges.
 
 ### Key Features
-
 - Parallel execution of independent steps
 - Configurable step dependencies with domain-specific verbs
 - Fan-out processing (Discovery step creates N child steps)
 - Cascade FK injection (parent ACK data flows to child steps)
-- Kafka-triggered workflows
-- Deduplication and idempotency
+- Kafka-triggered workflows; deduplication; idempotency
 - Simulated delays and failures for testing
-- Automatic retries with Dead Letter Queues
+- Automatic retries with Dead-Letter Queues
 - Configurable outcome rules per workflow
-- Two-tier STE (State Transition Eval) testing system
+- Two-tier **Setpoint Eval** suite (core engine + per-workflow)
 
 ### Components
 
-This is a **pnpm monorepo** with:
+This is a **pnpm monorepo**:
 
-- **Orchestrator** (`services/orchestrator/`) - NestJS workflow engine
-- **Lambda Workers** (`workflows/*/workers/`) - Per-workflow Lambda handlers
-- **SQS Poller** (`tools/sqs-poller/`) - DEV ONLY: Polls SQS for local development
-- **Dev ACK Simulator** (`tools/dev-ack-simulator/`) - DEV ONLY: Simulates target system acknowledgements
-- **Core Packages** (`packages/`) - Shared database entities, Kafka producer/consumer, worker SDK
-- **Workflows** (`workflows/`) - Pluggable workflow definitions with workers and tests
+- **Orchestrator** (`services/orchestrator/`) — NestJS workflow engine
+- **Lambda Workers** (`workflows/*/workers/`) — per-workflow Lambda handlers
+- **SQS Poller** (`tools/sqs-poller/`) — DEV ONLY: polls SQS for local development
+- **Dev ACK Simulator** (`tools/dev-ack-simulator/`) — DEV ONLY: simulates target-system ACKs
+- **Core Packages** (`packages/`) — shared entities, Kafka producer/consumer, worker SDK
+- **Workflows** (`workflows/`) — pluggable workflow definitions with workers and tests
 
 ## Quick Start
 
 ### Prerequisites
 
-- Docker and Docker Compose
+- Docker + Docker Compose
 - Node.js 22+ and pnpm 10+
-- AWS CLI (for LocalStack interaction)
+- AWS CLI (for LocalStack interaction from host scripts)
 
-### Start the Service
+### Run it
 
 ```bash
-# 1. Install dependencies
+# 1. Install + build (postinstall creates a default .env from .env.example)
 pnpm install
+pnpm run build
 
-# 2. Start infrastructure and services
+# 2. Start infrastructure + orchestrator (Kafka, Postgres, LocalStack, dev-ack-simulator)
 ./scripts/local-env.sh start --standalone --orchestrator
 
-# 3. Deploy Lambda workers
-./scripts/local-env.sh deploy-workers --poller --count=5
+# 3. Deploy Lambda workers (poller mode = default; ESM mode requires LocalStack Pro)
+./scripts/local-env.sh deploy-workers
 
-# 4. Access services
-# Orchestrator API: http://localhost:3002
-# API Docs: http://localhost:3002/api-docs
-# Kafka UI: http://localhost:8090
+# 4. Run the full Setpoint Eval suite (28 evals: 13 core + 5 per workflow × 3 workflows)
+./setpoint-evals/run-all.sh --all-workflows
+
+# 5. Access services (host ports)
+# Orchestrator API: http://localhost:3002/api/v1
+# Health:           http://localhost:3002/api/v1/health
+# Swagger UI:       http://localhost:3002/api-docs
+# Kafka UI:         http://localhost:8090
+# Monitor (Vite):   http://localhost:5173 (start with --monitor)
 ```
+
+> Step 1 runs the full build (packages → workflows → orchestrator → handlers → tools → frontend).
+> The dev-ack-simulator and orchestrator bind-mount `workflows/*/dist` and `tools/*/dist` from
+> the host, so an unbuilt tree means a crashloop. `local-env.sh start` will rebuild on demand,
+> but running `pnpm run build` first is faster and easier to debug.
 
 ### Deployment Modes
 
-**ESM Mode** (parallel execution):
+**Poller Mode** (default):
 ```bash
+./scripts/local-env.sh deploy-workers --poller   # 10 sqs-poller replicas
+```
+Reliable on free LocalStack. The poller invokes deployed Lambdas via the LocalStack Lambda API.
+
+**ESM Mode** (parallel via Lambda Event Source Mappings — requires LocalStack Pro):
+```bash
+export ENABLE_LAMBDA_WITH_ESM_LOCALSTACK_DEPLOYMENT=true
 ./scripts/local-env.sh deploy-workers --esm
 ```
-
-- Up to 50 parallel Lambda invocations via LocalStack Event Source Mappings
-- Recommended for E2E testing and production-like environments
-
-**Poller Mode** (sequential execution):
-```bash
-./scripts/local-env.sh deploy-workers --poller
-```
-
-- One message processed at a time
-- Easier to follow execution flow and debug
+The free LocalStack version has known flakiness with ESM v2; without the env var above the
+script silently falls back to poller mode.
 
 **Debug-Server Mode** (full breakpoint support):
 ```bash
-# 1. Start infrastructure only (no --orchestrator flag)
-./scripts/local-env.sh start --standalone
-
-# 2. Deploy in debug mode
+./scripts/local-env.sh start --standalone        # infra only, no orchestrator container
 ./scripts/local-env.sh deploy-workers --debug-server
-
-# 3. Press F5 in VS Code to launch orchestrator + workers with breakpoints
+# Press F5 in VS Code to launch orchestrator + handlers locally with breakpoints
 ```
-
-- Full breakpoint debugging across orchestrator and all handlers
-- No Lambda timeouts (15-minute effective timeout vs 15s LocalStack limit)
-- Hot reload for both orchestrator and handler code changes
 
 Switch between modes anytime without restarting infrastructure:
 ```bash
-./scripts/local-env.sh deploy-workers --poller   # Switch to poller
-./scripts/local-env.sh deploy-workers --esm      # Switch to ESM
+./scripts/local-env.sh deploy-workers --poller
+./scripts/local-env.sh deploy-workers --esm
 ```
 
 ### Access Databases
 
 DTM Core DB:
 ```
-Host: localhost:5448
-Database: dtm
-Username: dtm_user
+Host: localhost:5448  Database: dtm  Username: dtm_user
+```
+Workflow Source DBs:
+```
+Order Processing:    localhost:5449  (order_processing_db / order_user)
+IoT Sensor Pipeline: localhost:5450  (iot_sensor_pipeline_db / iot_user)
+Infra Provisioning:  localhost:5451  (infra_provisioning_db / infra_user)
 ```
 
-Workflow Source DBs (each workflow has its own):
-```
-Order Processing DB:   localhost:5449  (database: order_processing_db, user: order_user)
-IoT Sensor DB:         localhost:5450  (database: iot_sensor_pipeline_db, user: iot_user)
-Infra Provisioning DB: localhost:5451  (database: infra_provisioning_db, user: infra_user)
-```
+## Setpoint Evals
 
-## Testing
-
-### Unit Tests
-```bash
-pnpm test              # All packages
-pnpm test:cov          # With coverage
-```
-
-### State Transition Evals (STEs)
-
-Two-tier testing system for validating workflow behavior end-to-end:
+A two-tier shell-based test suite. **The SEs are the long-horizon acceptance criteria** — they
+post real requests to the running orchestrator, poll for state changes, and assert the
+end-to-end behaviour. They run on the live Docker stack, not on mocks.
 
 ```bash
-# Core engine tests (13 STEs)
-./ste/run-all.sh
+# Core engine SEs (13 tests — retries, DLQ, deduplication, concurrency, maintenance)
+./setpoint-evals/run-all.sh
 
-# Workflow-specific tests
-./workflows/order-processing/ste/run-all.sh
+# Per-workflow SEs (5 tests each)
+./workflows/order-processing/setpoint-evals/run-all.sh
+./workflows/iot-sensor-pipeline/setpoint-evals/run-all.sh
+./workflows/infra-provisioning/setpoint-evals/run-all.sh
 
-# All tests combined
-./ste/run-all.sh --all-workflows
+# Everything (28 evals total)
+./setpoint-evals/run-all.sh --all-workflows
 ```
 
-Individual STE:
+A single SE:
 ```bash
-./ste/01-retry-transient-failure/test.sh
+./setpoint-evals/01-retry-transient-failure/test.sh
 ```
 
-Parallel run:
+Parallel mode is the default; sequential mode is `--in-band`.
+
+### Unit tests
 ```bash
-./ste/run-all.sh --parallel
+pnpm test          # services/orchestrator unit tests
+pnpm test:cov      # with coverage
 ```
 
 ## Monitoring
 
 ```bash
-# Service health
-curl http://localhost:3002/health
+# Health
+curl http://localhost:3002/api/v1/health
 
-# View logs
+# Logs
 ./scripts/local-env.sh logs --follow
 
-# Monitor SQS queues
+# SQS / DB / API observers
 ./scripts/monitor-sqs-messages.sh
-
-# Monitor database jobs
 ./scripts/monitor-jobs-db.sh
-
-# Monitor API requests
 ./scripts/monitor-events-api.sh
 ```
+
+**API Documentation**: http://localhost:3002/api-docs (Swagger UI)
 
 ## Project Structure
 
 ```
-dtm/
+.
 ├── services/
 │   └── orchestrator/               # NestJS workflow engine
 │       ├── src/
 │       │   ├── ingestion/          # Job creation API
-│       │   ├── orchestration/      # Workflow state machine
+│       │   ├── orchestration/      # Workflow state machine (the brain)
 │       │   ├── delegation/         # SQS delegation
 │       │   ├── callback/           # Worker callbacks and Kafka publishing
 │       │   ├── jobs/               # Job queries
 │       │   ├── kafka/              # Kafka event handlers and triggers
-│       │   └── config/             # Workflow definitions
-│       └── test/                   # Unit tests
+│       │   └── auth/               # SuperTokens guard (DISABLE_AUTH=true in dev)
+│       └── test/
 ├── tools/
-│   ├── dev-ack-simulator/          # DEV: ACK simulator
-│   └── sqs-poller/                 # DEV: SQS poller
+│   ├── dev-ack-simulator/          # DEV: simulates target-system ACKs
+│   └── sqs-poller/                 # DEV: polls SQS, dispatches to Lambdas
 ├── packages/
 │   ├── core/                       # Shared interfaces, enums, DTOs
-│   ├── database/                   # TypeORM entities and repositories
+│   ├── database/                   # TypeORM entities for the core DB
 │   ├── errors/                     # Error classes and codes
-│   ├── kafka-producer/             # Kafka producer
-│   ├── kafka-consumer/             # Kafka consumer
-│   └── worker-sdk/                 # Worker SDK
+│   ├── kafka-producer/
+│   ├── kafka-consumer/
+│   └── worker-sdk/
 ├── workflows/
 │   ├── 00-template/                # New workflow starter template
 │   ├── order-processing/           # Parallel root steps, fan-out, optional entities
 │   ├── iot-sensor-pipeline/        # Nested fan-out, feature flags, conditional steps
-│   └── infra-provisioning/         # Deep cascade, long ACK timeouts, wide parallel branches
-├── ste/                             # Core engine STEs (13 tests)
-├── docs/                           # Core engine documentation
+│   ├── infra-provisioning/         # Deep cascade, long ACK timeouts, wide parallel branches
+│   └── plan-execution/             # Plan-execution workflow (chunked execution)
+├── setpoint-evals/                 # Core engine SEs (13)
+│   ├── run-all.sh                  # Suite runner (parallel + destructive phases)
+│   ├── analyze-results.sh          # Result compactor
+│   └── 01-retry-transient-failure/ # ... 13 individual evals
+├── setpoint-evals-playwright/      # Optional Playwright-based UI evals
+├── docs/                           # Architecture & operations guides
 ├── scripts/                        # CLI tools
 ├── CLAUDE.md                       # AI agent project guide
 ├── docker-compose.yml              # Base infrastructure
@@ -218,65 +222,47 @@ dtm/
 └── docker-compose.workers.yml      # Lambda workers and SQS poller
 ```
 
-## Documentation
-
-- **[docs/MASTER-INDEX.md](docs/MASTER-INDEX.md)** - Use-case-based documentation navigation
-- **[docs/guides/system-architecture.md](docs/guides/system-architecture.md)** - Engine architecture
-- **[docs/guides/race-condition-prevention.md](docs/guides/race-condition-prevention.md)** - Callback protocol and race condition guards
-- **[docs/guides/database-schema.md](docs/guides/database-schema.md)** - Database schema reference
-- **[ste/README.md](ste/README.md)** - Core engine STE catalog
-
 ## Development
 
 ```bash
-# Start full stack with hot reload
+# Start full stack
 ./scripts/local-env.sh start --standalone --orchestrator
 
-# View logs
-./scripts/local-env.sh logs
-
-# Purge all data (queues, databases)
-./scripts/local-env.sh purge
-
-# Full reset (purge + redeploy)
-./scripts/local-env.sh reset
-
-# Stop all services
+# Stop / purge / reset
 ./scripts/local-env.sh stop
+./scripts/local-env.sh purge       # Clear DB only
+./scripts/local-env.sh purge --full # + SQS + Kafka
+./scripts/local-env.sh reset        # Purge + redeploy
+
+# pnpm workspace
+pnpm install                                       # always from root
+pnpm --filter "@dtm/orchestrator" run start:dev   # run a single package
+pnpm run build                                     # build everything
 ```
 
-### pnpm Workspace Commands
-
-```bash
-# Install from root (always)
-pnpm install
-
-# Run scripts in specific packages
-pnpm --filter "@dtm/orchestrator" run start:dev
-
-# Build all
-pnpm build
-```
-
-### Docker Container Naming
-
-All project containers use the `dtm-` prefix. When listing containers, always filter:
+### Docker container naming
+All project containers use the `dtm-` prefix. Always filter when listing:
 ```bash
 docker ps --filter "name=dtm-"
 ```
+Never stop / restart containers without the `dtm-` prefix — they belong to other projects.
 
-Never stop or restart containers that do not have the `dtm-` prefix -- they belong to other projects.
-
-### LocalStack Recovery
-
-Restarting LocalStack wipes all state (queues, Lambdas). Recovery:
+### LocalStack recovery
+Restarting LocalStack wipes ALL state (queues, Lambdas). To recover:
 ```bash
-# Queues auto-recreate on startup
-# Redeploy workers
 ./scripts/local-env.sh deploy-workers --poller --count=10
-
-# Restart orchestrator if connection lost
 docker restart dtm-orchestrator
 ```
 
-**API Documentation**: http://localhost:3002/api-docs (Swagger UI)
+## Documentation
+
+- [docs/MASTER-INDEX.md](docs/MASTER-INDEX.md) — use-case-based navigation
+- [docs/guides/system-architecture.md](docs/guides/system-architecture.md) — engine architecture
+- [docs/guides/race-condition-prevention.md](docs/guides/race-condition-prevention.md) — callback protocol & race-condition guards
+- [docs/guides/database-schema.md](docs/guides/database-schema.md) — schema reference
+- [setpoint-evals/README.md](setpoint-evals/README.md) — core engine SE catalog
+- [CLAUDE.md](CLAUDE.md) — AI agent project guide
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -1,9 +1,4 @@
-import {
-  Module,
-  DynamicModule,
-  MiddlewareConsumer,
-  NestModule,
-} from '@nestjs/common';
+import { Module, DynamicModule, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { middleware } from 'supertokens-node/framework/express';
 import { initSuperTokens } from './supertokens.config';
@@ -16,9 +11,7 @@ export class AuthModule implements NestModule {
     return {
       module: AuthModule,
       global: true,
-      providers: [
-        { provide: APP_GUARD, useClass: AuthGuard },
-      ],
+      providers: [{ provide: APP_GUARD, useClass: AuthGuard }],
     };
   }
 

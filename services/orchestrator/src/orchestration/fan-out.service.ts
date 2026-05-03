@@ -165,7 +165,10 @@ export class FanOutService {
     itemIds: string[],
     childStepType: string,
   ): Promise<DbStep[]> {
-    const childStepDef = this.resolveWorkflowConfig(job).getChildStepDefinition(job.type, childStepType);
+    const childStepDef = this.resolveWorkflowConfig(job).getChildStepDefinition(
+      job.type,
+      childStepType,
+    );
     if (!childStepDef) {
       throw new Error(`Child step definition not found for ${childStepType}`);
     }
@@ -189,8 +192,7 @@ export class FanOutService {
         [childStepDef.itemIdInputField || 'itemId']: itemId,
         // Pass through any acknowledged primary key data from parent output
         ...Object.fromEntries(
-          Object.entries(parentOutput)
-            .filter(([key]) => key.startsWith('npd'))
+          Object.entries(parentOutput).filter(([key]) => key.startsWith('npd')),
         ),
         // Include parent context
         _fanOut: {
@@ -227,7 +229,10 @@ export class FanOutService {
     }
 
     const delegationDtos: StepDelegationDto[] = childSteps.map((step) => {
-      const stepDef = this.resolveWorkflowConfig(job).getChildStepDefinition(job.type, step.stepValue);
+      const stepDef = this.resolveWorkflowConfig(job).getChildStepDefinition(
+        job.type,
+        step.stepValue,
+      );
       if (!stepDef) {
         throw new Error(`Child step definition not found for ${step.stepValue}`);
       }
@@ -240,7 +245,8 @@ export class FanOutService {
         jobType: job.type as JobType,
         input: step.input || {},
         sourceConfig: stepDef.metadata?.sourceConfig as StepDelegationDto['sourceConfig'],
-        processingConfig: stepDef.metadata?.processingConfig as StepDelegationDto['processingConfig'],
+        processingConfig: stepDef.metadata
+          ?.processingConfig as StepDelegationDto['processingConfig'],
       };
     });
 
@@ -453,7 +459,10 @@ export class FanOutService {
           const refreshedParent = await this.stepRepository.findById(parentStep.id, ['job']);
           if (refreshedParent) {
             const resolvedJobId = jobId || refreshedParent.job?.id;
-            const grandparentResult = await this.handleChildStepComplete(refreshedParent, resolvedJobId);
+            const grandparentResult = await this.handleChildStepComplete(
+              refreshedParent,
+              resolvedJobId,
+            );
             if (grandparentResult.parentComplete) {
               this.logger.log(
                 `🔀 Grandparent completion triggered after ${parentStep.stepValue} completed`,
@@ -639,9 +648,7 @@ export class FanOutService {
         const fkValue = childCascade?.childFkExtractor?.(ackMeta);
         if (typeof fkValue === 'string') {
           fkMap[child.childItemId] = fkValue;
-          this.logger.debug(
-            `FK map: ${child.childItemId} → ${fkValue} (from ${child.stepValue})`,
-          );
+          this.logger.debug(`FK map: ${child.childItemId} → ${fkValue} (from ${child.stepValue})`);
         }
       }
     }

@@ -77,9 +77,7 @@ export class HealthController {
     schema: {
       example: {
         broker: 'kafka:29092',
-        topics: [
-          'dtm.jobs.submitted',
-        ],
+        topics: ['dtm.jobs.submitted'],
         details: [
           {
             name: 'dtm.jobs.submitted',

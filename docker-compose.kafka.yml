@@ -27,7 +27,7 @@ services:
     container_name: dtm-kafka
     hostname: dtm-kafka
     env_file:
-      - .env.development
+      - .env
     depends_on:
       zookeeper:
         condition: service_healthy
@@ -44,7 +44,11 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://dtm-kafka:29092,PLAINTEXT_INTERNAL://localhost:9093
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # Auto-create workflow-specific ACK/completed topics on first publish/subscribe.
+      # Workflows declare their own topics in workflow.config.ts (e.g.
+      # "order-processing.customer.ack"); enumerating them all in kafka-init is
+      # brittle. The dev-stack Kafka auto-creates with our defaults.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     ports:
       - "9093:9093"
       - "29093:29092"
@@ -71,7 +75,7 @@ services:
     image: provectuslabs/kafka-ui:latest
     container_name: dtm-kafka-ui
     env_file:
-      - .env.development
+      - .env
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: dtm-kafka:29092

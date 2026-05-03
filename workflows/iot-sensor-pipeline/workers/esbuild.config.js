@@ -48,6 +48,7 @@ const HANDLERS = [
   // Aggregate (depends on sensor)
   "compute-aggregate",
   "publish-aggregate",
+  "archive-processed-pipeline",
 ];
 
 // Common esbuild options

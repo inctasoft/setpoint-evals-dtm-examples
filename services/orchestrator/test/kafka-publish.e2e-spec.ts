@@ -1,9 +1,5 @@
 import { Kafka, Consumer } from 'kafkajs';
-import {
-  KafkaProducerService,
-  JobCompletedMessage,
-  JobFailedMessage,
-} from '@dtm/kafka-producer';
+import { KafkaProducerService, JobCompletedMessage, JobFailedMessage } from '@dtm/kafka-producer';
 
 /**
  * Kafka Publishing Integration Tests

@@ -236,7 +236,7 @@ ENABLE_DEDUPLICATION=false  # Default
 ### **Run All Evals (No Restarts!)**
 
 ```bash
-cd ste
+cd setpoint-evals
 ./run-all.sh --parallel
 ```
 
@@ -251,8 +251,8 @@ cd ste
 - **Controller:** `services/orchestrator/src/ingestion/ingestion.controller.ts`
 - **Payload Types:** `packages/database/src/entities/job.entity.ts`
 - **Worker Utils:** `packages/lambda-worker-utils/src/simulation.ts`
-- **Test:** `ste/03-deduplication/test.sh`
-- **Runner:** `ste/run-all.sh`
+- **Test:** `setpoint-evals/03-deduplication/test.sh`
+- **Runner:** `setpoint-evals/run-all.sh`
 
 ---
 

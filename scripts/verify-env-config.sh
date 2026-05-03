@@ -3,7 +3,7 @@
 # Verify Environment Configuration
 # ============================================================================
 # This script verifies that all Docker Compose files are correctly configured
-# with environment variables from .env.development
+# with environment variables from .env
 # ============================================================================
 
 set -e
@@ -15,16 +15,16 @@ echo "║         Environment Configuration Verification                 ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Check if .env.development exists
-if [ ! -f .env.development ]; then
-    echo "❌ ERROR: .env.development file not found!"
+# Check if .env exists
+if [ ! -f .env ]; then
+    echo "❌ ERROR: .env file not found!"
     echo ""
     echo "Please run:"
     echo "  pnpm install  # Runs postinstall script to generate env files"
     exit 1
 fi
 
-echo "✅ .env.development file found"
+echo "✅ .env file found"
 echo ""
 
 # Verify docker-compose files
@@ -48,11 +48,11 @@ for compose_file in "${COMPOSE_FILES[@]}"; do
     fi
     
     # Validate syntax
-    if docker compose --env-file .env.development -f "$compose_file" config > /dev/null 2>&1; then
+    if docker compose --env-file .env -f "$compose_file" config > /dev/null 2>&1; then
         echo "   ✅ Syntax valid"
     else
         echo "   ❌ Syntax error!"
-        docker compose --env-file .env.development -f "$compose_file" config 2>&1 | head -5
+        docker compose --env-file .env -f "$compose_file" config 2>&1 | head -5
         continue
     fi
     
@@ -65,7 +65,7 @@ echo "════════════════════════�
 echo ""
 
 # Check migration database port
-DTM_DB_PORT=$(docker compose --env-file .env.development -f docker-compose.yml config | grep -A 3 "published:" | grep "5448" | wc -l)
+DTM_DB_PORT=$(docker compose --env-file .env -f docker-compose.yml config | grep -A 3 "published:" | grep "5448" | wc -l)
 if [ "$DTM_DB_PORT" -gt 0 ]; then
     echo "✅ Migration DB Postgres: Host port 5448"
 else
@@ -99,8 +99,8 @@ echo "════════════════════════�
 echo ""
 
 # Show key variables
-echo "Key Variables from .env.development:"
-grep -E "^(DTM_DB_PORT_HOST|ORCHESTRATOR_PORT|COMPOSE_PROJECT_NAME)=" .env.development | while read line; do
+echo "Key Variables from .env:"
+grep -E "^(DTM_DB_PORT_HOST|ORCHESTRATOR_PORT|COMPOSE_PROJECT_NAME)=" .env | while read line; do
     echo "  $line"
 done
 

@@ -14,11 +14,11 @@ import {
 import {
   createIotProductDataSource,
   destroyIotProductDataSource,
-} from "../../product-db/src/config/datasource";
-import { ProcessedJob } from "../../product-db/src/entities/processed-job.entity";
-import { RegisteredDevice } from "../../product-db/src/entities/registered-device.entity";
-import { DispatchedAlert } from "../../product-db/src/entities/dispatched-alert.entity";
-import { PublishedAggregate } from "../../product-db/src/entities/published-aggregate.entity";
+} from "../../../product-db/src/config/datasource";
+import { ProcessedJob } from "../../../product-db/src/entities/processed-job.entity";
+import { RegisteredDevice } from "../../../product-db/src/entities/registered-device.entity";
+import { DispatchedAlert } from "../../../product-db/src/entities/dispatched-alert.entity";
+import { PublishedAggregate } from "../../../product-db/src/entities/published-aggregate.entity";
 
 /**
  * Archive Processed Pipeline Worker Lambda Handler

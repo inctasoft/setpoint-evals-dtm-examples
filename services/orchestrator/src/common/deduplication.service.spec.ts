@@ -1,12 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { DeduplicationService } from './deduplication.service';
-import {
-  JobRepository,
-  Job,
-  JobType,
-  JobStatus,
-} from '@dtm/database';
+import { JobRepository, Job, JobType, JobStatus } from '@dtm/database';
 
 describe('DeduplicationService', () => {
   let service: DeduplicationService;
@@ -19,7 +14,8 @@ describe('DeduplicationService', () => {
 
     const mockConfigService = {
       get: jest.fn((key: string) => {
-        if (key === 'app.features.enableDeduplication') return process.env.ENABLE_DEDUPLICATION === 'true';
+        if (key === 'app.features.enableDeduplication')
+          return process.env.ENABLE_DEDUPLICATION === 'true';
         return undefined;
       }),
     };
@@ -131,11 +127,9 @@ describe('DeduplicationService', () => {
 
         mockJobRepository.findRecentJobs.mockResolvedValue([existingJob]);
 
-        const result = await service.findExistingJob(
-          'consumer-123',
-          'kafka-consumer-created',
-          { eventType: 'created' },
-        );
+        const result = await service.findExistingJob('consumer-123', 'kafka-consumer-created', {
+          eventType: 'created',
+        });
 
         expect(result).toEqual(existingJob);
       });
@@ -154,11 +148,9 @@ describe('DeduplicationService', () => {
 
         mockJobRepository.findRecentJobs.mockResolvedValue([existingJob]);
 
-        const result = await service.findExistingJob(
-          'consumer-123',
-          'kafka-consumer-created',
-          { eventType: 'created' },
-        );
+        const result = await service.findExistingJob('consumer-123', 'kafka-consumer-created', {
+          eventType: 'created',
+        });
 
         expect(result).toBeNull();
       });
@@ -177,11 +169,9 @@ describe('DeduplicationService', () => {
 
         mockJobRepository.findRecentJobs.mockResolvedValue([existingJob]);
 
-        const result = await service.findExistingJob(
-          'consumer-123',
-          'kafka-consumer-updated',
-          { eventType: 'updated' },
-        );
+        const result = await service.findExistingJob('consumer-123', 'kafka-consumer-updated', {
+          eventType: 'updated',
+        });
 
         expect(result).toBeNull();
       });
@@ -195,11 +185,9 @@ describe('DeduplicationService', () => {
 
         mockJobRepository.findRecentJobs.mockResolvedValue([existingJob]);
 
-        const result = await service.findExistingJob(
-          'consumer-123',
-          'kafka-consumer-created',
-          { eventType: 'created' },
-        );
+        const result = await service.findExistingJob('consumer-123', 'kafka-consumer-created', {
+          eventType: 'created',
+        });
 
         expect(result).toBeNull();
       });

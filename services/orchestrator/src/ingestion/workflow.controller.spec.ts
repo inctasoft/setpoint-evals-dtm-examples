@@ -180,9 +180,9 @@ describe('WorkflowController', () => {
       ]);
 
       // Act & Assert
-      await expect(
-        controller.initiateWorkflowJob('unknown-workflow', baseDto),
-      ).rejects.toThrow(NotFoundException);
+      await expect(controller.initiateWorkflowJob('unknown-workflow', baseDto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw ForbiddenException for disabled workflow', async () => {
@@ -191,9 +191,9 @@ describe('WorkflowController', () => {
       workflowRegistry.isEnabled.mockReturnValue(false);
 
       // Act & Assert
-      await expect(
-        controller.initiateWorkflowJob('order-processing', baseDto),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(controller.initiateWorkflowJob('order-processing', baseDto)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should throw BadRequestException for invalid variant', async () => {
@@ -227,9 +227,9 @@ describe('WorkflowController', () => {
       } as any);
 
       // Act & Assert
-      await expect(
-        controller.initiateWorkflowJob('order-processing', baseDto),
-      ).rejects.toThrow(ConflictException);
+      await expect(controller.initiateWorkflowJob('order-processing', baseDto)).rejects.toThrow(
+        ConflictException,
+      );
     });
 
     it('should throw BadRequestException when orchestration fails', async () => {
@@ -259,9 +259,9 @@ describe('WorkflowController', () => {
       });
 
       // Act & Assert
-      await expect(
-        controller.initiateWorkflowJob('order-processing', baseDto),
-      ).rejects.toThrow(BadRequestException);
+      await expect(controller.initiateWorkflowJob('order-processing', baseDto)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should pass payload and testOptions through to job creation', async () => {

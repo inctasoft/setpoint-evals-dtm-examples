@@ -13,8 +13,8 @@ WORKDIR /app
 
 # Copy workspace configuration and lock file from root
 COPY pnpm-workspace.yaml pnpm-lock.yaml .pnpmfile.cjs ./
-# Copy .env.development file for migrations (and rename to .env for TypeORM)
-COPY .env.development ./.env
+# Copy .env file for migrations (and rename to .env for TypeORM)
+COPY .env ./.env
 
 # Copy all package.json files for dependency resolution
 COPY packages/core/package.json ./packages/core/
@@ -25,6 +25,7 @@ COPY packages/kafka-consumer/package.json ./packages/kafka-consumer/
 COPY workflows/order-processing/package.json ./workflows/order-processing/
 COPY workflows/iot-sensor-pipeline/package.json ./workflows/iot-sensor-pipeline/
 COPY workflows/infra-provisioning/package.json ./workflows/infra-provisioning/
+COPY workflows/plan-execution/package.json ./workflows/plan-execution/
 COPY services/orchestrator/package.json ./services/orchestrator/
 
 # Install dependencies for ALL workspace packages (including dev deps for building)

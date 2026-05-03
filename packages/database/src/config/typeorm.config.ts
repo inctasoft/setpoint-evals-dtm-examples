@@ -11,9 +11,7 @@ export default new DataSource({
   host: process.env.DTM_DB_HOST || "localhost",
   // Use DTM_DB_PORT for Docker internal (5432), DTM_DB_PORT_HOST for localhost (5448)
   port: parseInt(
-    process.env.DTM_DB_PORT ||
-      process.env.DTM_DB_PORT_HOST ||
-      "5448",
+    process.env.DTM_DB_PORT || process.env.DTM_DB_PORT_HOST || "5448",
   ),
   username: process.env.DTM_DB_USER || "dtm_user",
   password: process.env.DTM_DB_PASSWORD || "dtm",

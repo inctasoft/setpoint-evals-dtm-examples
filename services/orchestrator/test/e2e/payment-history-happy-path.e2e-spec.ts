@@ -61,7 +61,9 @@ describe('Order Processing Happy Path E2E', () => {
 
     it('should verify test data exists in workflow source DB', async () => {
       // Verify customer exists
-      const customer = await db.getWorkflowConsumer(parseInt(TEST_CUSTOMER_ID.replace('CUST-', ''), 10));
+      const customer = await db.getWorkflowConsumer(
+        parseInt(TEST_CUSTOMER_ID.replace('CUST-', ''), 10),
+      );
       expect(customer).toBeDefined();
       console.log(`Found customer ${TEST_CUSTOMER_ID} in workflow source DB`);
 
@@ -73,9 +75,7 @@ describe('Order Processing Happy Path E2E', () => {
       // Verify line items exist
       const lineItemCount = await db.getWorkflowLineItemsCount(TEST_ORDER_ID);
       expect(lineItemCount).toBe(EXPECTED_LINE_ITEM_COUNT);
-      console.log(
-        `Found ${lineItemCount} line item records for order ${TEST_ORDER_ID}`,
-      );
+      console.log(`Found ${lineItemCount} line item records for order ${TEST_ORDER_ID}`);
     });
 
     it('should complete full order processing flow', async () => {
@@ -129,9 +129,7 @@ describe('Order Processing Happy Path E2E', () => {
 
       // In fan-out mode, we should have ValidateLineItem and SubmitLineItem child steps
       const validateLISteps = steps.filter((s) => s.stepValue.startsWith('ValidateLineItem'));
-      const submitLISteps = steps.filter((s) =>
-        s.stepValue.startsWith('SubmitLineItem'),
-      );
+      const submitLISteps = steps.filter((s) => s.stepValue.startsWith('SubmitLineItem'));
 
       console.log(`Found ${validateLISteps.length} ValidateLineItem steps`);
       console.log(`Found ${submitLISteps.length} SubmitLineItem steps`);
@@ -161,9 +159,7 @@ describe('Order Processing Happy Path E2E', () => {
       const steps = await db.getJobSteps(jobId);
 
       // Verify SubmitLineItem output structure
-      const submitLISteps = steps.filter((s) =>
-        s.stepValue.startsWith('SubmitLineItem'),
-      );
+      const submitLISteps = steps.filter((s) => s.stepValue.startsWith('SubmitLineItem'));
 
       submitLISteps.forEach((step, index) => {
         if (step.output) {

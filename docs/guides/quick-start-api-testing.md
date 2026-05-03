@@ -33,7 +33,7 @@ export ORCHESTRATOR_HOST=https://qa.example.com
 ./scripts/test-health.sh
 ./scripts/test-new-api.sh
 ./scripts/monitor-jobs-api.sh
-./ste/01-retry-transient-failure/test.sh
+./setpoint-evals/01-retry-transient-failure/test.sh
 ```
 
 ## 📋 All Available Variables
@@ -81,7 +81,7 @@ export ORCHESTRATOR_HOST=${CI_API_ENDPOINT}
 export API_VERSION=${CI_API_VERSION}
 
 ./scripts/test-health.sh
-./ste/run-all.sh
+./setpoint-evals/run-all.sh
 ```
 
 ### Kubernetes Port Forward

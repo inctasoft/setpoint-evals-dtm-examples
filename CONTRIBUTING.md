@@ -10,15 +10,15 @@ If you're here to learn from the patterns or adapt them for your own use — wel
 
 ## Before You Start
 
-### Understand the STE System
+### Understand the SE System
 
-DTM uses **State Transition Evals (STEs)** as its primary testing methodology. Before making code changes, familiarize yourself with how STEs work:
+DTM uses **Setpoint Evals (SEs)** as its primary testing methodology. Before making code changes, familiarize yourself with how SEs work:
 
-- Read [ste/README.md](ste/README.md) for the core engine STE catalog
+- Read [setpoint-evals/README.md](setpoint-evals/README.md) for the core engine SE catalog
 - Read [docs/TEST-OPTIONS-GUIDE.md](docs/TEST-OPTIONS-GUIDE.md) for test configuration
-- Run the existing STEs to see them pass before making changes
+- Run the existing SEs to see them pass before making changes
 
-STEs are end-to-end tests that validate the orchestrator's state machine by submitting jobs and asserting on the resulting database state. Any change to the orchestrator's behavior should be covered by an STE — unit tests alone are not sufficient.
+SEs are end-to-end tests that validate the orchestrator's state machine by submitting jobs and asserting on the resulting database state. Any change to the orchestrator's behavior should be covered by an SE — unit tests alone are not sufficient.
 
 ### Understand the Architecture
 
@@ -32,7 +32,7 @@ STEs are end-to-end tests that validate the orchestrator's state machine by subm
 
 Open a GitHub issue with:
 - A clear description of the problem
-- Steps to reproduce (ideally an STE that demonstrates the failure)
+- Steps to reproduce (ideally an SE that demonstrates the failure)
 - Expected vs actual behavior
 
 ### Submitting Changes
@@ -40,11 +40,11 @@ Open a GitHub issue with:
 1. Fork the repository
 2. Create a feature branch from `main`
 3. Make your changes
-4. Ensure all existing STEs still pass:
+4. Ensure all existing SEs still pass:
    ```bash
-   ./ste/run-all.sh --all-workflows
+   ./setpoint-evals/run-all.sh --all-workflows
    ```
-5. Add new STEs for new behavior
+5. Add new SEs for new behavior
 6. Run the build:
    ```bash
    pnpm install
@@ -55,8 +55,8 @@ Open a GitHub issue with:
 ### What Makes a Good Contribution
 
 - **New workflow examples** in `workflows/` — the best way to showcase engine capabilities
-- **New STEs** that cover untested edge cases
-- **Bug fixes** with a corresponding STE that reproduces the issue
+- **New SEs** that cover untested edge cases
+- **Bug fixes** with a corresponding SE that reproduces the issue
 - **Documentation improvements** — especially guides in `docs/guides/`
 
 ### Code Style
@@ -80,8 +80,8 @@ pnpm install
 # Deploy workers
 ./scripts/local-env.sh deploy-workers --poller --count=5
 
-# Run STEs
-./ste/run-all.sh
+# Run SEs
+./setpoint-evals/run-all.sh
 ```
 
 ## License

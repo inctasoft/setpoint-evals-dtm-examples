@@ -2233,7 +2233,7 @@ Product
 
 **E2E Evaluations** (Living Documentation):
 
-- [STE 01: Retry Transient Failure](../../ste/01-retry-transient-failure/README.md) - Basic retry flow
+- [SE 01: Retry Transient Failure](../../setpoint-evals/01-retry-transient-failure/README.md) - Basic retry flow
 
 ---
 

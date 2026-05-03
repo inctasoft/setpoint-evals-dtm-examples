@@ -50,7 +50,7 @@ const logger = new Logger('SimulatorModule');
 function loadWorkflowsFromEnv(): WorkflowDefinition[] {
   const configPaths = (process.env.WORKFLOW_CONFIG_PATHS || '')
     .split(',')
-    .map(p => p.trim())
+    .map((p) => p.trim())
     .filter(Boolean);
 
   if (configPaths.length === 0) {
@@ -73,15 +73,11 @@ function loadWorkflowsFromEnv(): WorkflowDefinition[] {
       // - direct module: mod itself has .name and .steps
       const workflow: WorkflowDefinition =
         mod.default ||
-        Object.values(mod).find(
-          (v: any) => v && typeof v === 'object' && v.name && v.steps,
-        ) ||
+        Object.values(mod).find((v: any) => v && typeof v === 'object' && v.name && v.steps) ||
         mod;
 
       if (!workflow?.name || !workflow?.steps) {
-        logger.warn(
-          `Workflow config at ${configPath} does not have 'name' and 'steps' — skipping`,
-        );
+        logger.warn(`Workflow config at ${configPath} does not have 'name' and 'steps' — skipping`);
         continue;
       }
 
@@ -98,7 +94,7 @@ function loadWorkflowsFromEnv(): WorkflowDefinition[] {
   }
 
   logger.log(
-    `Simulator loaded ${workflows.length} workflow(s): [${workflows.map(w => w.name).join(', ')}]`,
+    `Simulator loaded ${workflows.length} workflow(s): [${workflows.map((w) => w.name).join(', ')}]`,
   );
 
   return workflows;

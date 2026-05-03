@@ -37,10 +37,7 @@ export const configValidationSchema = Joi.object({
   DTM_DB_HOST: Joi.string()
     .description('Database host (auto-detected based on runtime)')
     .optional(),
-  DTM_DB_PORT: Joi.number()
-    .port()
-    .description('Database port for container/EKS')
-    .default(5432),
+  DTM_DB_PORT: Joi.number().port().description('Database port for container/EKS').default(5432),
   DTM_DB_PORT_HOST: Joi.number()
     .port()
     .description('Database port for local development')

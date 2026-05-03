@@ -50,6 +50,7 @@ const HANDLERS = [
   // Shipment (no fan-out, single mode)
   "validate-shipment",
   "submit-shipment",
+  "archive-processed-order",
 ];
 
 // Common esbuild options

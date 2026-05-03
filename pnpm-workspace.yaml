@@ -6,4 +6,4 @@ packages:
   - 'workflows/*'
   - 'workflows/*/source-db'
   - 'workflows/*/workers'
-  - 'ste-playwright'
+  - 'setpoint-evals-playwright'

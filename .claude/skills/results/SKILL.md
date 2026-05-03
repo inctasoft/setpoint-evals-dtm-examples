@@ -1,9 +1,9 @@
 ---
 name: results
-description: View, compare, and analyze STE evaluation results. Use when user wants to see test results, compare runs, or check flakiness.
+description: View, compare, and analyze SE evaluation results. Use when user wants to see test results, compare runs, or check flakiness.
 ---
 
-Analyze STE evaluation results.
+Analyze SE evaluation results.
 
 Arguments: $ARGUMENTS
 
@@ -18,7 +18,7 @@ Arguments: $ARGUMENTS
 
 ## How to Execute
 
-All commands run from the `sms/ste/` directory:
+All commands run from the `sms/setpoint-evals/` directory:
 
 - **Latest results**: `./analyze-results.sh`
 - **Cross-run stats**: `./analyze-results.sh --stats`
@@ -29,17 +29,17 @@ All commands run from the `sms/ste/` directory:
 
 ## Result Locations
 
-- Core STE results: `ste/.results/{parallel|in-band}/{YYYYMMDD_HHMMSS}/`
+- Core SE results: `setpoint-evals/.results/{parallel|in-band}/{YYYYMMDD_HHMMSS}/`
 - Each run directory contains:
   - `results.json` — Machine-readable results (eval IDs, status, timing, job IDs)
   - `{evalId}_{evalName}_{timestamp}.log` — Per-eval log files
   - `run.log` — Full run output
   - `analysis_report.log` — ANSI-stripped analysis
-- Playwright results: `ste-playwright/test-results/results.json`
+- Playwright results: `setpoint-evals-playwright/test-results/results.json`
 
 ## Notes
 
 - Results are stored as timestamped directories for historical tracking
 - The `results.json` file enables programmatic comparison between runs
 - Use `--stats` to identify flaky evals across multiple runs
-- Workflow-specific STEs store results in `workflows/{name}/ste/.results/`
+- Workflow-specific SEs store results in `workflows/{name}/setpoint-evals/.results/`

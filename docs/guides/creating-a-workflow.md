@@ -239,12 +239,12 @@ export const ackDefaults = {
 
 If omitted, the simulator falls back to generic defaults (UUID + timestamp).
 
-## Step 6: Write STEs
+## Step 6: Write SEs
 
-State Transition Evals (STEs) are bash-based integration tests. Each test verifies a specific scenario:
+Setpoint Evals (SEs) are bash-based integration tests. Each test verifies a specific scenario:
 
 ```bash
-# ste/01-happy-path/test.sh
+# setpoint-evals/01-happy-path/test.sh
 source "${SCRIPT_DIR}/../shared/helpers.sh"
 
 RESPONSE=$(initiate_job '{ "payload": { "userId": "USER-001" } }')
@@ -259,14 +259,14 @@ verify_step_status "${JOB_ID}" "TransformUser" "COMPLETED"
 exit_with_summary
 ```
 
-**Two-tier helper chain**: Your `ste/shared/helpers.sh` sources the generic `ste/shared/helpers.sh`, giving you access to `initiate_job()`, `poll_job()`, `verify_job_status()`, etc.
+**Two-tier helper chain**: Your `setpoint-evals/shared/helpers.sh` sources the generic `setpoint-evals/shared/helpers.sh`, giving you access to `initiate_job()`, `poll_job()`, `verify_job_status()`, etc.
 
-Run your workflow STEs:
+Run your workflow SEs:
 ```bash
-./workflows/my-workflow/ste/run-all.sh
+./workflows/my-workflow/setpoint-evals/run-all.sh
 ```
 
-The core engine STEs (`./ste/run-all.sh`) also run against your workflow automatically when using `--all-workflows`.
+The core engine SEs (`./setpoint-evals/run-all.sh`) also run against your workflow automatically when using `--all-workflows`.
 
 ## Step 7: Deploy and Test
 
@@ -277,11 +277,11 @@ cd workflows/my-workflow && pnpm build
 # Deploy workers to LocalStack
 ./scripts/local-env.sh deploy-workers
 
-# Run STEs
-./workflows/my-workflow/ste/run-all.sh
+# Run SEs
+./workflows/my-workflow/setpoint-evals/run-all.sh
 
-# Run all STEs (core + all workflows)
-./ste/run-all.sh --all-workflows
+# Run all SEs (core + all workflows)
+./setpoint-evals/run-all.sh --all-workflows
 ```
 
 ## Checklist
@@ -292,8 +292,8 @@ cd workflows/my-workflow && pnpm build
 - [ ] Kafka topics created for each cascade
 - [ ] `dev-tools/ack-defaults.ts` configured (optional)
 - [ ] Source DB schema and seed data (if applicable)
-- [ ] Happy path STE written and passing
-- [ ] Edge case STEs written (failure, partial, retry scenarios)
+- [ ] Happy path SE written and passing
+- [ ] Edge case SEs written (failure, partial, retry scenarios)
 
 ## Reference
 
@@ -301,4 +301,4 @@ cd workflows/my-workflow && pnpm build
 - **Reference implementation**: `workflows/order-processing/` (simplest example workflow)
 - **Core interfaces**: `packages/core/src/interfaces/workflow-definition.interface.ts`
 - **Worker SDK**: `packages/lambda-worker-utils/` (imported as `@dtm/worker-sdk`)
-- **STE helpers**: `ste/shared/helpers.sh`
+- **SE helpers**: `setpoint-evals/shared/helpers.sh`

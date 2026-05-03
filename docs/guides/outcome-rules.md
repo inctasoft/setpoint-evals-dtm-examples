@@ -142,7 +142,7 @@ When creating a new workflow, define rules in `workflow.config.ts`:
 4. Always include a fallback rule at priority 100
 5. Export rules in the WorkflowDefinition: `outcomeRules: OUTCOME_RULES, cascadeCriticalityRules: CASCADE_CRITICALITY`
 
-Test with STEs that exercise each rule:
+Test with SEs that exercise each rule:
 - Happy path → full-success rule → COMPLETED
 - Critical cascade failure → critical-cascade-failed rule → FAILED
 - Optional cascade failure → partial-success rule → PARTIAL_SUCCESS

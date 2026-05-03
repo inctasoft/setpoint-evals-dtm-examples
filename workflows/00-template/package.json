@@ -7,7 +7,7 @@
   "scripts": {
     "build": "echo 'Template — not compiled. Copy this directory and adapt for your workflow.'",
     "build:workers": "esbuild workers/src/handlers/*.ts --bundle --platform=node --target=node18 --outdir=workers/dist",
-    "test:ste": "./ste/run-all.sh"
+    "test:se": "./setpoint-evals/run-all.sh"
   },
   "dependencies": {
     "@dtm/core": "workspace:*",

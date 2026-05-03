@@ -1,5 +1,5 @@
 ---
-description: Order-processing workflow architecture, entity model, step DAG, criticality rules, and STE patterns
+description: Order-processing workflow architecture, entity model, step DAG, criticality rules, and SE patterns
 globs:
   - workflows/order-processing/**
 alwaysApply: false
@@ -81,10 +81,10 @@ OPTIONAL_ENTITIES = ['lineItem', 'payment', 'shipment']
 - **Database**: order_processing_db
 - **User/Pass**: order_user / order_pass
 - **Tables**: customers (5), products (10), orders (8), order_items (25), payments (8), shipments (6)
-- **Customer 99999**: Does NOT exist (reserved for negative testing in STE 02)
-- **Payment order 99999**: Does NOT exist (reserved for STE 04 partial failure)
+- **Customer 99999**: Does NOT exist (reserved for negative testing in SE 02)
+- **Payment order 99999**: Does NOT exist (reserved for SE 04 partial failure)
 
-## STE Catalog (5 Tests)
+## SE Catalog (5 Tests)
 
 | # | Name | Tests | Expected Status | Key Verification |
 |---|------|-------|-----------------|------------------|
@@ -94,20 +94,20 @@ OPTIONAL_ENTITIES = ['lineItem', 'payment', 'shipment']
 | 04 | partial-payment-failure | 7 | PARTIAL_SUCCESS | ValidatePayment fails (paymentId 99999), SubmitPayment skipped |
 | 05 | quick-order-variant | 6 | COMPLETED | 4 steps only, no fan-out or ACK |
 
-### Running STEs
+### Running SEs
 ```bash
-# All 5 STEs (must set ORCHESTRATOR_URL for host execution)
-ORCHESTRATOR_URL="http://localhost:3002/api/v1" bash workflows/order-processing/ste/run-all.sh
+# All 5 SEs (must set ORCHESTRATOR_URL for host execution)
+ORCHESTRATOR_URL="http://localhost:3002/api/v1" bash workflows/order-processing/setpoint-evals/run-all.sh
 
-# Individual STE
-ORCHESTRATOR_URL="http://localhost:3002/api/v1" bash workflows/order-processing/ste/01-happy-path/test.sh
+# Individual SE
+ORCHESTRATOR_URL="http://localhost:3002/api/v1" bash workflows/order-processing/setpoint-evals/01-happy-path/test.sh
 ```
 
-### STE Timing Notes
+### SE Timing Notes
 - Default-variant jobs take ~25-70s (ACK roundtrip through Kafka)
 - Batch-import variant takes ~24s (no ACK delays)
 - Poll timeouts set to 600s for safety margin
-- `testOptions.maxRetries: 1` used in STE 02 to speed up failure exhaustion
+- `testOptions.maxRetries: 1` used in SE 02 to speed up failure exhaustion
 
 ## Key Files
 
@@ -118,12 +118,12 @@ ORCHESTRATOR_URL="http://localhost:3002/api/v1" bash workflows/order-processing/
 | `source-db/init-scripts/01-schema-and-seed.sql` | Schema + 52 seed records |
 | `dev-tools/ack-defaults.ts` | ACK payload generators for dev-ack-simulator |
 | `docker-compose.order-processing.yml` | Source database container |
-| `ste/shared/helpers.sh` | Workflow-specific STE helpers |
+| `setpoint-evals/shared/helpers.sh` | Workflow-specific SE helpers |
 
 ## Common Pitfalls
 
-1. **Wrong ORCHESTRATOR_URL**: STEs default to port 3000 but Docker maps to 3002. Always set `ORCHESTRATOR_URL="http://localhost:3002/api/v1"`.
+1. **Wrong ORCHESTRATOR_URL**: SEs default to port 3000 but Docker maps to 3002. Always set `ORCHESTRATOR_URL="http://localhost:3002/api/v1"`.
 2. **Timeout too short**: Default-variant jobs need 600s poll timeout due to ACK roundtrip.
-3. **paymentId 99999**: Used by STE 04 to trigger natural ValidatePayment failure (no payments for order 99999 in source DB).
+3. **paymentId 99999**: Used by SE 04 to trigger natural ValidatePayment failure (no payments for order 99999 in source DB).
 4. **SubmitPayment/SubmitShipment stuck pending**: These depend on SubmitOrder. While SubmitOrder is in WAITING_FOR_ACK, dependencies are not satisfied. Wait for ACK to arrive.
-5. **Fan-out count depends on seed data**: Order 1 has 3 items (IDs: 1, 2, 3). If seed data changes, STE 03 assertions must be updated.
+5. **Fan-out count depends on seed data**: Order 1 has 3 items (IDs: 1, 2, 3). If seed data changes, SE 03 assertions must be updated.
