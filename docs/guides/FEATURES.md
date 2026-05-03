@@ -607,7 +607,7 @@ curl -X POST ... # → Yet another new job created
 
 ```json
 {
-  "topic": "npd.consumer.created",
+  "topic": "target.consumer.created",
   "value": {
     "consumerId": "consumer-123",
     "entityNumber": 1000,
@@ -1317,7 +1317,7 @@ External system must:
   "stepId": "step-uuid",
   "acknowledgedAt": "2025-11-20T10:15:40Z",
   "metadata": {
-    "processedBy": "npd-service",
+    "processedBy": "target-system",
     "recordsIngested": 2,
     "processingTimeMs": 1250
   }
@@ -1386,8 +1386,8 @@ AUTO_MIGRATE_ON_CONSUMER_CREATED=true
 AUTO_MIGRATE_ON_CONSUMER_UPDATED=false
 
 # Default webhook for auto-triggered jobs
-AUTO_MIGRATION_WEBHOOK_URL=http://npd-service/webhooks/job-complete
-AUTO_MIGRATION_EXTERNAL_SYSTEM_ID=npd-kafka-consumer
+AUTO_JOB_WEBHOOK_URL=http://target-system/webhooks/job-complete
+AUTO_JOB_EXTERNAL_SYSTEM_ID=target-kafka-consumer
 ```
 
 ### Environment File Matrix

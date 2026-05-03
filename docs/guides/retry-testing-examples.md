@@ -362,10 +362,10 @@ aws --endpoint-url=http://localhost:4567 sqs get-queue-attributes \
 ### Visual Diagrams
 
 - [System Architecture Guide](./docs/system-architecture.md) ⭐⭐⭐ - Complete architecture in 8 component diagrams with detailed explanations
-- [Job Scenarios Guide](./docs/migration-scenarios.md) ⭐⭐⭐ - 8 execution scenarios with embedded diagrams, configs, and monitoring commands
+- [Job Scenarios Guide](./docs/job-scenarios.md) ⭐⭐⭐ - 8 execution scenarios with embedded diagrams, configs, and monitoring commands
 - [Detailed Architecture](./docs/architecture-detailed.mermaid) - Single comprehensive diagram
 
 **Tip:**
 
-- Use [Job Scenarios Guide](./docs/migration-scenarios.md) for **presentations** - shows what happens with each config
+- Use [Job Scenarios Guide](./docs/job-scenarios.md) for **presentations** - shows what happens with each config
 - Use [System Architecture Guide](./docs/system-architecture.md) for **onboarding** - explains how everything works

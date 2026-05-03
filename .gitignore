@@ -190,7 +190,6 @@ vite.config.ts.timestamp-*
 /build
 
 # Lambda build artifacts
-migration-worker.zip
 etl-worker.zip
 
 # UI Tools config (user-provided)

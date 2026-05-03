@@ -1,6 +1,6 @@
 #!/bin/bash
 # Start SQS poller in debug-server mode (in-process handler execution)
-# Run from sms/ directory: bash scripts/start-poller-debug.sh
+# Run from repo root: bash scripts/start-poller-debug.sh
 
 cd "$(dirname "$0")/.." || exit 1
 

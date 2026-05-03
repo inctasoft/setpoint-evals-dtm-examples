@@ -49,7 +49,7 @@ Tests the complete order-processing workflow:
 
 1. **Start all services:**
    ```bash
-   cd sms/
+   cd .
    ./scripts/local-env.sh up
    ```
 

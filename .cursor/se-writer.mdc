@@ -975,7 +975,7 @@ When testing a new entity type (like Orders), ensure these infrastructure pieces
 
 | Component | Location | What to Add |
 |-----------|----------|-------------|
-| **Step Enum** | `orchestrator/src/config/migration-steps.config.ts` | Add new entity input/output steps to enum |
+| **Step Enum** | `workflows/<workflow>/workflow.config.ts` | Add new entity input/output steps to enum |
 | **Step Definitions** | Same file | Add step objects with dependencies, queues, configs |
 | **Entity Dependencies** | `orchestrator/src/config/entity-dependencies.config.ts` | Add entity with FK fields, topics |
 | **Callback Service** | `orchestrator/src/callback/callback.service.ts` | Add `if (stepName.includes('newentity'))` handling for output step |
@@ -985,7 +985,7 @@ When testing a new entity type (like Orders), ensure these infrastructure pieces
 | **ESM Setup** | `scripts/setup-esm.sh` | Add queue→lambda mappings |
 | **SQS Poller** | `tools/sqs-poller/src/poller.ts` | Add queues to `QUEUES` array |
 | **Preflight Check** | `setpoint-evals/preflight-check.sh` | Add queues to `required_queues` array |
-| **Kafka Topics** | `docker-compose.kafka.yml` | Add `migration.newentity.completed/failed/ack` topics |
+| **Kafka Topics** | `docker-compose.kafka.yml` | Add `<workflow>.<entity>.completed/failed/ack` topics |
 | **Source DB Entity** | `workflows/<name>/source-db/src/entities/` | Add TypeORM entity for source table |
 | **Seed Data** | `workflows/<name>/source-db/init-scripts/02-data-example.sql` | Add test data for new entity |
 

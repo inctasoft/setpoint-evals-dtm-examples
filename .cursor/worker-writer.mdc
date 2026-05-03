@@ -308,7 +308,7 @@ Your new entity must be recognized in the output step name matching logic for Ka
 
 ### Step Config
 
-**File:** `services/orchestrator/src/config/migration-steps.config.ts`
+**File:** `services/workflows/<workflow>/workflow.config.ts`
 
 Add enum values and step definitions with dependencies, queue names, and `requiresAcknowledgement` flag.
 

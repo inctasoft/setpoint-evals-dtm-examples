@@ -7,7 +7,7 @@ alwaysApply: true
 # TypeORM & Database Best Practices
 
 **Last Updated**: November 16, 2025  
-**Databases**: 2 (migration_service + order_processing_db)  
+**Databases**: 2 (dtm + order_processing_db)  
 **ORM**: TypeORM 0.3.x
 
 ---
@@ -33,14 +33,14 @@ alwaysApply: true
 ### Entity File Structure
 **Location**: `packages/database/src/entities/`  
 **Naming**: `{entity-name}.entity.ts`  
-**Example**: `migration-job.entity.ts`
+**Example**: `job.entity.ts`
 
 ```typescript
 import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
 
 @Entity('dtm_jobs')  // snake_case table name
 @Index(['status', 'type'])  // Composite index
-export class MigrationJob {
+export class Job {
   @PrimaryGeneratedColumn('uuid')
   id: string;  // camelCase property name
 
@@ -78,28 +78,28 @@ export class MigrationJob {
 ### Repository File Structure
 **Location**: `packages/database/src/repositories/`  
 **Naming**: `{entity-name}.repository.ts`  
-**Example**: `migration-job.repository.ts`
+**Example**: `job.repository.ts`
 
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { MigrationJob } from '../entities/migration-job.entity';
+import { Job } from '../entities/job.entity';
 
 @Injectable()
 export class JobRepository {
   constructor(
-    @InjectRepository(MigrationJob)
-    private readonly repo: Repository<MigrationJob>,
+    @InjectRepository(Job)
+    private readonly repo: Repository<Job>,
   ) {}
 
   // ✅ Typed methods, not raw queries
-  async findById(id: string): Promise<MigrationJob | null> {
+  async findById(id: string): Promise<Job | null> {
     return this.repo.findOne({ where: { id } });
   }
 
   // ✅ Use QueryBuilder for complex queries
-  async findByConsumerIdToday(consumerId: string): Promise<MigrationJob | null> {
+  async findByConsumerIdToday(consumerId: string): Promise<Job | null> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 

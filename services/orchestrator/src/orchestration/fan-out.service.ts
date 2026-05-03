@@ -192,7 +192,7 @@ export class FanOutService {
         [childStepDef.itemIdInputField || 'itemId']: itemId,
         // Pass through any acknowledged primary key data from parent output
         ...Object.fromEntries(
-          Object.entries(parentOutput).filter(([key]) => key.startsWith('npd')),
+          Object.entries(parentOutput).filter(([key]) => key.startsWith('target')),
         ),
         // Include parent context
         _fanOut: {

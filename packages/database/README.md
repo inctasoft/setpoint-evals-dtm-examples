@@ -205,7 +205,7 @@ This mode:
 ## Using in Other Packages
 
 ```typescript
-import { MigrationJob, MigrationStep } from '@dtm/database';
+import { Job, MigrationStep } from '@dtm/database';
 import { JobStatus, StepStatus } from '@dtm/database';
 ```
 
@@ -290,7 +290,7 @@ packages/database/
    ```
 4. Add to DataSource in `src/config/typeorm.config.ts`:
    ```typescript
-   entities: [MigrationJob, MigrationStep, YourEntity],
+   entities: [Job, MigrationStep, YourEntity],
    ```
 5. Build and generate migration
 

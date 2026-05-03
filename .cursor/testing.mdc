@@ -16,7 +16,7 @@ alwaysApply: true
 
 ### Unit Tests (42 tests)
 - ✅ Kafka Consumer Service (17 tests)
-- ✅ Migration Trigger Service (7 tests)
+- ✅ Kafka Trigger Service (7 tests)
 - ✅ Consumer Created Handler (7 tests)
 - ✅ Consumer Updated Handler (7 tests)
 - ✅ Orchestration Service (existing tests)
@@ -39,8 +39,8 @@ src/
 ├── kafka/
 │   ├── kafka-consumer.service.ts
 │   ├── kafka-consumer.service.spec.ts    ← Unit test here
-│   ├── migration-trigger.service.ts
-│   └── migration-trigger.service.spec.ts  ← Unit test here
+│   ├── kafka-trigger.service.ts
+│   └── kafka-trigger.service.spec.ts  ← Unit test here
 ```
 
 ### E2E Tests
@@ -197,7 +197,7 @@ npm run test:e2e -- --verbose
 
 ### Kafka Testing
 ```bash
-# Test Kafka-triggered migration
+# Test Kafka-triggered job
 ./scripts/test-kafka-trigger.sh
 
 # Publish custom event
@@ -262,7 +262,7 @@ See: `packages/kafka-consumer/src/kafka-consumer.service.spec.ts`
 - Message dispatching
 
 ### Testing Kafka-Triggered Jobs
-See: `services/orchestrator/src/kafka/migration-trigger.service.spec.ts`
+See: `services/orchestrator/src/kafka/kafka-trigger.service.spec.ts`
 - Auto-job triggering
 - Idempotency checks
 - Configuration validation

@@ -12,7 +12,7 @@
 ### Start Orchestrator with Kafka Consumer Enabled
 
 ```bash
-cd sms/
+cd .
 
 # Ensure KAFKA_BROKER is set in .env
 echo "KAFKA_BROKER=kafka:9092" >> .env

@@ -355,7 +355,7 @@ if (TERMINAL_STATUSES.has(step.status as StepStatus)) {
 }
 ```
 
-**Defense-in-depth**: Matching guard added in `migration-step.repository.ts` `updateFromCallback()`.
+**Defense-in-depth**: Matching guard added in `step.repository.ts` `updateFromCallback()`.
 
 **Accepting states**: `PENDING`, `DELEGATED`, `IN_PROGRESS`, `IN_PROGRESS_RETRYING`, `WAITING_FOR_CHILDREN`
 
@@ -620,7 +620,7 @@ flowchart LR
     end
 
     subgraph "Guard Layer 2: Repository"
-        G2["Defense-in-Depth Guard<br/>(migration-step.repository.ts)<br/><br/>Rejects updateFromCallback<br/>for terminal steps"]
+        G2["Defense-in-Depth Guard<br/>(step.repository.ts)<br/><br/>Rejects updateFromCallback<br/>for terminal steps"]
     end
 
     subgraph "Guard Layer 3: Discovery"
