@@ -36,17 +36,17 @@ Quick navigation to all DTM documentation, organized by use case.
 - **[../workflows/00-template/CHECKLIST.md](../workflows/00-template/CHECKLIST.md)** - Step-by-step implementation guide
 - **[../CLAUDE.md](../CLAUDE.md)** → "Adding a New Workflow" section — Integration checklist
 
-### I want to write STEs (State Transition Evals)
+### I want to write SEs (Setpoint Evals)
 
 - **[TEST-OPTIONS-GUIDE.md](TEST-OPTIONS-GUIDE.md)** - Complete TestOptionSet reference
-- **[../ste/README.md](../ste/README.md)** - Core STE system overview
-- **[../ste/shared/helpers.sh](../ste/shared/helpers.sh)** - Generic STE helper functions
-- **[../ste/shared/helpers.sh](../ste/shared/helpers.sh)** → `create_ste_from_template()` — New STE creation helper
+- **[../setpoint-evals/README.md](../setpoint-evals/README.md)** - Core SE system overview
+- **[../setpoint-evals/shared/helpers.sh](../setpoint-evals/shared/helpers.sh)** - Generic SE helper functions
+- **[../setpoint-evals/shared/helpers.sh](../setpoint-evals/shared/helpers.sh)** → `create_ste_from_template()` — New SE creation helper
 
-### I want to run STEs
+### I want to run SEs
 
-- Core: `./ste/run-all.sh`
-- All workflows: `./ste/run-all.sh --all-workflows`
+- Core: `./setpoint-evals/run-all.sh`
+- All workflows: `./setpoint-evals/run-all.sh --all-workflows`
 - **[guides/DEMO-VIDEOS.md](guides/DEMO-VIDEOS.md)** - Recording demo videos of the dashboard with Playwright
 
 ### I want to configure the environment
@@ -134,7 +134,7 @@ Quick navigation to all DTM documentation, organized by use case.
 ## AI Assistant Rules
 
 Located in `../.cursor/`:
-- **[ste-writer.mdc](../.cursor/ste-writer.mdc)** - STE creation guide
+- **[se-writer.mdc](../.cursor/se-writer.mdc)** - SE creation guide
 - **[worker-writer.mdc](../.cursor/worker-writer.mdc)** - Worker development guide
 - **[architecture.mdc](../.cursor/architecture.mdc)** - Engine architecture
 
@@ -146,8 +146,8 @@ Located in `../.cursor/`:
 |----------|----------|-------|
 | Core Guides | `docs/guides/` | 27 files |
 | Core Diagrams | `docs/diagrams/` | 13 mermaid files |
-| Core STEs | `ste/` | 13 tests |
-| Workflow STEs | `workflows/*/ste/` | 15 tests (5+5+5) |
+| Core SEs | `setpoint-evals/` | 13 tests |
+| Workflow SEs | `workflows/*/setpoint-evals/` | 15 tests (5+5+5) |
 | AI Rules (core) | `.cursor/` | 14 .mdc files |
 | AI Rules (workflow) | `workflows/*/.cursor/` | Per-workflow agent guides |
 | AI Agent Guide | `CLAUDE.md` | Primary agent knowledge base |

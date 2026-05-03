@@ -9,7 +9,7 @@ services:
     image: dtm-init-typeorm:latest
     container_name: ${COMPOSE_PROJECT_NAME:-dtm}-init-typeorm
     env_file:
-      - .env.development
+      - .env
     environment:
       - NODE_ENV=development
     depends_on:
@@ -32,7 +32,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway" # Enable host.docker.internal on Linux/WSL2
     env_file:
-      - .env.development
+      - .env
     environment:
       - NODE_ENV=development
       - KAFKA_BROKER=${KAFKA_BROKER:-dtm-kafka:29092}
@@ -74,8 +74,8 @@ services:
         ]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 12
+      start_period: 60s
 
   db:
     image: postgres:17-alpine
@@ -101,7 +101,7 @@ services:
         ]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
 
   # Dev Acknowledgement Simulator (Development Only - Standalone Mode)
   # ⚠️  This service simulates external system acknowledgements for testing
@@ -115,7 +115,7 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-dtm}-dev-ack-simulator
     restart: unless-stopped # Auto-restart on crashes (e.g., Kafka disconnects)
     env_file:
-      - .env.development
+      - .env
     environment:
       - NODE_ENV=development
       - KAFKA_BROKERS=${KAFKA_BROKER:-dtm-kafka:29092}

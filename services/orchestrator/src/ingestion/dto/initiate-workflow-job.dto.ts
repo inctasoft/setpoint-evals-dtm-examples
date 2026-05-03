@@ -1,11 +1,4 @@
-import {
-  IsString,
-  IsOptional,
-  IsObject,
-  IsBoolean,
-  IsNumber,
-  IsArray,
-} from 'class-validator';
+import { IsString, IsOptional, IsObject, IsBoolean, IsNumber, IsArray } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -118,7 +111,7 @@ export class InitiateWorkflowJobDto {
   @ApiPropertyOptional({
     description:
       'Workflow variant to use (e.g., "membership", "membership_batch"). ' +
-      'If not provided, the workflow\'s default variant is used. ' +
+      "If not provided, the workflow's default variant is used. " +
       'Each workflow defines its own set of variants with different step DAGs.',
     example: 'default',
   })

@@ -106,9 +106,10 @@ export class OrchestrationService {
             stepValue: stepDef.step,
             description: stepDef.description,
             lambdaFunctionName: stepDef.functionName,
-            input: isDynamic && stepDef.metadata?.stepInput
-              ? stepDef.metadata.stepInput as Record<string, unknown>
-              : job.payload as unknown as Record<string, unknown>,
+            input:
+              isDynamic && stepDef.metadata?.stepInput
+                ? (stepDef.metadata.stepInput as Record<string, unknown>)
+                : (job.payload as unknown as Record<string, unknown>),
           })),
         );
 
@@ -404,11 +405,7 @@ export class OrchestrationService {
           eventTimestamp: new Date(),
         };
 
-        await this.kafkaService.publish<JobFailedEvent>(
-          'dtm.jobs.failed',
-          jobFailedEvent,
-          jobId,
-        );
+        await this.kafkaService.publish<JobFailedEvent>('dtm.jobs.failed', jobFailedEvent, jobId);
 
         // Update status
         await this.jobRepository.updateStatus(jobId, JobStatus.FAILED, errorMessage);
@@ -582,7 +579,7 @@ export class OrchestrationService {
     // Build context
     const ctx: JobContext = {
       jobId: job.id,
-      workflowVariant: (job.payload as Record<string, unknown>)?.variant as string || 'default',
+      workflowVariant: ((job.payload as Record<string, unknown>)?.variant as string) || 'default',
       cascadeCounts,
       failedCascadeCounts,
       emptyCascades,
@@ -836,7 +833,9 @@ export class OrchestrationService {
         // Case 2: All steps completed (or skipped) → Job complete
         const doneCount = completedSteps.length + skippedSteps.length;
         if (pendingSteps.length === 0 && failedSteps.length === 0 && inProgressSteps.length === 0) {
-          this.logger.log(`Job ${jobId} complete: all ${doneCount} steps finished (${completedSteps.length} completed, ${skippedSteps.length} skipped)`);
+          this.logger.log(
+            `Job ${jobId} complete: all ${doneCount} steps finished (${completedSteps.length} completed, ${skippedSteps.length} skipped)`,
+          );
           // Use completeJob to ensure stats are calculated and events published
           await this.completeJob(jobId);
           return {
@@ -881,6 +880,7 @@ export class OrchestrationService {
             job.type as JobType,
             job.payload as any,
             wfConfig,
+            skippedSteps,
           );
 
           if (readySteps.length === 0) {
@@ -999,8 +999,7 @@ export class OrchestrationService {
                 queueName: stepDef.queueName,
                 jobType: job.type as JobType,
                 input: inputData,
-                sourceConfig: stepDef.metadata
-                  ?.sourceConfig as StepDelegationDto['sourceConfig'],
+                sourceConfig: stepDef.metadata?.sourceConfig as StepDelegationDto['sourceConfig'],
                 processingConfig: stepDef.metadata
                   ?.processingConfig as StepDelegationDto['processingConfig'],
               };
@@ -1236,9 +1235,7 @@ export class OrchestrationService {
    * Build a map of child step type → fan-out parent step type.
    * Used to resolve dependencies on fan-out child steps to their topmost parent.
    */
-  private buildChildStepToFanOutParentMap(
-    stepDefinitions: StepDefinition[],
-  ): Map<string, string> {
+  private buildChildStepToFanOutParentMap(stepDefinitions: StepDefinition[]): Map<string, string> {
     const childStepToFanOutParent = new Map<string, string>();
     for (const def of stepDefinitions) {
       if (def.fanOut?.enabled && def.fanOut.childStepChain) {
@@ -1294,10 +1291,19 @@ export class OrchestrationService {
     jobType: JobType,
     jobPayload: Record<string, unknown>,
     wfConfigOverride?: WorkflowConfigService,
+    skippedSteps: DbStep[] = [],
   ): DbStep[] {
     const wfCfg = wfConfigOverride || this.workflowConfig;
     const stepDefinitions = wfCfg.getStepDefinitionsForJob({ type: jobType, payload: jobPayload });
-    const completedStepValues = new Set(completedSteps.map((s) => s.stepValue));
+    // SKIPPED is a terminal-success state for dependency purposes:
+    // when a feature flag (e.g. ENABLE_ALERT_GENERATION=false) marks a cascade
+    // as skipped, downstream aggregation steps must still be eligible. Treating
+    // skipped as "not yet" leaves the final archive step parked in PENDING
+    // forever (Setpoint Eval iot-sensor-pipeline/04-feature-flag-disable-alerts).
+    const completedStepValues = new Set([
+      ...completedSteps.map((s) => s.stepValue),
+      ...skippedSteps.map((s) => s.stepValue),
+    ]);
 
     // Build child step → fan-out parent map for resolving dependencies on fan-out children.
     // When a step depends on a fan-out child (e.g., PublishReading), we resolve it to the

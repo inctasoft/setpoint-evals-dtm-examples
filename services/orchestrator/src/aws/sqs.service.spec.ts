@@ -490,5 +490,4 @@ describe('SqsService', () => {
       });
     });
   });
-
 });

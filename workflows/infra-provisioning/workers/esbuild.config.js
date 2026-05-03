@@ -57,6 +57,7 @@ const HANDLERS = [
   // Load Balancer (no fan-out, single mode)
   "plan-load-balancer",
   "apply-load-balancer",
+  "record-provisioned-infra",
 ];
 
 // Common esbuild options

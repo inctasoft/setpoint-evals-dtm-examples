@@ -15,7 +15,7 @@ This is a starter template for creating a new DTM workflow project.
 
 4. Configure ACK defaults in `dev-tools/ack-defaults.ts` (optional)
 
-5. Write STEs in `ste/` to validate your workflow
+5. Write SEs in `setpoint-evals/` to validate your workflow
 
 6. Add source DB infrastructure in `source-db/` if needed
 
@@ -31,10 +31,10 @@ my-workflow/
 ├── source-db/                  # Source database schema & seed data (add as needed)
 │   ├── entities/               # TypeORM entities for source DB
 │   └── init-scripts/           # SQL init scripts
-├── ste/                        # State Transition Evals
+├── setpoint-evals/                        # Setpoint Evals
 │   ├── 01-happy-path/test.sh   # Your workflow-specific tests
-│   ├── shared/helpers.sh       # Workflow STE helpers
-│   └── run-all.sh              # Run all workflow STEs
+│   ├── shared/helpers.sh       # Workflow SE helpers
+│   └── run-all.sh              # Run all workflow SEs
 ├── package.json
 ├── tsconfig.json
 └── README.md

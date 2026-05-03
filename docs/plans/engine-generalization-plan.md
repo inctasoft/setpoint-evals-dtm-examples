@@ -535,8 +535,8 @@ Update all documentation, comments, JSDoc, and cursor rules that reference old n
 
 | # | File | Severity | Legacy Terms | Action |
 |---|------|----------|-------------|--------|
-| 1 | `.cursor/ste-testing.mdc` | HIGH | `migrationType` (lines 146, 150, 152-153), `ExtractOrders`/`TransformOrders` (line 152) | Update to `jobType`, use current step names |
-| 2 | `.cursor/ste-writer.mdc` | HIGH | `migrationType` (lines 867-948), `ExtractOrders`/`TransformOrders` (lines 873-888) | Update to `jobType`, use current step names |
+| 1 | `.cursor/setpoint-evals-testing.mdc` | HIGH | `migrationType` (lines 146, 150, 152-153), `ExtractOrders`/`TransformOrders` (line 152) | Update to `jobType`, use current step names |
+| 2 | `.cursor/setpoint-evals-writer.mdc` | HIGH | `migrationType` (lines 867-948), `ExtractOrders`/`TransformOrders` (lines 873-888) | Update to `jobType`, use current step names |
 | 3 | `.cursor/worker-writer.mdc` | HIGH | Extract-Transform pattern throughout (lines 2-361), `ExtractYourEntity`/`TransformYourEntity` templates | Rewrite templates to use generic two-phase pattern |
 | 4 | `.cursor/architecture.mdc` | MEDIUM | Extract-Transform pattern (lines 25-51) | Update pattern name and references |
 
@@ -657,8 +657,8 @@ After each phase:
 - [ ] `pnpm build` in worker-sdk — compiles
 - [ ] `pnpm build` in core package — compiles
 - [ ] Grep for old naming — zero hits in modified packages
-- [ ] Run order-processing happy-path STE — passes
-- [ ] Run all 13 core STEs — pass
+- [ ] Run order-processing happy-path SE — passes
+- [ ] Run all 13 core SEs — pass
 - [ ] Run Playwright demos — pass
 
 After Phase 3 specifically:

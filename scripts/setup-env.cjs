@@ -26,9 +26,9 @@ const ORCHESTRATOR_DIR = path.join(PROJECT_ROOT, "services", "orchestrator");
 const ORCHESTRATOR_ENV_LINK = path.join(ORCHESTRATOR_DIR, ".env");
 
 // Legacy files (for backward compatibility during migration)
-const DEV_EXAMPLE = path.join(PROJECT_ROOT, ".env.development.example");
+const DEV_EXAMPLE = path.join(PROJECT_ROOT, ".env.example");
 const TEST_EXAMPLE = path.join(PROJECT_ROOT, ".env.test.example");
-const TARGET_ENV_DEV = path.join(PROJECT_ROOT, ".env.development");
+const TARGET_ENV_DEV = path.join(PROJECT_ROOT, ".env");
 const TARGET_ENV_TEST = path.join(PROJECT_ROOT, ".env.test");
 
 console.log("🔧 Environment Setup Script");
@@ -49,11 +49,11 @@ function checkExamples() {
 
   // Fall back to legacy example files
   const missing = [];
-  if (!fs.existsSync(DEV_EXAMPLE)) missing.push(".env.development.example");
+  if (!fs.existsSync(DEV_EXAMPLE)) missing.push(".env.example");
   if (!fs.existsSync(TEST_EXAMPLE)) missing.push(".env.test.example");
 
   if (missing.length === 0) {
-    console.log("ℹ️  Using legacy example files (.env.development.example, .env.test.example)");
+    console.log("ℹ️  Using legacy example files (.env.example, .env.test.example)");
     return "legacy";
   }
 
@@ -155,7 +155,7 @@ function main() {
         console.log("\n⚠️  Force flag detected - overwriting existing files...\n");
       } else if (devExists && testExists && envExists) {
         console.log("\n✅ Environment files already exist:");
-        console.log("   • .env.development");
+        console.log("   • .env");
         console.log("   • .env.test");
         console.log("   • .env");
         console.log("\n   Skipping environment file creation");
@@ -164,19 +164,19 @@ function main() {
 
       // Copy environment files (only if they don't exist or force flag)
       if (!devExists || forceOverwrite) {
-        copyEnvFile(DEV_EXAMPLE, TARGET_ENV_DEV, ".env.development");
+        copyEnvFile(DEV_EXAMPLE, TARGET_ENV_DEV, ".env");
       }
       if (!testExists || forceOverwrite) {
         copyEnvFile(TEST_EXAMPLE, TARGET_ENV_TEST, ".env.test");
       }
       
-      // Always create .env from .env.development for Docker Compose
+      // Always create .env from .env for Docker Compose
       if (!envExists || forceOverwrite) {
         console.log(`\n📝 Creating main .env file for Docker Compose...`);
         const devContent = fs.readFileSync(TARGET_ENV_DEV, "utf8");
         fs.writeFileSync(TARGET_ENV, devContent, "utf8");
         console.log(`✅ Created: ${path.relative(PROJECT_ROOT, TARGET_ENV)}`);
-        console.log("   (Copied from .env.development for Docker Compose compatibility)");
+        console.log("   (Copied from .env for Docker Compose compatibility)");
       }
 
       // Create orchestrator symlink

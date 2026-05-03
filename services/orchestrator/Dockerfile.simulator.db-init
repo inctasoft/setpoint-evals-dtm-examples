@@ -15,8 +15,8 @@ WORKDIR /app
 
 # Copy workspace configuration and lock file from root
 COPY pnpm-workspace.yaml pnpm-lock.yaml .pnpmfile.cjs ./
-# Copy .env.development file for migrations (renamed to .env for TypeORM)
-COPY .env.development ./.env
+# Copy .env file for migrations (renamed to .env for TypeORM)
+COPY .env ./.env
 
 # Copy core package.json files for dependency resolution
 COPY packages/core/package.json ./packages/core/
@@ -30,6 +30,7 @@ COPY services/orchestrator/package.json ./services/orchestrator/
 COPY workflows/order-processing/package.json ./workflows/order-processing/
 COPY workflows/iot-sensor-pipeline/package.json ./workflows/iot-sensor-pipeline/
 COPY workflows/infra-provisioning/package.json ./workflows/infra-provisioning/
+COPY workflows/plan-execution/package.json ./workflows/plan-execution/
 
 # Install dependencies (including dev deps for ts-node)
 RUN pnpm install --no-frozen-lockfile

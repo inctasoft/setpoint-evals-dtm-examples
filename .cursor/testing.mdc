@@ -160,9 +160,9 @@ npm run test:e2e -- --verbose
 - **Direct DB Verification**: Queries `dtm_jobs` and `dtm_steps` tables
 - **Fast Feedback**: Full flow completes in ~15s (vs 30s-3min for bash evals)
 
-### When to Use (vs Bash STEs)
+### When to Use (vs Bash SEs)
 
-| Use Jest E2E | Use Bash STEs (`ste/`) |
+| Use Jest E2E | Use Bash SEs (`setpoint-evals/`) |
 |--------------|-------------------------------|
 | Quick CI/CD checks | Full E2E validation |
 | Development feedback | Failure/retry scenarios |

@@ -12,20 +12,20 @@ Record videos of the DTM Operations Dashboard during workflow execution using Pl
 
 ```bash
 # Record ALL demo videos (4 tests: 3 individual workflows + 1 multi-job)
-pnpm ste:playwright:demos
+pnpm se:playwright:demos
 
 # Record a single workflow
-pnpm ste:playwright:demo:order    # order-processing with retry recovery
-pnpm ste:playwright:demo:iot      # iot-sensor-pipeline
-pnpm ste:playwright:demo:infra    # infra-provisioning
-pnpm ste:playwright:demo:multi    # all 3 workflows simultaneously
+pnpm se:playwright:demo:order    # order-processing with retry recovery
+pnpm se:playwright:demo:iot      # iot-sensor-pipeline
+pnpm se:playwright:demo:infra    # infra-provisioning
+pnpm se:playwright:demo:multi    # all 3 workflows simultaneously
 ```
 
 ## Output
 
 Videos are saved to:
 ```
-ste-playwright/test-results/videos/
+setpoint-evals-playwright/test-results/videos/
 ```
 
 Each test produces a `.webm` video file (1280x900, Chromium recording).
@@ -78,8 +78,8 @@ apps/monitor/           ◄──── WebSocket ────── orchestrato
 
 ```bash
 # Run all core evals first, then record demos
-pnpm ste:playwright:core && pnpm ste:playwright:demos
+pnpm se:playwright:core && pnpm se:playwright:demos
 
 # Run everything (core + workflow evals + demos)
-pnpm ste:playwright
+pnpm se:playwright
 ```

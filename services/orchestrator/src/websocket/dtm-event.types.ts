@@ -14,12 +14,7 @@ export type StepStatus =
   | 'completed'
   | 'failed';
 
-export type JobStatus =
-  | 'pending'
-  | 'processing'
-  | 'completed'
-  | 'failed'
-  | 'partial_success';
+export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'partial_success';
 
 export interface StepSnapshot {
   step: string;
@@ -65,7 +60,13 @@ export interface BaseEvent {
 }
 
 export type DtmEvent =
-  | (BaseEvent & { type: 'job_created'; jobId: string; workflow: string; variant: string; steps: StepSnapshot[] })
+  | (BaseEvent & {
+      type: 'job_created';
+      jobId: string;
+      workflow: string;
+      variant: string;
+      steps: StepSnapshot[];
+    })
   | (BaseEvent & { type: 'job_completed'; jobId: string; status: JobStatus; results?: JobResults })
   | (BaseEvent & { type: 'step_started'; jobId: string; step: string })
   | (BaseEvent & { type: 'step_completed'; jobId: string; step: string; duration: number })

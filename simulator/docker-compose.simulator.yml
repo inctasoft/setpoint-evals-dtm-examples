@@ -3,7 +3,7 @@
 # ============================================================================
 #
 # A complete orchestrator environment that any workflow repo can use
-# to run its STEs (State Transition Evals) independently.
+# to run its SEs (Setpoint Evals) independently.
 #
 # This stack provides:
 #   - PostgreSQL (orchestrator jobs/steps DB)

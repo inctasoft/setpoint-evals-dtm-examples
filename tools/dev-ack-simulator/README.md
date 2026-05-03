@@ -28,7 +28,7 @@ This service automatically sends acknowledgements to enable end-to-end testing:
 - Respects simulated acknowledgement delays
 - Supports custom acknowledgement payloads
 - Runs in standalone Docker container (profile: `dev-tools`)
-- **Fire-and-forget message processing**: ACK delay + Kafka publish run concurrently (not blocking the consumer), enabling high throughput during parallel STE execution
+- **Fire-and-forget message processing**: ACK delay + Kafka publish run concurrently (not blocking the consumer), enabling high throughput during parallel SE execution
 
 > **Note on `ENABLE_DEV_ACK_SIMULATOR`**: This environment variable is used in preflight checks and documentation as a convention to remind developers that acks are simulated. However, **the actual control mechanism is the Docker Compose `dev-tools` profile**—if the profile is active, the simulator runs.
 
@@ -355,7 +355,7 @@ src/
 
 ### Fire-and-Forget Pattern
 
-KafkaJS `eachMessage` processes messages sequentially -- each handler must resolve before the next message is consumed. Without fire-and-forget, 50+ concurrent completion messages with 500ms ackDelay each would block the consumer for ~25s, causing orchestrator step timeouts during parallel STE execution.
+KafkaJS `eachMessage` processes messages sequentially -- each handler must resolve before the next message is consumed. Without fire-and-forget, 50+ concurrent completion messages with 500ms ackDelay each would block the consumer for ~25s, causing orchestrator step timeouts during parallel SE execution.
 
 The fix: `handleEntityCompleted()` synchronously validates the message but schedules the delay + publish as a detached async operation:
 

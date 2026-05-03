@@ -133,8 +133,8 @@ Four documented race conditions are prevented:
 - Check orchestrator logs for `continueJob` calls
 - The orphaned-job-recovery maintenance task (every 30s in dev) should catch this
 
-### STE timing out despite steps completing
+### SE timing out despite steps completing
 - ACK roundtrip through Kafka takes ~5-30s (dev-ack-simulator consumer lag)
 - Default-variant jobs with ACK steps take ~25-70s total
-- Ensure STE `poll_job` timeout is generous (600s recommended for default-variant)
+- Ensure SE `poll_job` timeout is generous (600s recommended for default-variant)
 - Ensure `ORCHESTRATOR_URL` points to port 3002 (not 3000)

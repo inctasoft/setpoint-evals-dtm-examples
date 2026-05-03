@@ -693,13 +693,13 @@ GROUP BY j.id, j.completed_at
 HAVING j.completed_at < MAX(s.ack_received_at);
 ```
 
-### STE Verification
+### SE Verification
 ```bash
 # Run full suite in parallel to verify no race conditions
-./ste/run-all.sh --all-workflows
+./setpoint-evals/run-all.sh --all-workflows
 
 # Run parallel sweep to test under different concurrency levels
-./ste/run-parallel-sweep.sh --values "4 6 8" --runs-per-value 3
+./setpoint-evals/run-parallel-sweep.sh --values "4 6 8" --runs-per-value 3
 ```
 
 ---

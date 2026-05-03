@@ -24,13 +24,13 @@ alwaysApply: true
 - `docs/guides/`: Feature guides, architectural deep dives.
 - `docs/diagrams/`: Mermaid diagrams.
 
-### 2. Living Documentation (`ste/`)
+### 2. Living Documentation (`setpoint-evals/`)
 
-**Location**: `ste/*/README.md` (State Transition Evals).
+**Location**: `setpoint-evals/*/README.md` (Setpoint Evals).
 **Purpose**: Describes **verified capabilities** and proven scenarios.
 
 - **Status**: Equal in importance to `docs/`. This is the "proof" of what the system can actually do.
-- **Requirement**: Each STE `README.md` **MUST** contain a Mermaid diagram of the flow it tests.
+- **Requirement**: Each SE `README.md` **MUST** contain a Mermaid diagram of the flow it tests.
 
 ### 2b. Workflow Documentation (`workflows/`)
 
@@ -56,8 +56,8 @@ alwaysApply: true
 
 ### Synchronization Rule (Crucial)
 
-- **Sync STEs with Guides**: Whenever you update an `ste/**/README.md` (the _proof_), you **MUST** verify if `docs/guides/` (the _theory_) need corresponding updates.
-- **Direction**: Changes often flow from STE (implementation/proof) -> Docs (guide/reference).
+- **Sync SEs with Guides**: Whenever you update an `setpoint-evals/**/README.md` (the _proof_), you **MUST** verify if `docs/guides/` (the _theory_) need corresponding updates.
+- **Direction**: Changes often flow from SE (implementation/proof) -> Docs (guide/reference).
 
 ### Markdown Best Practices
 
@@ -80,6 +80,6 @@ alwaysApply: true
 
 - [ ] Is this a permanent guide? -> `docs/guides/`
 - [ ] Is this a status report? -> `CHANGELOG/`
-- [ ] Is this a test scenario? -> `ste/`
-- [ ] **Sync Check**: If I updated `ste/`, did I update `docs/`?
+- [ ] Is this a test scenario? -> `setpoint-evals/`
+- [ ] **Sync Check**: If I updated `setpoint-evals/`, did I update `docs/`?
 - [ ] Did I update the Mermaid diagram?

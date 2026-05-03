@@ -98,7 +98,7 @@ INSERT INTO dbo.devices (device_id, name, type, location, firmware_version, stat
 -- Seed Data: Sensors (3 per device = 9 total + 1 empty-reading sensor)
 -- ============================================================
 INSERT INTO dbo.sensors (sensor_id, device_id, type, unit, min_threshold, max_threshold, calibrated_at, status) VALUES
--- DEV-EMPTY sensor (has 0 readings — for STE 05 empty discovery test)
+-- DEV-EMPTY sensor (has 0 readings — for SE 05 empty discovery test)
 ('SENS-EMPTY-1', 'DEV-EMPTY', 'temperature', 'celsius', 0.00, 100.00, NULL, 'active'),
 -- Device 1 sensors
 ('SENS-001-TEMP', 'DEV-001', 'temperature', 'celsius',  15.00, 35.00, '2025-05-01 09:00:00', 'active'),

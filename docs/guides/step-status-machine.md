@@ -140,8 +140,8 @@ PENDING → PROCESSING → COMPLETED
 - Race conditions: `docs/guides/race-condition-prevention.md` (RC1-RC4)
 - Maintenance tasks: `docs/guides/MAINTENANCE-TASKS.md`
 - WAITING_FOR_CHILDREN feature: `CHANGELOG/features/2026-02-05-waiting-for-children-status.md`
-- STE coverage: 4 maintenance STEs test recovery for each stuck state:
-  - STE 10: `ste/10-stuck-waiting-for-children-recovery/` -- WAITING_FOR_CHILDREN recovery
-  - STE 11: `ste/11-stuck-delegated-recovery/` -- DELEGATED re-delegation
-  - STE 12: `ste/12-stuck-pending-recovery/` -- PENDING with satisfied deps
-  - STE 13: `ste/13-in-progress-auto-timeout/` -- IN_PROGRESS auto-fail (sequential only)
+- SE coverage: 4 maintenance SEs test recovery for each stuck state:
+  - SE 10: `setpoint-evals/10-stuck-waiting-for-children-recovery/` -- WAITING_FOR_CHILDREN recovery
+  - SE 11: `setpoint-evals/11-stuck-delegated-recovery/` -- DELEGATED re-delegation
+  - SE 12: `setpoint-evals/12-stuck-pending-recovery/` -- PENDING with satisfied deps
+  - SE 13: `setpoint-evals/13-in-progress-auto-timeout/` -- IN_PROGRESS auto-fail (sequential only)

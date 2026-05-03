@@ -186,7 +186,7 @@ CREATE TABLE dbo.aggregates (
 );
 ```
 
-## STE Catalog (State Transition Evals)
+## SE Catalog (Setpoint Evals)
 
 | # | Test | Purpose | Expected Status |
 |---|------|---------|----------------|
@@ -196,14 +196,14 @@ CREATE TABLE dbo.aggregates (
 | 04 | Feature Flag: Disable Alerts | Set `ENABLE_ALERT_GENERATION: false`, verify alert steps skipped | COMPLETED |
 | 05 | Empty Discovery | Sensor with 0 readings, DiscoverReadings returns empty array | COMPLETED |
 
-### Running STEs
+### Running SEs
 
 ```bash
-# Run all iot-sensor-pipeline STEs
-./workflows/iot-sensor-pipeline/ste/run-all.sh
+# Run all iot-sensor-pipeline SEs
+./workflows/iot-sensor-pipeline/setpoint-evals/run-all.sh
 
 # Run a specific test
-bash ./workflows/iot-sensor-pipeline/ste/01-happy-path/test.sh
+bash ./workflows/iot-sensor-pipeline/setpoint-evals/01-happy-path/test.sh
 ```
 
 ## Project Structure
@@ -244,9 +244,9 @@ workflows/iot-sensor-pipeline/
         dispatch-alert.ts                     # Dispatch alert notification
         compute-aggregate.ts                  # Compute statistical aggregation
         publish-aggregate.ts                  # Publish aggregated metrics
-  ste/
-    run-all.sh                                # Run all 5 STEs
-    shared/helpers.sh                         # Workflow-specific STE helpers
+  setpoint-evals/
+    run-all.sh                                # Run all 5 SEs
+    shared/helpers.sh                         # Workflow-specific SE helpers
     01-happy-path/test.sh                     # Full pipeline success
     02-device-not-found/test.sh               # Critical entity failure
     03-double-fan-out/test.sh                 # Nested fan-out verification

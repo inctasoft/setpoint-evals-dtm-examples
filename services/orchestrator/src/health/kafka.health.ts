@@ -8,9 +8,7 @@ export class KafkaHealthIndicator extends HealthIndicator {
   private admin: Admin;
 
   // Core DTM topics (published by the orchestrator)
-  private readonly PUBLISHING_TOPICS = [
-    'dtm.jobs.submitted',
-  ];
+  private readonly PUBLISHING_TOPICS = ['dtm.jobs.submitted'];
 
   // All project topics to check
   private readonly PROJECT_TOPICS = [...this.PUBLISHING_TOPICS];

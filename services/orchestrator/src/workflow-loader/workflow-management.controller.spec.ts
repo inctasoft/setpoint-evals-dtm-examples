@@ -43,7 +43,7 @@ describe('WorkflowManagementController', () => {
           ackTopic: 'order-processing.order.ack',
           dependsOn: ['customer'],
           fkExtractor: ({ customer }: Record<string, Record<string, unknown> | undefined>) => ({
-            ext_customer_id: customer?.externalId as string ?? '',
+            ext_customer_id: (customer?.externalId as string) ?? '',
           }),
         },
       ],
@@ -99,9 +99,7 @@ describe('WorkflowManagementController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [WorkflowManagementController],
-      providers: [
-        { provide: WorkflowRegistryService, useValue: mockWorkflowRegistry },
-      ],
+      providers: [{ provide: WorkflowRegistryService, useValue: mockWorkflowRegistry }],
     }).compile();
 
     controller = module.get<WorkflowManagementController>(WorkflowManagementController);

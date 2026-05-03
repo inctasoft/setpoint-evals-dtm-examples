@@ -19,6 +19,14 @@ export class AuthGuard implements CanActivate {
       return true;
     }
 
+    // Dev escape hatch: when DISABLE_AUTH=true the guard waves every request
+    // through. Used by the local SE suite (it has no SuperTokens session) and
+    // by `pnpm dev`. Production must NOT set this; the .env.example default
+    // (true) is dev-only and overridden by deploy-time env injection.
+    if (process.env.DISABLE_AUTH === 'true') {
+      return true;
+    }
+
     return new Promise((resolve) => {
       verifySession()(req, res, (err) => {
         resolve(!err);

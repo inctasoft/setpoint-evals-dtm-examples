@@ -14,12 +14,12 @@ import {
 import {
   createOrderProductDataSource,
   destroyOrderProductDataSource,
-} from "../../product-db/src/config/datasource";
-import { ProcessedJob } from "../../product-db/src/entities/processed-job.entity";
-import { ProcessedCustomer } from "../../product-db/src/entities/processed-customer.entity";
-import { ProcessedOrder } from "../../product-db/src/entities/processed-order.entity";
-import { ProcessedPayment } from "../../product-db/src/entities/processed-payment.entity";
-import { ProcessedShipment } from "../../product-db/src/entities/processed-shipment.entity";
+} from "../../../product-db/src/config/datasource";
+import { ProcessedJob } from "../../../product-db/src/entities/processed-job.entity";
+import { ProcessedCustomer } from "../../../product-db/src/entities/processed-customer.entity";
+import { ProcessedOrder } from "../../../product-db/src/entities/processed-order.entity";
+import { ProcessedPayment } from "../../../product-db/src/entities/processed-payment.entity";
+import { ProcessedShipment } from "../../../product-db/src/entities/processed-shipment.entity";
 
 /**
  * Archive Processed Order Worker Lambda Handler

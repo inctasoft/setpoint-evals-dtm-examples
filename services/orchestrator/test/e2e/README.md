@@ -1,6 +1,6 @@
 # E2E Tests - Direct Database Verification
 
-This directory contains **Jest-based E2E tests** that directly query the database to verify job outcomes. These tests complement the bash-based STE system.
+This directory contains **Jest-based E2E tests** that directly query the database to verify job outcomes. These tests complement the bash-based SE system.
 
 ## Why Both Jest E2E and Bash Evals?
 
@@ -142,7 +142,7 @@ Use **Jest E2E tests** when you need:
 - TypeScript type safety
 - IDE integration (debugging, code navigation)
 
-Use **Bash STEs** when you need:
+Use **Bash SEs** when you need:
 - Failure scenario testing (DLQ, retries)
 - Timing/delay verification
 - Concurrent job testing

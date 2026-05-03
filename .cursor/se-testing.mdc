@@ -1,0 +1,171 @@
+---
+description: "SE (Setpoint Eval) Suite - Living Documentation and Testing Strategy"
+globs: ["setpoint-evals/**", "workflows/*/setpoint-evals/**"]
+alwaysApply: true
+---
+
+# SE Testing Strategy
+
+## Two-Tier Testing Approach
+
+We maintain **two complementary testing systems**:
+
+| System | Location | Framework | Speed | Use Case |
+|--------|----------|-----------|-------|----------|
+| **Jest E2E** | `services/orchestrator/test/e2e/` | Jest + TypeScript | **Fast** (~500ms-15s) | Happy paths, CI/CD |
+| **Bash SEs** | `setpoint-evals/` | Bash + helpers.sh | Slower (30s-3min) | Full scenarios, edge cases |
+
+### When to Use Jest E2E Tests
+
+```bash
+cd services/orchestrator && npm run test:e2e
+```
+
+✅ Use for:
+- Quick feedback during development
+- CI/CD pre-merge checks (no delays = fast)
+- Direct database verification
+- Happy path validation
+
+❌ Don't use for:
+- Failure scenarios (DLQ, retries)
+- Testing realistic timing
+- Concurrent jobs
+
+### When to Use Bash SEs
+
+```bash
+./setpoint-evals/run-all.sh
+```
+
+Use for:
+- Testing failure scenarios (DLQ, retries)
+- Full E2E validation before release
+- Production-like timing verification
+- Concurrent job testing
+- Living documentation (each SE has README + diagrams)
+
+---
+
+# Bash SE Suite
+
+**Role**: The `setpoint-evals/` directory is the **primary source of living documentation** for system capabilities. Each SE represents a specific, verified scenario.
+
+## Structure
+
+- **`run-all.sh`**: The master runner. Supports Parallel (default) and In-Band (sequential) modes.
+- **`shared/helpers.sh`**: Common utilities for API calls, job polling, and verification.
+- **`01-*/` to `26-*/`**: Individual test scenarios.
+  - `test.sh`: The executable test script.
+  - `README.md`: Scenario description + **Mermaid Diagram** of the flow.
+
+## Execution Modes
+
+### 1. Parallel Mode (Default)
+
+Fast and efficient. Runs in 2 phases:
+
+- **Phase 1 (Safe)**: Evals 01-10, 13. Run concurrently. Safe to run together.
+- **Phase 2 (Destructive)**: Evals 11, 12, 14. Run sequentially.
+  - _Why?_ These tests kill containers (DevAckSimulator, Lambda) or purge DBs, which would break other running tests.
+
+**⚠️ CRITICAL REQUIREMENT**: Parallel mode REQUIRES **Poller Mode** with at least 10 replicas (`make deploy-workers-poller COUNT=10`).
+- **Reason**: LocalStack Community Edition's ESM (Event Source Mapping) is strictly sequential/unstable for high concurrency.
+- **Failure Mode**: If you run parallel evals with ESM, they will timeout and fail.
+
+**💡 DEBUGGING TIP**: When debugging or auto-starting evals, ALWAYS use `--poller` mode with at least 5 replicas (`./scripts/local-env.sh deploy-workers --poller --count=5`). This ensures reliable execution without ESM limitations.
+
+### Cold Start Warning
+**LocalStack Cold Starts**: When running extensive parallel tests (requiring 30+ concurrent Lambda containers), the **first run** may experience timeouts due to image extraction and container spin-up latency.
+- **Fix**: The `preflight-check.sh` script now includes a "warm-up" phase that concurrently invokes all workers to prime the infrastructure.
+- **Mitigation**: If timeouts persist on the first run, simply re-run the suite. Subsequent runs use cached containers and are much faster.
+
+### 2. In-Band Mode (`--in-band`)
+
+Runs ALL evals sequentially. Use for debugging isolation issues.
+
+### 3. Parallelism Tuning
+
+```bash
+./setpoint-evals/run-all.sh --max-parallel=8    # Limit to 8 concurrent SEs (default: 6)
+./setpoint-evals/run-all.sh --skip-checks       # Skip preflight checks for faster iteration
+./setpoint-evals/run-all.sh --all-workflows     # Include all workflow SEs
+./setpoint-evals/run-parallel-sweep.sh          # Run sweep across parallelism levels (4,6,8,10,12)
+```
+
+## Key Capabilities
+
+### Simulated Delays & Options
+
+SEs use `testOptions` in the payload to simulate production edge cases:
+
+- `submit*AckDelay`: Simulates external system processing time.
+- `validate*FailureAfter`: Simulates transient failures for retry testing.
+- `enableDeduplication`: Toggles deduplication logic per request.
+
+**Security Note**: `testOptions` are ONLY respected if `ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=true` is set in the environment.
+
+### Automated Forensics
+
+If an SE fails, `run-all.sh` automatically:
+
+1. Captures logs from Orchestrator, LocalStack, DevAckSimulator, and Lambda Workers.
+2. Filters for the specific Job ID and error keywords.
+3. Saves a `forensics_XX.log` file in the results directory.
+4. **Poller Logs**: Excluded by default (noisy). Enable via `export SE_FORENSICS_ADD_POLLER_LOGS=true`.
+
+**Results Location**: Results are stored in `setpoint-evals/.results/<mode>/<timestamp>/`.
+
+## Troubleshooting
+
+- **Timeout Issues**:
+  - Check `PARALLEL_TIMEOUTS` in `run-all.sh`.
+  - Ensure `LAMBDA_LIMITS_CONCURRENT_EXECUTIONS` in `docker-compose.workers.yml` is not too high (default: 25) to avoid LocalStack starvation.
+- **Lambda Not Starting**:
+  - Check `setpoint-evals/preflight-check.sh`.
+  - Verify worker mode (ESM vs Poller).
+- **"ResourceConflictException"**:
+  - Usually harmless during `deploy-workers` if switching modes. The script now handles this gracefully.
+
+## Rules for New SEs
+
+1. **Create Directory**: `XX-descriptive-name`.
+2. **Add `test.sh`**: Must be executable. Use `source ../shared/helpers.sh`.
+3. **Add `README.md`**: MUST include a Mermaid diagram of the tested flow.
+4. **Register in `run-all.sh`**: Add to `ALL_EVALS` and either `SAFE_EVALS` or `DESTRUCTIVE_EVALS`.
+5. **Sync with Docs**: Whenever you update an SE or its README, verify if `docs/guides/` need corresponding updates.
+
+## Key Learnings (Common Mistakes)
+
+### 1. Job Types Matter!
+
+The system defaults to **fan-out mode** (`default` job type). Tests expecting batch mode MUST explicitly specify:
+
+```json
+{
+  "jobType": "batch"  // For batch mode (ValidateOrders/SubmitOrders)
+}
+```
+
+| Mode | `jobType` | Steps Created |
+|------|-----------|---------------|
+| Batch | `"batch"` | `ValidateOrders`, `SubmitOrders` |
+| Fan-Out | `"default"` (default) | `DiscoverOrders`, `ValidateOrder`×N, `SubmitOrder`×N |
+
+### 2. Use ONLY Existing Helper Functions!
+
+❌ `get_job_details` - DOES NOT EXIST!
+✅ `get_job_status` - Use this instead!
+
+**Check `shared/helpers.sh` for available functions:**
+- `initiate_job`, `get_job_status`, `poll_job`
+- `verify_job_status`, `verify_step_status`, `display_results`
+
+### 3. Verify Test Data EXISTS!
+
+Always verify consumer has required data (e.g., orders) before writing tests:
+
+```bash
+docker exec dtm-order-processing-source-db psql -U order_user -d order_processing_db -c \
+  "SELECT consumer_no, COUNT(*) FROM dbo.orders GROUP BY consumer_no;"
+```

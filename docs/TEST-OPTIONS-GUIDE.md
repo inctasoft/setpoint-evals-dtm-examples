@@ -667,9 +667,9 @@ environment:
 ## Related Documentation
 
 - **[API-IMPROVEMENT-SIMULATE-FAILURE.md](../API-IMPROVEMENT-SIMULATE-FAILURE.md)** - History of API improvements
-- **[ste/02-dlq-permanent-failure/README.md](../ste/02-dlq-permanent-failure/README.md)** - DLQ testing with failures
-- **[ste/README.md](../ste/README.md)** - Core engine STE catalog
-- **[workflows/00-template/ste/01-happy-path/README.md](../workflows/00-template/ste/01-happy-path/README.md)** - Template for new STEs
+- **[setpoint-evals/02-dlq-permanent-failure/README.md](../setpoint-evals/02-dlq-permanent-failure/README.md)** - DLQ testing with failures
+- **[setpoint-evals/README.md](../setpoint-evals/README.md)** - Core engine SE catalog
+- **[workflows/00-template/setpoint-evals/01-happy-path/README.md](../workflows/00-template/setpoint-evals/01-happy-path/README.md)** - Template for new SEs
 
 ---
 

@@ -111,7 +111,7 @@ start_compose_service() {
     
     print_info "Starting $service_description..."
     
-    if docker compose --env-file .env.development -f "$compose_file" up $flags; then
+    if docker compose --env-file .env -f "$compose_file" up $flags; then
         print_success "$service_description started"
         return 0
     else
@@ -131,7 +131,7 @@ stop_compose_service() {
     
     print_info "Stopping $service_description..."
     
-    if docker compose --env-file .env.development -f "$compose_file" down $flags; then
+    if docker compose --env-file .env -f "$compose_file" down $flags; then
         print_success "$service_description stopped"
         return 0
     else

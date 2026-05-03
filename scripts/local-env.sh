@@ -24,7 +24,7 @@ source "$SCRIPT_DIR/inc/common.sh"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-dtm}"
 
 # Environment file for Docker Compose variable substitution
-ENV_FILE=".env.development"
+ENV_FILE=".env"
 
 # Docker Compose files
 COMPOSE_MAIN="docker-compose.yml"
@@ -195,36 +195,34 @@ start_standalone() {
             echo ""
         fi
         
-        # Check if packages need building
+        # Check if workspace artifacts need building (packages, workflows, ack-simulator).
+        # The dev-ack-simulator and orchestrator bind-mount workflow dist/ directories,
+        # so they all must be built before docker compose up.
         NEEDS_BUILD=false
-        if [ ! -d "$PROJECT_ROOT/packages/database/dist" ]; then
-            print_info "Database package not built"
+        for d in packages/database/dist packages/kafka-producer/dist workflows/order-processing/dist workflows/iot-sensor-pipeline/dist workflows/infra-provisioning/dist workflows/plan-execution/dist tools/dev-ack-simulator/dist; do
+          if [ ! -d "/" ]; then
+            print_info "Missing "
             NEEDS_BUILD=true
-        fi
-        if [ ! -d "$PROJECT_ROOT/packages/kafka-producer/dist" ]; then
-            print_info "Kafka producer package not built"
-            NEEDS_BUILD=true
-        fi
-        
-        if [ "$NEEDS_BUILD" = true ]; then
-            print_info "Building workspace packages for hot reload..."
+          fi
+        done
+
+        if [ "" = true ]; then
+            print_info "Building workspace artifacts (packages + workflows + tools)..."
             echo ""
-            
-            # Use the workspace build:packages script for consistency
-            cd "$PROJECT_ROOT"
-            pnpm run build:packages
-            
-            if [ $? -ne 0 ]; then
-                print_error "Failed to build workspace packages"
+            cd ""
+            pnpm run build:packages \
+              && pnpm run build:workflows \
+              && pnpm run build:tools
+            if [ 0 -ne 0 ]; then
+                print_error "Failed to build workspace artifacts"
                 echo ""
-                print_info "Try running manually: pnpm run build:packages"
+                print_info "Try running manually: pnpm run build"
                 exit 1
             fi
-            
             echo ""
-            print_success "Workspace packages built successfully"
+            print_success "Workspace artifacts built successfully"
         else
-            print_info "Workspace packages already built"
+            print_info "Workspace artifacts already built"
         fi
         echo ""
     fi
@@ -346,36 +344,34 @@ start_integrated() {
             echo ""
         fi
         
-        # Check if packages need building
+        # Check if workspace artifacts need building (packages, workflows, ack-simulator).
+        # The dev-ack-simulator and orchestrator bind-mount workflow dist/ directories,
+        # so they all must be built before docker compose up.
         NEEDS_BUILD=false
-        if [ ! -d "$PROJECT_ROOT/packages/database/dist" ]; then
-            print_info "Database package not built"
+        for d in packages/database/dist packages/kafka-producer/dist workflows/order-processing/dist workflows/iot-sensor-pipeline/dist workflows/infra-provisioning/dist workflows/plan-execution/dist tools/dev-ack-simulator/dist; do
+          if [ ! -d "/" ]; then
+            print_info "Missing "
             NEEDS_BUILD=true
-        fi
-        if [ ! -d "$PROJECT_ROOT/packages/kafka-producer/dist" ]; then
-            print_info "Kafka producer package not built"
-            NEEDS_BUILD=true
-        fi
-        
-        if [ "$NEEDS_BUILD" = true ]; then
-            print_info "Building workspace packages for hot reload..."
+          fi
+        done
+
+        if [ "" = true ]; then
+            print_info "Building workspace artifacts (packages + workflows + tools)..."
             echo ""
-            
-            # Use the workspace build:packages script for consistency
-            cd "$PROJECT_ROOT"
-            pnpm run build:packages
-            
-            if [ $? -ne 0 ]; then
-                print_error "Failed to build workspace packages"
+            cd ""
+            pnpm run build:packages \
+              && pnpm run build:workflows \
+              && pnpm run build:tools
+            if [ 0 -ne 0 ]; then
+                print_error "Failed to build workspace artifacts"
                 echo ""
-                print_info "Try running manually: pnpm run build:packages"
+                print_info "Try running manually: pnpm run build"
                 exit 1
             fi
-            
             echo ""
-            print_success "Workspace packages built successfully"
+            print_success "Workspace artifacts built successfully"
         else
-            print_info "Workspace packages already built"
+            print_info "Workspace artifacts already built"
         fi
         echo ""
     fi
@@ -1521,16 +1517,35 @@ deploy_workers() {
     
     echo ""
     
-    # Deploy Lambda functions (and ESMs if ESM mode)
-    # Note: ESM mode deploys individual Lambdas (order-processing only).
-    # Poller mode uses handler-registry which includes ALL workflows automatically.
+    # Deploy Lambda functions for every workflow that has a deploy script.
+    # Each workflow's deploy-to-localstack.js packages its own handlers.
+    # In poller mode, the SQS poller uses handler-registry to dispatch in-process —
+    # but Lambdas still need to be deployed because the poller invokes them via
+    # the LocalStack Lambda API (NORMAL mode) by default.
     print_info "Deploying Lambda workers to LocalStack..."
-    cd "$PROJECT_ROOT/workflows/order-processing/workers/scripts" || exit 1
+    DEPLOY_FAILURES=0
+    for workers_dir in "$PROJECT_ROOT"/workflows/*/workers; do
+        deploy_script="$workers_dir/scripts/deploy-to-localstack.js"
+        [ -f "$deploy_script" ] || continue
+        wf_name=$(basename "$(dirname "$workers_dir")")
+        print_info "  → deploying $wf_name handlers..."
+        (
+            cd "$workers_dir/scripts" || exit 1
+            if [ "$HOT_RELOAD" = true ]; then
+                node deploy-to-localstack.js --hot-reload
+            else
+                node deploy-to-localstack.js
+            fi
+        )
+        if [ $? -ne 0 ]; then
+            print_error "  ✗ $wf_name deploy failed"
+            DEPLOY_FAILURES=$((DEPLOY_FAILURES + 1))
+        fi
+    done
 
-    if [ "$HOT_RELOAD" = true ]; then
-        node deploy-to-localstack.js --hot-reload
-    else
-        node deploy-to-localstack.js
+    if [ "$DEPLOY_FAILURES" -gt 0 ]; then
+        print_error "$DEPLOY_FAILURES workflow deploy(s) failed — check logs above"
+        exit 1
     fi
 
     cd "$PROJECT_ROOT"

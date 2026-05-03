@@ -8,7 +8,7 @@
 #
 # Usage:
 #   ./scripts/validate-env.sh                    # Validate current environment
-#   ./scripts/validate-env.sh .env.development  # Validate specific file
+#   ./scripts/validate-env.sh .env  # Validate specific file
 #   ./scripts/validate-env.sh --scenario e2e-tests  # Scenario-specific validation
 #   ./scripts/validate-env.sh --verbose         # Detailed output
 #
@@ -85,7 +85,7 @@ Exit Codes:
 
 Examples:
   ./scripts/validate-env.sh
-  ./scripts/validate-env.sh .env.development
+  ./scripts/validate-env.sh .env
   ./scripts/validate-env.sh --scenario e2e-tests --verbose
 
 Documentation:

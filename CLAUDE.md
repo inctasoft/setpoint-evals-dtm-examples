@@ -94,12 +94,12 @@ See `docs/guides/DEPLOYMENT-MODES.md` for full details.
 
 ### Port Mapping & ORCHESTRATOR_URL
 The orchestrator listens on port 3000 inside its container, mapped to **port 3002** on the host.
-STE scripts default to `ORCHESTRATOR_URL="http://localhost:3000/api/v1"` (in helpers.sh).
-When running STEs from the **host** (outside Docker), override the URL:
+SE scripts default to `ORCHESTRATOR_URL="http://localhost:3000/api/v1"` (in helpers.sh).
+When running SEs from the **host** (outside Docker), override the URL:
 ```bash
-ORCHESTRATOR_URL="http://localhost:3002/api/v1" bash workflows/order-processing/ste/run-all.sh
+ORCHESTRATOR_URL="http://localhost:3002/api/v1" bash workflows/order-processing/setpoint-evals/run-all.sh
 ```
-**Common pitfall**: STEs failing with HTTP 000 or connection refused usually means wrong port.
+**Common pitfall**: SEs failing with HTTP 000 or connection refused usually means wrong port.
 
 ## Key Configuration Files
 
@@ -265,47 +265,47 @@ Task-type-keyed: `Record<string, TestOptionSet>`
 Each step type has 8 configurable fields: simDelay, failureAfter, failOnAttempts, failForItemIds, ackDelay, skipAck, crashBeforeAck, ackPayload.
 Workers look up by stepType: `testOptions[message.stepType]`
 
-## State Transition Evals (STE) System
+## Setpoint Evals (SE) System
 
 Two-tier hierarchy:
 
-### Core STEs (`ste/`) -- 13 tests
+### Core SEs (`setpoint-evals/`) -- 13 tests
 Test generic engine capabilities (retry, DLQ, deduplication, concurrency, maintenance tasks).
 ```bash
-./ste/run-all.sh                        # Run all 13 core STEs
-./ste/run-all.sh --all-workflows        # Run core + all workflow STEs
+./setpoint-evals/run-all.sh                        # Run all 13 core SEs
+./setpoint-evals/run-all.sh --all-workflows        # Run core + all workflow SEs
 ```
 
-### Workflow STEs (`workflows/<name>/ste/`) -- per-workflow tests
+### Workflow SEs (`workflows/<name>/setpoint-evals/`) -- per-workflow tests
 Test workflow-specific functionality (entity extraction, FK cascade, fan-out).
 ```bash
-./workflows/order-processing/ste/run-all.sh        # order-processing STEs (5 tests)
-./workflows/iot-sensor-pipeline/ste/run-all.sh     # iot-sensor-pipeline STEs (5 tests)
-./workflows/infra-provisioning/ste/run-all.sh      # infra-provisioning STEs (5 tests)
+./workflows/order-processing/setpoint-evals/run-all.sh        # order-processing SEs (5 tests)
+./workflows/iot-sensor-pipeline/setpoint-evals/run-all.sh     # iot-sensor-pipeline SEs (5 tests)
+./workflows/infra-provisioning/setpoint-evals/run-all.sh      # infra-provisioning SEs (5 tests)
 ```
 
 ### Helper Architecture (Two-Layer Chain)
 ```
-ste/shared/helpers.sh                              # Generic layer (initiate_job, poll_job)
-workflows/<name>/ste/shared/helpers.sh             # Workflow layer (adds workflow-specific helpers)
+setpoint-evals/shared/helpers.sh                              # Generic layer (initiate_job, poll_job)
+workflows/<name>/setpoint-evals/shared/helpers.sh             # Workflow layer (adds workflow-specific helpers)
 ```
 
 ### Common Options
 ```bash
-./ste/run-all.sh --parallel          # Default: parallel safe, sequential destructive
-./ste/run-all.sh --in-band           # Sequential execution
-./ste/run-all.sh --max-parallel=8    # Limit concurrent tests (default: 6)
-./ste/run-all.sh --skip-purge        # Skip initial purge
-./ste/run-all.sh --skip-checks       # Skip preflight checks
-./ste/run-all.sh --category maintenance  # Run specific category
-./ste/run-all.sh --all-workflows     # Include all workflow STEs
+./setpoint-evals/run-all.sh --parallel          # Default: parallel safe, sequential destructive
+./setpoint-evals/run-all.sh --in-band           # Sequential execution
+./setpoint-evals/run-all.sh --max-parallel=8    # Limit concurrent tests (default: 6)
+./setpoint-evals/run-all.sh --skip-purge        # Skip initial purge
+./setpoint-evals/run-all.sh --skip-checks       # Skip preflight checks
+./setpoint-evals/run-all.sh --category maintenance  # Run specific category
+./setpoint-evals/run-all.sh --all-workflows     # Include all workflow SEs
 ```
 
 ### Parallel Tuning
 ```bash
-./ste/run-parallel-sweep.sh                        # Find optimal --max-parallel value
-./ste/run-parallel-sweep.sh --values "4 6 8 10 0"  # Test specific values
-./ste/run-parallel-sweep.sh --runs-per-value 3      # Multiple runs per value
+./setpoint-evals/run-parallel-sweep.sh                        # Find optimal --max-parallel value
+./setpoint-evals/run-parallel-sweep.sh --values "4 6 8 10 0"  # Test specific values
+./setpoint-evals/run-parallel-sweep.sh --runs-per-value 3      # Multiple runs per value
 ```
 
 ## Scripts
@@ -369,14 +369,14 @@ Restarting LocalStack wipes ALL state. Recovery:
 
 ### Testing
 - Unit tests: `cd services/orchestrator && npx jest`
-- Core STEs: `./ste/run-all.sh`
-- Workflow STEs: `./workflows/order-processing/ste/run-all.sh`
-- All STEs: `./ste/run-all.sh --all-workflows`
+- Core SEs: `./setpoint-evals/run-all.sh`
+- Workflow SEs: `./workflows/order-processing/setpoint-evals/run-all.sh`
+- All SEs: `./setpoint-evals/run-all.sh --all-workflows`
 
 ### Documentation Structure (Three-Layer Model)
 - **Layer 1 - Core**: `docs/` -- Engine architecture, callback protocol, fan-out, cascade
 - **Layer 2 - Workflow**: `workflows/<name>/docs/` -- Domain-specific schemas, entity dependencies
-- **Layer 3 - STEs**: `ste/` + `workflows/<name>/ste/` -- Living documentation (each has README + diagrams)
+- **Layer 3 - SEs**: `setpoint-evals/` + `workflows/<name>/setpoint-evals/` -- Living documentation (each has README + diagrams)
 - `CLAUDE.md` -- AI agent project guide
 - `CHANGELOG/` -- Core engine change history
 - `workflows/<name>/CHANGELOG/` -- Workflow-specific change history
@@ -389,7 +389,7 @@ Restarting LocalStack wipes ALL state. Recovery:
 - **Workflow config**: `workflows/order-processing/workflow.config.ts`
 - **Workers**: `workflows/order-processing/workers/` (12 handlers)
 - **Source DB**: `workflows/order-processing/source-db/` (6 entities, port 5449)
-- **STEs**: `workflows/order-processing/ste/` (5 tests)
+- **SEs**: `workflows/order-processing/setpoint-evals/` (5 tests)
 - **Showcases**: Parallel root steps, single fan-out, optional cascades, multiple variants (default + quick-order)
 
 ### iot-sensor-pipeline
@@ -397,7 +397,7 @@ Restarting LocalStack wipes ALL state. Recovery:
 - **Workflow config**: `workflows/iot-sensor-pipeline/workflow.config.ts`
 - **Workers**: `workflows/iot-sensor-pipeline/workers/` (12 handlers)
 - **Source DB**: `workflows/iot-sensor-pipeline/source-db/` (5 entities, port 5450)
-- **STEs**: `workflows/iot-sensor-pipeline/ste/` (5 tests)
+- **SEs**: `workflows/iot-sensor-pipeline/setpoint-evals/` (5 tests)
 - **Showcases**: Double/nested fan-out, feature flags, conditional steps, empty discovery handling
 
 ### infra-provisioning
@@ -405,7 +405,7 @@ Restarting LocalStack wipes ALL state. Recovery:
 - **Workflow config**: `workflows/infra-provisioning/workflow.config.ts`
 - **Workers**: `workflows/infra-provisioning/workers/` (15 handlers)
 - **Source DB**: `workflows/infra-provisioning/source-db/` (7 entities, port 5451)
-- **STEs**: `workflows/infra-provisioning/ste/` (5 tests)
+- **SEs**: `workflows/infra-provisioning/setpoint-evals/` (5 tests)
 - **Showcases**: Deep cascade FK chains (5 levels), long ACK timeouts (10min), wide parallel branches, cascade failure -> SKIPPED propagation
 
 ## Adding a New Workflow (Integration Checklist)
@@ -420,7 +420,7 @@ When creating a new workflow, these integration points **must** be updated beyon
 - `source-db/` — TypeORM entities, datasource config, init SQL, own `package.json` (`@dtm-workflows/<name>-typeorm`)
 - `workers/` — handler files, `index.ts` exporting `handlerMap: Record<string, handler>`, own `package.json` (`@dtm-workflows/<name>-workers`)
 - `docker-compose.<name>.yml` — **MUST include `networks: dtm: external: true`** or DB won't be reachable
-- `ste/` — run-all.sh, shared/helpers.sh, test directories
+- `setpoint-evals/` — run-all.sh, shared/helpers.sh, test directories
 
 ### 2. SQS Poller Integration (`tools/sqs-poller/`)
 - `src/queue-discovery.ts` — import workflow config, add to `WORKFLOW_CONFIGS` array
@@ -439,7 +439,7 @@ When creating a new workflow, these integration points **must** be updated beyon
 - `show_help()` — add to service list
 
 ### 4. Documentation
-- `CLAUDE.md` — update Registered Workflows table, Workflow Source DBs table, Container Inventory, Workflow Directory section, STE catalog
+- `CLAUDE.md` — update Registered Workflows table, Workflow Source DBs table, Container Inventory, Workflow Directory section, SE catalog
 - `workflows/<name>/README.md` — document domain model, step DAG, capabilities showcased
 
 ### Template
@@ -449,7 +449,7 @@ Copy `workflows/00-template/` as a starting point. See existing workflows (espec
 
 AI assistant rules in `.cursor/*.mdc`:
 - `architecture.mdc` -- DTM engine architecture (generic)
-- `ste-writer.mdc` -- STE creation guide
+- `se-writer.mdc` -- SE creation guide
 - `worker-writer.mdc` -- Worker development guide
 - `testing.mdc` -- Testing standards
 - `code-quality.mdc` -- Code quality
@@ -595,5 +595,5 @@ Open `http://localhost:8090` — inspect topics, messages, consumer lag.
 | HTTP 000 / connection refused | Wrong port (3000 vs 3002) | Use `ORCHESTRATOR_URL="http://localhost:3002/api/v1"` |
 | Step stuck in WAITING_FOR_ACK | ACK not arrived from dev-ack-simulator | Check simulator logs, Kafka consumer lag |
 | Step stuck in PENDING | Dependencies not met (check if parent is WAITING_FOR_ACK) | Wait for ACK or check continueJob() logs |
-| STE timeout despite steps completing | ACK roundtrip takes ~5-30s | Increase poll timeout to 600s |
+| SE timeout despite steps completing | ACK roundtrip takes ~5-30s | Increase poll timeout to 600s |
 | Workers not receiving messages | LocalStack restarted | Redeploy: `./scripts/local-env.sh deploy-workers --poller --count=10` |

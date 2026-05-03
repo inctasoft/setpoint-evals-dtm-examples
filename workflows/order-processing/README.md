@@ -182,7 +182,7 @@ Only 4 steps. No discovery, no fan-out, no optional entities.
 - Customer 99999 does NOT exist (reserved for negative testing).
 - Orders 7 and 8 have `pending` payment status and no shipment tracking yet.
 
-## STE Catalog
+## SE Catalog
 
 | #  | Name                       | Description                                                                 | Expected Status   |
 |----|----------------------------|-----------------------------------------------------------------------------|-------------------|
@@ -192,18 +192,18 @@ Only 4 steps. No discovery, no fan-out, no optional entities.
 | 04 | Partial Payment Failure    | SubmitPayment fails permanently; payment is optional                        | PARTIAL_SUCCESS   |
 | 05 | Quick-Order Variant        | Simplified quick-order variant with only 4 steps, no fan-out               | COMPLETED         |
 
-### Running STEs
+### Running SEs
 
 ```bash
-# Run all order-processing STEs sequentially
-./workflows/order-processing/ste/run-all.sh
+# Run all order-processing SEs sequentially
+./workflows/order-processing/setpoint-evals/run-all.sh
 
-# Run a specific STE
-bash ./workflows/order-processing/ste/01-happy-path/test.sh
-bash ./workflows/order-processing/ste/02-customer-not-found/test.sh
-bash ./workflows/order-processing/ste/03-fan-out-order-items/test.sh
-bash ./workflows/order-processing/ste/04-partial-payment-failure/test.sh
-bash ./workflows/order-processing/ste/05-quick-order-variant/test.sh
+# Run a specific SE
+bash ./workflows/order-processing/setpoint-evals/01-happy-path/test.sh
+bash ./workflows/order-processing/setpoint-evals/02-customer-not-found/test.sh
+bash ./workflows/order-processing/setpoint-evals/03-fan-out-order-items/test.sh
+bash ./workflows/order-processing/setpoint-evals/04-partial-payment-failure/test.sh
+bash ./workflows/order-processing/setpoint-evals/05-quick-order-variant/test.sh
 ```
 
 ## Running Locally
@@ -243,11 +243,11 @@ psql -h localhost -p 5449 -U order_user -d order_processing_db
 ./scripts/local-env.sh deploy-workers
 ```
 
-### Run STEs
+### Run SEs
 
 ```bash
-# Run all 5 order-processing STEs
-./workflows/order-processing/ste/run-all.sh
+# Run all 5 order-processing SEs
+./workflows/order-processing/setpoint-evals/run-all.sh
 ```
 
 ### Tear Down
@@ -271,10 +271,10 @@ workflows/order-processing/
     src/                                 # TypeORM entities for source DB
   workers/                               # Lambda worker handlers
   dev-tools/                             # Dev ACK simulator payload generators
-  ste/
+  setpoint-evals/
     shared/
-      helpers.sh                         # Workflow-specific STE helpers
-    run-all.sh                           # Run all STEs sequentially
+      helpers.sh                         # Workflow-specific SE helpers
+    run-all.sh                           # Run all SEs sequentially
     01-happy-path/test.sh                # Happy path test
     02-customer-not-found/test.sh        # Critical entity failure test
     03-fan-out-order-items/test.sh       # Fan-out pattern test

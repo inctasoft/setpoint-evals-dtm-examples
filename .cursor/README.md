@@ -27,15 +27,15 @@ This directory contains specialized rule files for different aspects of the code
 - Debugging tests
 - CI/CD integration
 
-**[ste-testing.mdc](ste-testing.mdc)** - STE (State Transition Eval) testing
-- STE structure and execution modes
+**[se-testing.mdc](se-testing.mdc)** - SE (Setpoint Eval) testing
+- SE structure and execution modes
 - Parallel vs. In-Band testing
 - Automated forensics collection
-- Rules for new STEs
+- Rules for new SEs
 - Living documentation approach
 
-**[ste-writer.mdc](ste-writer.mdc)** - Creating new STEs
-- Complete guide for writing new State Transition Evals
+**[se-writer.mdc](se-writer.mdc)** - Creating new SEs
+- Complete guide for writing new Setpoint Evals
 - Template usage and structure
 - SQS/DLQ querying patterns (visibility timeout handling)
 - Test data integration
@@ -156,8 +156,8 @@ Each `.mdc` file can specify:
 ### When to Update
 - **architecture.mdc**: Any architectural changes
 - **testing.mdc**: New testing patterns or tools
-- **ste-testing.mdc**: STE suite changes
-- **ste-writer.mdc**: New STE patterns or best practices
+- **se-testing.mdc**: SE suite changes
+- **se-writer.mdc**: New SE patterns or best practices
 - **typeorm.mdc**: Database schema changes
 - **pnpm-expert.mdc**: Monorepo structure changes
 - **code-quality.mdc**: New linting rules or standards
@@ -194,8 +194,8 @@ Each `.mdc` file can specify:
 
 - ✅ architecture.mdc (333 lines)
 - ✅ testing.mdc (complete test guidelines)
-- ✅ ste-testing.mdc (STE suite overview)
-- ✅ ste-writer.mdc (comprehensive STE creation guide)
+- ✅ se-testing.mdc (SE suite overview)
+- ✅ se-writer.mdc (comprehensive SE creation guide)
 - ✅ typeorm.mdc (database best practices)
 - ✅ pnpm-expert.mdc (monorepo management)
 - ✅ code-quality.mdc (standards & linting)

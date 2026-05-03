@@ -33,7 +33,7 @@ Automatically sources `api-config.sh` and provides common functions for all scri
 
 ### 3. E2E Test Helpers
 
-**Location:** `ste/shared/helpers.sh`
+**Location:** `setpoint-evals/shared/helpers.sh`
 
 Updated to align with the same configuration pattern for consistency.
 
@@ -119,7 +119,7 @@ The following scripts have been updated to use the new configuration system:
 
 ### E2E Test Framework
 
-- ✅ `ste/shared/helpers.sh` - Shared E2E test utilities
+- ✅ `setpoint-evals/shared/helpers.sh` - Shared E2E test utilities
 
 ### Configuration Files
 
@@ -198,15 +198,15 @@ E2E tests now support the same configuration:
 
 ```bash
 # Run E2E test against v1 (default)
-./ste/01-retry-transient-failure/test.sh
+./setpoint-evals/01-retry-transient-failure/test.sh
 
 # Run E2E test against v2
-API_VERSION=v2 ./ste/01-retry-transient-failure/test.sh
+API_VERSION=v2 ./setpoint-evals/01-retry-transient-failure/test.sh
 
 # Run against staging
 export ORCHESTRATOR_HOST=https://staging.example.com
 export API_VERSION=v1
-./ste/run-all.sh
+./setpoint-evals/run-all.sh
 ```
 
 ## 🔍 Debugging
@@ -271,7 +271,7 @@ export ORCHESTRATOR_HOST=${CI_API_HOST}
 export API_VERSION=${CI_API_VERSION}
 
 # Run all tests
-./ste/run-all.sh
+./setpoint-evals/run-all.sh
 ./scripts/test-health.sh
 ./scripts/test-new-api.sh
 ```
@@ -366,7 +366,7 @@ curl: (7) Failed to connect to localhost port 3000: Connection refused
 
 - **API Documentation:** See `services/orchestrator/src/main.ts` for global prefix configuration
 - **Docker Compose:** See `docker-compose.yml` for service port mappings
-- **STEs:** See `ste/README.md` for STE testing guide
+- **SEs:** See `setpoint-evals/README.md` for SE testing guide
 - **Maintenance API:** See `services/orchestrator/MAINTENANCE.md` for maintenance endpoints
 
 ## 🚦 Migration Checklist

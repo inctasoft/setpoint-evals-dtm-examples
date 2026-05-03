@@ -28,7 +28,7 @@ workflow-name/
 │   ├── scripts/deploy-to-localstack.js
 │   └── package.json
 ├── dev-tools/                 # ACK payload generators, test utilities
-├── ste/                       # Per-workflow State Transition Evaluations (5 each)
+├── setpoint-evals/                       # Per-workflow State Transition Evaluations (5 each)
 ├── docker-compose.*.yml       # Source database container
 └── README.md                  # Domain-specific documentation
 ```
@@ -39,12 +39,12 @@ workflow-name/
 2. Follow the checklist in `00-template/CHECKLIST.md`
 3. See `docs/guides/creating-a-workflow.md` for the full guide
 
-## Running Workflow STEs
+## Running Workflow SEs
 
 ```bash
 # All workflows
-./ste/run-all.sh --all-workflows
+./setpoint-evals/run-all.sh --all-workflows
 
 # Specific workflow
-bash workflows/order-processing/ste/run-all.sh
+bash workflows/order-processing/setpoint-evals/run-all.sh
 ```

@@ -125,7 +125,10 @@ export class WorkflowConfigService {
    * For dynamic-step workflows, reads from job.payload.stepDefinitions.
    * For static workflows, falls through to the variant-based config.
    */
-  getStepDefinitionsForJob(job: { type: string; payload?: Record<string, unknown> | null }): StepDefinition[] {
+  getStepDefinitionsForJob(job: {
+    type: string;
+    payload?: Record<string, unknown> | null;
+  }): StepDefinition[] {
     if (this.workflow.dynamicSteps) {
       const payload = job.payload as Record<string, unknown> | null;
       const dynamicDefs = payload?.stepDefinitions;
@@ -134,7 +137,7 @@ export class WorkflowConfigService {
       }
       this.logger.warn(
         `Dynamic-step workflow '${this.workflow.name}' but no stepDefinitions in job payload. ` +
-        `Falling back to static config (variant: ${job.type}).`,
+          `Falling back to static config (variant: ${job.type}).`,
       );
     }
     return this.getActiveStepDefinitions(job.type);

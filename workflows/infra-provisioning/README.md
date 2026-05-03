@@ -259,7 +259,7 @@ DiscoverCompute
 | certificate  | optional    | Partial success (or SKIPPED if DNS failed) |
 | loadBalancer | optional    | Partial success if load balancer fails     |
 
-## STE Catalog
+## SE Catalog
 
 | #  | Name                         | Description                                                                     | Expected Status   |
 |----|------------------------------|---------------------------------------------------------------------------------|-------------------|
@@ -269,18 +269,18 @@ DiscoverCompute
 | 04 | Cascade Failure Propagation  | DNS fails -> Certificate SKIPPED, but Storage succeeds -> PARTIAL_SUCCESS       | PARTIAL_SUCCESS   |
 | 05 | Long ACK Wait                | ApplyCompute enters WAITING_FOR_ACK, ACK arrives after 5s delay                 | COMPLETED         |
 
-### Running STEs
+### Running SEs
 
 ```bash
-# Run all infra-provisioning STEs sequentially
-./workflows/infra-provisioning/ste/run-all.sh
+# Run all infra-provisioning SEs sequentially
+./workflows/infra-provisioning/setpoint-evals/run-all.sh
 
-# Run a specific STE
-bash ./workflows/infra-provisioning/ste/01-happy-path/test.sh
-bash ./workflows/infra-provisioning/ste/02-environment-not-found/test.sh
-bash ./workflows/infra-provisioning/ste/03-compute-fan-out/test.sh
-bash ./workflows/infra-provisioning/ste/04-cascade-failure-propagation/test.sh
-bash ./workflows/infra-provisioning/ste/05-long-ack-wait/test.sh
+# Run a specific SE
+bash ./workflows/infra-provisioning/setpoint-evals/01-happy-path/test.sh
+bash ./workflows/infra-provisioning/setpoint-evals/02-environment-not-found/test.sh
+bash ./workflows/infra-provisioning/setpoint-evals/03-compute-fan-out/test.sh
+bash ./workflows/infra-provisioning/setpoint-evals/04-cascade-failure-propagation/test.sh
+bash ./workflows/infra-provisioning/setpoint-evals/05-long-ack-wait/test.sh
 ```
 
 ## Running Locally
@@ -320,11 +320,11 @@ psql -h localhost -p 5451 -U infra_user -d infra_provisioning_db
 ./scripts/local-env.sh deploy-workers
 ```
 
-### Run STEs
+### Run SEs
 
 ```bash
-# Run all 5 infra-provisioning STEs
-./workflows/infra-provisioning/ste/run-all.sh
+# Run all 5 infra-provisioning SEs
+./workflows/infra-provisioning/setpoint-evals/run-all.sh
 ```
 
 ### Tear Down
@@ -379,10 +379,10 @@ workflows/infra-provisioning/
         apply-certificate.ts
         plan-load-balancer.ts
         apply-load-balancer.ts
-  ste/
+  setpoint-evals/
     shared/
-      helpers.sh                           # Workflow-specific STE helpers
-    run-all.sh                             # Run all STEs sequentially
+      helpers.sh                           # Workflow-specific SE helpers
+    run-all.sh                             # Run all SEs sequentially
     01-happy-path/test.sh                  # Happy path test
     02-environment-not-found/test.sh       # Critical entity failure test
     03-compute-fan-out/test.sh             # Fan-out pattern test

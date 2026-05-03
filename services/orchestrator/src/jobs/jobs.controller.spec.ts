@@ -1,10 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { JobsController } from './jobs.controller';
-import {
-  JobRepository,
-  StepRepository,
-  StepStatus,
-} from '@dtm/database';
+import { JobRepository, StepRepository, StepStatus } from '@dtm/database';
 import { NotFoundException } from '@nestjs/common';
 import { WorkflowConfigService } from '../workflow-loader/workflow-config.service';
 

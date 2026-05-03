@@ -236,4 +236,3 @@ export class JobRepository {
     return result.affected || 0;
   }
 }
-

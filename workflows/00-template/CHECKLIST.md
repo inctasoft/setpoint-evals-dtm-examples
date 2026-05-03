@@ -38,13 +38,13 @@ Follow these steps to create a new DTM workflow. See `CLAUDE.md` → "Adding a N
 
 - [ ] Create `dev-tools/ack-defaults.ts` with ACK payload generators per entity
 
-## 6. STEs
+## 6. SEs
 
-- [ ] Create `ste/shared/helpers.sh` — set `WORKFLOW_NAME`, override helpers
-- [ ] Create `ste/run-all.sh` — iterate all test directories
-- [ ] Write `ste/01-happy-path/test.sh` — full end-to-end test
-- [ ] Write additional STEs for error cases, fan-out, etc.
-- [ ] Make all scripts executable: `chmod +x ste/**/*.sh`
+- [ ] Create `setpoint-evals/shared/helpers.sh` — set `WORKFLOW_NAME`, override helpers
+- [ ] Create `setpoint-evals/run-all.sh` — iterate all test directories
+- [ ] Write `setpoint-evals/01-happy-path/test.sh` — full end-to-end test
+- [ ] Write additional SEs for error cases, fan-out, etc.
+- [ ] Make all scripts executable: `chmod +x setpoint-evals/**/*.sh`
 
 ## 7. Integration (REQUIRED — or workflow won't be discovered)
 
@@ -57,4 +57,4 @@ Follow these steps to create a new DTM workflow. See `CLAUDE.md` → "Adding a N
 ## 8. Documentation
 
 - [ ] Create `README.md` — domain model, step DAG, capabilities showcased
-- [ ] Update `CLAUDE.md` — Registered Workflows table, Source DBs, Container Inventory, Workflow Directory, STEs
+- [ ] Update `CLAUDE.md` — Registered Workflows table, Source DBs, Container Inventory, Workflow Directory, SEs

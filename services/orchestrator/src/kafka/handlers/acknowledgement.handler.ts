@@ -162,9 +162,7 @@ export class AcknowledgementHandler implements OnModuleInit, IMessageHandler {
       throw new Error('Missing required fields: jobId or stepId');
     }
 
-    this.logger.log(
-      `📥 Received ${cascadeName} acknowledgement for step ${stepId} (job ${jobId})`,
-    );
+    this.logger.log(`📥 Received ${cascadeName} acknowledgement for step ${stepId} (job ${jobId})`);
 
     // Verify step exists and is in WAITING_FOR_ACK status
     const step = await this.stepRepository.findById(stepId);

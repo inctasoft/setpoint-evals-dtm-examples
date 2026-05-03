@@ -332,7 +332,12 @@ describe('CallbackController', () => {
         type: 'default',
         status: 'completed',
         steps: [
-          { id: mockStepId, name: 'ValidateCustomer', status: 'completed', completedAt: new Date() },
+          {
+            id: mockStepId,
+            name: 'ValidateCustomer',
+            status: 'completed',
+            completedAt: new Date(),
+          },
           {
             id: '770e8400-e29b-41d4-a716-446655440002',
             name: 'SubmitCustomer',

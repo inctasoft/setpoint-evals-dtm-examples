@@ -388,13 +388,13 @@ The E2E test suite automatically pre-warms Lambda workers before running tests:
 **Dynamic Scaling**:
 ```bash
 # 1 eval → 3 instances per worker × 4 workers = 12 total
-./ste/run-all.sh --eval 01
+./setpoint-evals/run-all.sh --eval 01
 
 # 15 evals → 15 instances per worker × 4 workers = 60 total (max)
-./ste/run-all.sh
+./setpoint-evals/run-all.sh
 ```
 
-See [`DYNAMIC-WARMUP.md`](../../ste/DYNAMIC-WARMUP.md) for detailed scaling logic.
+See [`DYNAMIC-WARMUP.md`](../../setpoint-evals/DYNAMIC-WARMUP.md) for detailed scaling logic.
 
 ### Warm-Up Failures Are Low Priority
 
@@ -419,10 +419,10 @@ See [`DYNAMIC-WARMUP.md`](../../ste/DYNAMIC-WARMUP.md) for detailed scaling logi
 **Skip Warm-up Flags**:
 ```bash
 # Skip warm-up if containers are already warm (<10 min since last run)
-./ste/run-all.sh --skip-checks --skip-warmup
+./setpoint-evals/run-all.sh --skip-checks --skip-warmup
 
 # Fastest iteration (trust existing state)
-./ste/run-all.sh --skip-checks --skip-warmup --skip-purge
+./setpoint-evals/run-all.sh --skip-checks --skip-warmup --skip-purge
 ```
 
 ---
@@ -440,7 +440,7 @@ environment:
 
 ```bash
 # Use fewer worker instances
-./ste/run-all.sh --worker-instances=1
+./setpoint-evals/run-all.sh --worker-instances=1
 ```
 
 ### For High-Resource Machines
@@ -454,7 +454,7 @@ environment:
 
 ```bash
 # Use more worker instances
-./ste/run-all.sh --worker-instances=5
+./setpoint-evals/run-all.sh --worker-instances=5
 ```
 
 ### For CI/CD Pipelines
@@ -468,7 +468,7 @@ environment:
 
 ```bash
 # Use CI mode with faster iterations
-./ste/run-all.sh --ci-mode --skip-checks
+./setpoint-evals/run-all.sh --ci-mode --skip-checks
 ```
 
 ---
@@ -827,11 +827,11 @@ sleep 30
 
 ## 📚 Related Documentation
 
-- **[DYNAMIC-WARMUP.md](../../ste/DYNAMIC-WARMUP.md)** - Lambda pre-warming scaling logic
+- **[DYNAMIC-WARMUP.md](../../setpoint-evals/DYNAMIC-WARMUP.md)** - Lambda pre-warming scaling logic
 - **[DEPLOYMENT-MODES.md](./DEPLOYMENT-MODES.md)** - ESM vs Poller mode comparison
 - **[system-architecture.md](./system-architecture.md)** - Complete system overview
-- **[E2E Evals README](../../ste/README.md)** - Main E2E testing documentation
-- **[Preflight Check](../../ste/preflight-check.sh)** - Automated validation
+- **[E2E Evals README](../../setpoint-evals/README.md)** - Main E2E testing documentation
+- **[Preflight Check](../../setpoint-evals/preflight-check.sh)** - Automated validation
 
 ---
 
