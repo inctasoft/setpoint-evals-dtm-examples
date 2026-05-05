@@ -20,11 +20,20 @@ describe('AcknowledgementHandler', () => {
 
   beforeEach(async () => {
     // Create mocks
+    // Chainable QueryBuilder mock — handler uses .createQueryBuilder().update().set().where().execute()
+    const mockQueryBuilder = {
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
     const mockStepRepository = {
       findById: jest.fn(),
       updateStatus: jest.fn(),
       repo: {
         save: jest.fn(),
+        createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
       },
     };
 
@@ -42,6 +51,8 @@ describe('AcknowledgementHandler', () => {
       injectFkValues: jest
         .fn()
         .mockImplementation((_et: unknown, _steps: unknown, data: unknown) => data),
+      hasDependentCascades: jest.fn().mockReturnValue(false),
+      publishCascade: jest.fn().mockResolvedValue(undefined),
     };
 
     const mockFanOutService = {

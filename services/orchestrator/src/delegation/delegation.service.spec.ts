@@ -40,6 +40,13 @@ describe('DelegationService', () => {
     const mockWorkflowConfigService = {
       getStepName: jest.fn().mockImplementation((step: string) => step.toLowerCase()),
       getAllQueueNames: jest.fn().mockReturnValue([]),
+      getStepDefinitions: jest.fn().mockReturnValue([
+        {
+          step: 'TestStep',
+          queueName: 'test-queue',
+          dependencies: [],
+        },
+      ]),
     };
 
     const mockWorkflowRegistryService = {
