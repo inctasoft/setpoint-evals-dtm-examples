@@ -6,6 +6,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { MaintenanceTaskRegistry } from '../registry/maintenance-task-registry';
 import { OrchestrationService } from '../../orchestration/orchestration.service';
+import { AdvisoryLockService } from '../advisory-lock.service';
 
 describe('OrphanedJobRecoveryTask', () => {
   let module: TestingModule;
@@ -35,6 +36,11 @@ describe('OrphanedJobRecoveryTask', () => {
     continueJob: jest.fn(),
   };
 
+  const mockAdvisoryLockService = {
+    tryAcquire: jest.fn().mockResolvedValue(true),
+    release: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     module = await Test.createTestingModule({
       providers: [
@@ -50,6 +56,7 @@ describe('OrphanedJobRecoveryTask', () => {
         { provide: ConfigService, useValue: mockConfigService },
         { provide: MaintenanceTaskRegistry, useValue: mockTaskRegistry },
         { provide: OrchestrationService, useValue: mockOrchestrationService },
+        { provide: AdvisoryLockService, useValue: mockAdvisoryLockService },
       ],
     }).compile();
 

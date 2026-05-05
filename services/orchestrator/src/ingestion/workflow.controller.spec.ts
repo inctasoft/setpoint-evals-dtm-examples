@@ -226,10 +226,19 @@ describe('WorkflowController', () => {
         submittedAt: new Date(),
       } as any);
 
+      // Controller only runs the dedup check when there's a deduplicationKey or payload
+      // (controller's "5. Check for duplicate job" block guards on `deduplicationKey`).
+      // baseDto is empty `{}` which short-circuits the check; supply a payload here so
+      // the dedup branch fires and `findExistingJob` is consulted.
+      const dtoWithPayload: InitiateWorkflowJobDto = {
+        ...baseDto,
+        payload: { itemId: 'TEST-1' },
+      };
+
       // Act & Assert
-      await expect(controller.initiateWorkflowJob('order-processing', baseDto)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        controller.initiateWorkflowJob('order-processing', dtoWithPayload),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should throw BadRequestException when orchestration fails', async () => {

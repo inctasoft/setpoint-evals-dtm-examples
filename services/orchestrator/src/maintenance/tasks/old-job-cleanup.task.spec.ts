@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { MaintenanceTaskRegistry } from '../registry/maintenance-task-registry';
+import { AdvisoryLockService } from '../advisory-lock.service';
 
 describe('OldJobCleanupTask', () => {
   let module: TestingModule;
@@ -29,6 +30,11 @@ describe('OldJobCleanupTask', () => {
     register: jest.fn(),
   };
 
+  const mockAdvisoryLockService = {
+    tryAcquire: jest.fn().mockResolvedValue(true),
+    release: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     module = await Test.createTestingModule({
       providers: [
@@ -39,6 +45,7 @@ describe('OldJobCleanupTask', () => {
         },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: MaintenanceTaskRegistry, useValue: mockTaskRegistry },
+        { provide: AdvisoryLockService, useValue: mockAdvisoryLockService },
       ],
     }).compile();
 

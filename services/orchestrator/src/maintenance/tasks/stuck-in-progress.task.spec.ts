@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { MaintenanceTaskRegistry } from '../registry/maintenance-task-registry';
 import { OrchestrationService } from '../../orchestration/orchestration.service';
 import { WorkflowConfigService } from '../../workflow-loader/workflow-config.service';
+import { AdvisoryLockService } from '../advisory-lock.service';
 
 describe('StuckInProgressTask', () => {
   let module: TestingModule;
@@ -38,6 +39,11 @@ describe('StuckInProgressTask', () => {
     getStepName: jest.fn().mockImplementation((step: string) => step.toLowerCase()),
   };
 
+  const mockAdvisoryLockService = {
+    tryAcquire: jest.fn().mockResolvedValue(true),
+    release: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     module = await Test.createTestingModule({
       providers: [
@@ -50,6 +56,7 @@ describe('StuckInProgressTask', () => {
         { provide: MaintenanceTaskRegistry, useValue: mockTaskRegistry },
         { provide: OrchestrationService, useValue: mockOrchestrationService },
         { provide: WorkflowConfigService, useValue: mockWorkflowConfigService },
+        { provide: AdvisoryLockService, useValue: mockAdvisoryLockService },
       ],
     }).compile();
 
