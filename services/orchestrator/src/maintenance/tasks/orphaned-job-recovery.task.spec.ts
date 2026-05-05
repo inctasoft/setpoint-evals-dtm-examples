@@ -104,7 +104,7 @@ describe('OrphanedJobRecoveryTask', () => {
         ],
       };
 
-      jobRepository.find.mockResolvedValue([orphanedJob as Job]);
+      jobRepository.find.mockResolvedValue([orphanedJob]);
       jobRepository.findOne.mockResolvedValue({
         ...orphanedJob,
         status: JobStatus.FAILED,
@@ -137,7 +137,7 @@ describe('OrphanedJobRecoveryTask', () => {
         ],
       };
 
-      jobRepository.find.mockResolvedValue([activeJob as Job]);
+      jobRepository.find.mockResolvedValue([activeJob]);
 
       // Act
       const result = await task['execute']();
@@ -179,7 +179,7 @@ describe('OrphanedJobRecoveryTask', () => {
         ],
       };
 
-      jobRepository.find.mockResolvedValue([orphanedJob as Job]);
+      jobRepository.find.mockResolvedValue([orphanedJob]);
       jobRepository.findOne.mockResolvedValue({
         ...orphanedJob,
         status: JobStatus.COMPLETED,
@@ -208,7 +208,7 @@ describe('OrphanedJobRecoveryTask', () => {
         steps: [{ id: 'step-1', status: StepStatus.COMPLETED } as Step],
       };
 
-      jobRepository.find.mockResolvedValue([orphanedJob as Job]);
+      jobRepository.find.mockResolvedValue([orphanedJob]);
       orchestrationService.continueJob.mockRejectedValue(
         new Error('Orchestration service unavailable'),
       );
@@ -243,7 +243,7 @@ describe('OrphanedJobRecoveryTask', () => {
         ],
       };
 
-      jobRepository.find.mockResolvedValue([orphanedJob as Job]);
+      jobRepository.find.mockResolvedValue([orphanedJob]);
       jobRepository.findOne.mockResolvedValue({
         ...orphanedJob,
         status: JobStatus.FAILED,
@@ -287,7 +287,7 @@ describe('OrphanedJobRecoveryTask', () => {
         },
       ];
 
-      jobRepository.find.mockResolvedValue(orphanedJobs as Job[]);
+      jobRepository.find.mockResolvedValue(orphanedJobs);
       jobRepository.findOne.mockResolvedValue({ status: JobStatus.COMPLETED } as Job);
       orchestrationService.continueJob.mockResolvedValue(undefined);
 
@@ -320,7 +320,7 @@ describe('OrphanedJobRecoveryTask', () => {
         },
       ];
 
-      jobRepository.find.mockResolvedValue(orphanedJobs as Job[]);
+      jobRepository.find.mockResolvedValue(orphanedJobs);
       jobRepository.findOne.mockResolvedValue({ status: JobStatus.COMPLETED } as Job);
 
       // First call succeeds, second fails

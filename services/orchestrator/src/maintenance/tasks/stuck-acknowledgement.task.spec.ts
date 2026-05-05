@@ -99,7 +99,7 @@ describe('StuckAcknowledgementTask', () => {
         job: { id: 'job-123' } as any,
       };
 
-      stepRepository.find.mockResolvedValue([stuckStep as Step]);
+      stepRepository.find.mockResolvedValue([stuckStep]);
       stepRepository.update.mockResolvedValue({ affected: 1 } as any);
       orchestrationService.continueJob.mockResolvedValue(undefined);
 
@@ -130,7 +130,7 @@ describe('StuckAcknowledgementTask', () => {
         job: { id: 'job-123' } as any,
       };
 
-      stepRepository.find.mockResolvedValue([stuckStep as Step]);
+      stepRepository.find.mockResolvedValue([stuckStep]);
       stepRepository.update.mockResolvedValue({ affected: 1 } as any);
       orchestrationService.continueJob.mockResolvedValue(undefined);
 
@@ -186,7 +186,7 @@ describe('StuckAcknowledgementTask', () => {
         job: { id: 'job-789' } as any,
       };
 
-      stepRepository.find.mockResolvedValue([stuckStep as Step]);
+      stepRepository.find.mockResolvedValue([stuckStep]);
       stepRepository.update.mockResolvedValue({ affected: 1 } as any);
       orchestrationService.continueJob.mockResolvedValue(undefined);
 
@@ -219,7 +219,7 @@ describe('StuckAcknowledgementTask', () => {
         job: { id: 'job-999' } as any,
       };
 
-      stepRepository.find.mockResolvedValue([stuckStep as Step]);
+      stepRepository.find.mockResolvedValue([stuckStep]);
       stepRepository.update.mockResolvedValue({ affected: 1 } as any);
       orchestrationService.continueJob.mockResolvedValue(undefined);
 
@@ -258,7 +258,7 @@ describe('StuckAcknowledgementTask', () => {
         job: { id: 'job-critical' } as any,
       };
 
-      stepRepository.find.mockResolvedValue([stuckStep as Step]);
+      stepRepository.find.mockResolvedValue([stuckStep]);
       stepRepository.update.mockResolvedValue({ affected: 1 } as any);
       orchestrationService.continueJob.mockResolvedValue(undefined);
 
@@ -286,7 +286,7 @@ describe('StuckAcknowledgementTask', () => {
         job: { id: 'job-custom' } as any,
       };
 
-      stepRepository.find.mockResolvedValue([stuckStep as Step]);
+      stepRepository.find.mockResolvedValue([stuckStep]);
       stepRepository.update.mockResolvedValue({ affected: 1 } as any);
       orchestrationService.continueJob.mockResolvedValue(undefined);
 

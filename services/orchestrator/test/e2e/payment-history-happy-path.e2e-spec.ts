@@ -27,7 +27,7 @@ import { DatabaseHelper, ServiceHelper, AssertionHelper } from './test-helpers';
 describe('Order Processing Happy Path E2E', () => {
   let db: DatabaseHelper;
   let service: ServiceHelper;
-  let assertion: AssertionHelper;
+  let _assertion: AssertionHelper;
 
   // Test data - Customer CUST-1027 has order with line items
   const TEST_CUSTOMER_ID = 'CUST-1027';
@@ -37,7 +37,7 @@ describe('Order Processing Happy Path E2E', () => {
   beforeAll(async () => {
     db = new DatabaseHelper();
     service = new ServiceHelper();
-    assertion = new AssertionHelper();
+    _assertion = new AssertionHelper();
 
     // Wait for orchestrator to be ready
     console.log('Waiting for orchestrator to be ready...');

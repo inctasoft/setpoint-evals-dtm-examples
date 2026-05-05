@@ -64,7 +64,10 @@ function loadWorkflowsFromEnv(): WorkflowDefinition[] {
 
   for (const configPath of configPaths) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // Dynamic require by runtime path is intentional — simulator mode resolves
+      // workflow configs from WORKFLOW_CONFIG_PATHS at startup, shape unknown
+      // until load.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const mod = require(configPath);
 
       // Handle various export shapes:

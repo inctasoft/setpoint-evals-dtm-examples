@@ -116,7 +116,7 @@ describe('OldJobCleanupTask', () => {
         steps: [],
       };
 
-      jobRepository.find.mockResolvedValue([oldJob as Job]);
+      jobRepository.find.mockResolvedValue([oldJob]);
       jobRepository.delete.mockRejectedValue(new Error('Foreign key constraint'));
 
       // Act
