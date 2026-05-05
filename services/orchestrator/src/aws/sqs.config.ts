@@ -106,7 +106,7 @@ export class SqsConfig {
       'dtm-orchestrator';
 
     switch (runtime) {
-      case 'local':
+      case 'local': {
         // In local/debug mode, the poller runs on the host and calls localhost
         // Use host-mapped port (typically 3002)
         const localPort = parseInt(
@@ -114,6 +114,7 @@ export class SqsConfig {
           10,
         );
         return `http://localhost:${localPort}`;
+      }
 
       case 'docker':
         // In Docker mode, use the container's Docker bridge IP which is accessible from

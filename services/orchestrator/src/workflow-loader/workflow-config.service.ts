@@ -266,7 +266,7 @@ export class WorkflowConfigService {
     const map = new Map<string, Record<string, unknown> | undefined>();
     for (const step of steps) {
       if (this.isOutputStep(step.stepValue) && step.ackMetadata) {
-        map.set(step.stepValue, step.ackMetadata as Record<string, unknown>);
+        map.set(step.stepValue, step.ackMetadata);
       }
     }
     return map;

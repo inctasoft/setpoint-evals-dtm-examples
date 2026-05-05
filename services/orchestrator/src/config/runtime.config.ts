@@ -171,10 +171,11 @@ export function getOrchestratorCallbackUrl(envValue: string | undefined, port: n
       // They can reach the orchestrator directly via its Docker service name.
       // Uses container internal port (PORT env var).
       return `http://${dockerHost}:${port}`;
-    case 'local':
+    case 'local': {
       // Locally, use host-mapped port (typically 3002)
       const localPort = parseInt(process.env.ORCHESTRATOR_PORT_HOST || String(port), 10);
       return `http://localhost:${localPort}`;
+    }
   }
 }
 

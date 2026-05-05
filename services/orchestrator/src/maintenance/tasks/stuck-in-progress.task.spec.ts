@@ -101,7 +101,7 @@ describe('StuckInProgressTask', () => {
         job: { id: 'job-123' } as any,
       };
 
-      stepRepository.find.mockResolvedValue([stuckStep as Step]);
+      stepRepository.find.mockResolvedValue([stuckStep]);
 
       // Act
       const result = await task['execute']();
@@ -145,7 +145,7 @@ describe('StuckInProgressTask', () => {
         },
       ];
 
-      stepRepository.find.mockResolvedValue(stuckSteps as Step[]);
+      stepRepository.find.mockResolvedValue(stuckSteps);
 
       // Act
       const result = await task['execute']();
@@ -170,7 +170,7 @@ describe('StuckInProgressTask', () => {
         job: { id: 'job-123' } as any,
       };
 
-      stepRepository.find.mockResolvedValue([stuckStep as Step]);
+      stepRepository.find.mockResolvedValue([stuckStep]);
 
       // Act
       const result = await task['execute']();
@@ -194,7 +194,7 @@ describe('StuckInProgressTask', () => {
         job: { id: 'job-critical' } as any,
       };
 
-      stepRepository.find.mockResolvedValue([stuckStep as Step]);
+      stepRepository.find.mockResolvedValue([stuckStep]);
 
       // Act
       const result = await task['execute']();
@@ -216,7 +216,7 @@ describe('StuckInProgressTask', () => {
         job: { id: 'job-123' } as any,
       };
 
-      stepRepository.find.mockResolvedValue([stuckStep as Step]);
+      stepRepository.find.mockResolvedValue([stuckStep]);
 
       // Act
       const result = await task['execute']();

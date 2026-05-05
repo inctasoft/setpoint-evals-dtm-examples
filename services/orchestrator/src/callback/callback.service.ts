@@ -13,9 +13,8 @@ import { CascadePublishService } from '../orchestration/cascade-publish.service'
 import { FanOutService } from '../orchestration/fan-out.service';
 import { TransformationFailedEvent } from './dto/transformed-data-events.dto';
 import { WorkflowConfigService, WorkflowRegistryService } from '../workflow-loader';
-import type { StepDefinition, CascadeConfig } from '@dtm/core';
+import type { StepDefinition } from '@dtm/core';
 import { KafkaService } from '../kafka/kafka.service';
-import { JobType } from '@dtm/database';
 import { EventsGateway } from '../websocket/events.gateway';
 import { CorrelationService } from '../common/correlation/correlation.service';
 

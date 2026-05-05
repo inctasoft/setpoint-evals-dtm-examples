@@ -10,7 +10,8 @@ import type { WorkflowDefinition } from '@dtm/core';
 // Wrapped in try-catch so the simulator Dockerfile doesn't need this package installed.
 let orderProcessingWorkflow: WorkflowDefinition | undefined;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  // Wrapped in try-catch so the simulator Dockerfile doesn't need this package installed.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   orderProcessingWorkflow = require('@dtm-workflows/order-processing').orderProcessingWorkflow;
 } catch {
   // Not available in simulator mode — workflows are passed explicitly via forRoot()
