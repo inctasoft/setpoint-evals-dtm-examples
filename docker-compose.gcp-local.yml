@@ -1,0 +1,46 @@
+# GCP Local stack — Cloud Tasks emulator for local dtm-gcp development.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gcp-local.yml up
+#
+# Sets QUEUE_TRANSPORT=cloud-tasks so the orchestrator uses CloudTasksTransport
+# instead of SqsTransport. The emulator listens on :8123 and delivers HTTP push
+# tasks to DTM_WORKER_ENDPOINT (must be reachable from inside Docker network).
+#
+# Queues are declared at startup via -queue flags:
+#   projects/valko-local/locations/local/queues/plan-execute-chunk
+#   projects/valko-local/locations/local/queues/plan-execute-chunk-dlq
+
+services:
+  cloud-tasks-emulator:
+    image: ghcr.io/aertje/cloud-tasks-emulator:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-dtm}-cloud-tasks-emulator
+    ports:
+      - "8123:8123"
+    environment:
+      - PORT=8123
+    command: >
+      -host 0.0.0.0
+      -port 8123
+      -queue "projects/valko-local/locations/local/queues/plan-execute-chunk"
+      -queue "projects/valko-local/locations/local/queues/plan-execute-chunk-dlq"
+    networks:
+      - dtm
+    restart: unless-stopped
+
+  orchestrator:
+    environment:
+      - QUEUE_TRANSPORT=cloud-tasks
+      - CLOUD_TASKS_ENDPOINT=http://cloud-tasks-emulator:8123
+      # Worker endpoint: voice-assistant backend (or set via .env for standalone testing)
+      - DTM_WORKER_ENDPOINT=${DTM_WORKER_ENDPOINT:-http://host.docker.internal:3060}
+      - GCP_PROJECT=${GCP_PROJECT:-valko-local}
+      - GCP_LOCATION=${GCP_LOCATION:-local}
+      # Disable Kafka when using Cloud Tasks (no separate ACK bus needed)
+      - PUBLISH_EVENTS_TO_KAFKA=false
+    depends_on:
+      cloud-tasks-emulator:
+        condition: service_started
+
+networks:
+  dtm:
+    name: dtm
+    external: true
