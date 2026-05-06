@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { SqsService, LambdaStepPayload } from '../aws/sqs.service';
-import { SqsConfig } from '../aws/sqs.config';
+import { LambdaStepPayload } from '../aws/sqs.service';
+import { QueueTransport } from '../transport/queue-transport.interface';
 import { StepRepository, StepStatus, JobType } from '@dtm/database';
 import { CorrelationService } from '../common/correlation/correlation.service';
 import {
@@ -19,8 +19,7 @@ export class DelegationService {
   private readonly logger = new Logger(DelegationService.name);
 
   constructor(
-    private readonly sqsService: SqsService,
-    private readonly sqsConfig: SqsConfig,
+    private readonly transport: QueueTransport,
     private readonly stepRepository: StepRepository,
     private readonly correlationService: CorrelationService,
     private readonly workflowConfig: WorkflowConfigService,
@@ -51,9 +50,7 @@ export class DelegationService {
         };
       }
 
-      // Build callback URL for Lambda to report back
-      // Use the configured callback URL which handles runtime detection
-      const baseCallbackUrl = this.sqsConfig.getCallbackUrl();
+      const baseCallbackUrl = this.transport.getWorkerEndpointUrl(dto.queueName);
       const callbackUrl = `${baseCallbackUrl}/api/v1/callback/step-progress`;
 
       this.logger.log(`Callback URL for job ${dto.jobId}: ${callbackUrl}`);
@@ -71,43 +68,24 @@ export class DelegationService {
         processingConfig: dto.processingConfig, // Include Processing config if present
       };
 
-      // Get the queue URL for this specific step
-      const queueUrl = this.sqsConfig.getQueueUrlByName(dto.queueName);
+      const result = await this.transport.sendTask(dto.queueName, payload);
 
-      // Send to SQS
-      const sqsResult = await this.sqsService.sendStepMessage(payload, queueUrl);
-
-      if (!sqsResult.success) {
-        // SQS send failed
-        this.logger.error(`Failed to send step ${dto.stepId} to SQS: ${sqsResult.error}`);
-
-        // Mark step as failed
+      if (!result.success) {
+        this.logger.error(`Failed to send step ${dto.stepId} to transport: ${result.error}`);
         await this.stepRepository.updateStatus(
           dto.stepId,
           StepStatus.FAILED,
-          `Failed to delegate to Lambda: ${sqsResult.error}`,
+          `Failed to delegate: ${result.error}`,
         );
-
-        return {
-          stepId: dto.stepId,
-          success: false,
-          error: sqsResult.error,
-        };
+        return { stepId: dto.stepId, success: false, error: result.error };
       }
 
-      // SQS send successful - store SQS message ID (status already DELEGATED from claim)
       this.logger.log(
-        `Successfully delegated step ${dto.stepId}. SQS MessageId: ${sqsResult.messageId}`,
+        `Successfully delegated step ${dto.stepId}. Handle: ${result.taskHandle}`,
       );
+      await this.stepRepository.markAsDelegated(dto.stepId, result.taskHandle);
 
-      // Store the SQS message ID for tracking
-      await this.stepRepository.markAsDelegated(dto.stepId, sqsResult.messageId);
-
-      return {
-        stepId: dto.stepId,
-        success: true,
-        sqsMessageId: sqsResult.messageId,
-      };
+      return { stepId: dto.stepId, success: true, sqsMessageId: result.taskHandle };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const errorStack = error instanceof Error ? error.stack : undefined;
