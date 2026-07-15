@@ -40,7 +40,7 @@ WORKFLOW_NAME="infra-provisioning"
 # Helper: Initiate an infra-provisioning job
 # ═══════════════════════════════════════════════════════════════════════════
 # POSTs to $ORCHESTRATOR_URL/workflows/infra-provisioning/jobs
-# Usage: initiate_job '{"payload": {"environmentId": "ENV-DEV"}, ...}'
+# Usage: initiate_job '{"payload": {"environmentId": "staging-eu"}, ...}'
 # Returns: "jobId:correlationId" on stdout
 #
 initiate_job() {
