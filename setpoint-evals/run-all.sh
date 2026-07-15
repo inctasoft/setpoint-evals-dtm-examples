@@ -259,7 +259,14 @@ se_meta_raw() {
 }
 
 se_timeout() {
+  # v2 contract default is 120s — but that applies to SEs that HAVE a README (they had the
+  # chance to declare '**Timeout**'). A README-less SE is the pre-v2 legacy case, which
+  # historically ran with NO timeout at all (old in-band/destructive paths) — killing a
+  # retry-heavy legacy SE at 120s would convert a legitimate PASS into a TIMEOUT (the
+  # workflow SEs ride 3x ~30s SQS visibility cycles and poll up to 300s). Legacy default:
+  # 600s — generous enough to never clip a real run, finite enough to still catch a hang.
   local raw val
+  if [ ! -f "$EVAL_DIR/$1/README.md" ]; then printf '600'; return 0; fi
   raw="$(se_meta_raw "$1" "Timeout")"
   val="$(printf '%s' "$raw" | sed -E 's/.*\*\*Timeout\*\*:[[:space:]]*([0-9]+)s?.*/\1/')"
   if [ -n "$val" ] && [[ "$val" =~ ^[0-9]+$ ]]; then printf '%s' "$val"; else printf '120'; fi
@@ -1442,7 +1449,13 @@ if [ "$ALL_WORKFLOWS" = true ]; then
       echo "  Runner: $runner"
       echo ""
 
-      # Build workflow runner args: pass through mode and max-parallel
+      # Build workflow runner args: pass through mode and max-parallel.
+      # --skip-checks (not just --skip-warmup): the core run's preflight already
+      # validated the whole stack; re-running it per suite is redundant AND its
+      # warning path prompts interactively (read -p), which aborts when the
+      # delegated runner has no TTY (this exact failure shipped once — the
+      # 2026-07-15 verification run had core 13/13 green and all 3 workflow
+      # suites "failed" on that prompt).
       workflow_args=""
       if [ "$MODE" = "in-band" ]; then
         workflow_args="$workflow_args --in-band"
@@ -1450,7 +1463,10 @@ if [ "$ALL_WORKFLOWS" = true ]; then
       if [ $MAX_PARALLEL -gt 0 ]; then
         workflow_args="$workflow_args --max-parallel=$MAX_PARALLEL"
       fi
-      workflow_args="$workflow_args --skip-warmup"
+      if [ "$CI_MODE" = true ]; then
+        workflow_args="$workflow_args --ci-mode"
+      fi
+      workflow_args="$workflow_args --skip-checks --skip-warmup"
 
       if "$runner" $workflow_args; then
         log_success "Workflow '$workflow_name' SEs passed"
