@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.709.0",
+    "@google-cloud/tasks": "^6.2.3",
     "@dtm-workflows/infra-provisioning": "workspace:*",
     "@dtm-workflows/iot-sensor-pipeline": "workspace:*",
     "@dtm-workflows/order-processing": "workspace:*",
