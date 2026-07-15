@@ -213,7 +213,7 @@ ENABLE_DEDUPLICATION=false
 **Process Flow**:
 
 1. Create job record in database
-2. Create step records based on job type (default = 6 steps)
+2. Create step records based on job type (`default` variant = 13 steps — see [Section 7.1](#71-extended-multi-cascade-example) for the full DAG; this section walks a 5-step slice of it)
 3. Evaluate step dependencies
 4. Delegate ready steps to SQS queues
 5. Include configuration (delays, retry settings) in message payload
@@ -228,21 +228,20 @@ graph TB
 
     subgraph "Database Operations"
         CREATE_JOB[Create Job Record<br/>type: default<br/>status: PENDING<br/>payload with config]
-        CREATE_STEPS[Create Step Records<br/>ValidateCustomer, ValidateOrder, ValidateOrder<br/>SubmitCustomer, SubmitOrder, SubmitOrder]
+        CREATE_STEPS[Create Step Records<br/>ValidateCustomer, ValidateProduct, ValidateOrder<br/>SubmitCustomer, SubmitOrder]
         CHECK_DEPS{Check<br/>Dependencies<br/>All met?}
     end
 
     subgraph "SQS Queues (AWS/LocalStack)"
-        SQS_EC[📮 order-validate-customer<br/>Visibility: 60s<br/>MaxReceive: 3]
-        SQS_EM[📮 order-validate-order<br/>Visibility: 60s<br/>MaxReceive: 3]
-        SQS_EO[📮 order-validate-order<br/>Visibility: 60s<br/>MaxReceive: 3]
-        SQS_TC[📮 order-submit-customer<br/>Visibility: 60s<br/>MaxReceive: 3]
-        SQS_TM[📮 order-submit-order<br/>Visibility: 60s<br/>MaxReceive: 3]
-        SQS_TO[📮 order-submit-order<br/>Visibility: 60s<br/>MaxReceive: 3]
+        SQS_VC[📮 order-validate-customer<br/>Visibility: 60s<br/>MaxReceive: 3]
+        SQS_VP[📮 order-validate-product<br/>Visibility: 60s<br/>MaxReceive: 3]
+        SQS_VO[📮 order-validate-order<br/>Visibility: 60s<br/>MaxReceive: 3]
+        SQS_SC[📮 order-submit-customer<br/>Visibility: 60s<br/>MaxReceive: 3]
+        SQS_SO[📮 order-submit-order<br/>Visibility: 60s<br/>MaxReceive: 3]
     end
 
     subgraph "Message Payload"
-        MSG_PAYLOAD["📦 SQS Message Content<br/>• jobId<br/>• stepId<br/>• payload (customer/order data)<br/>• testOptions (optional)<br/>• failOnAttempts (optional)<br/>• metadata"]
+        MSG_PAYLOAD["📦 SQS Message Content<br/>• jobId<br/>• stepId<br/>• input (payload + dependencyData)<br/>• testOptions (optional)<br/>• sourceConfig / processingConfig"]
     end
 
     ORCH --> CREATE_JOB
@@ -250,18 +249,16 @@ graph TB
     CREATE_STEPS --> CHECK_DEPS
 
     CHECK_DEPS -->|ValidateCustomer<br/>No dependencies ✅| DELEG
-    CHECK_DEPS -->|ValidateOrder<br/>No dependencies ✅| DELEG
-    CHECK_DEPS -->|ValidateOrder<br/>No dependencies ✅| DELEG
-    CHECK_DEPS -->|SubmitCustomer<br/>Depends on ValidateCustomer ⏸️| WAIT[⏸️ Wait for dependency]
-    CHECK_DEPS -->|SubmitOrder<br/>Depends on ValidateOrder ⏸️| WAIT
-    CHECK_DEPS -->|SubmitOrder<br/>Depends on ValidateOrder ⏸️| WAIT
+    CHECK_DEPS -->|ValidateProduct<br/>No dependencies ✅| DELEG
+    CHECK_DEPS -->|ValidateOrder<br/>Depends on ValidateCustomer ⏸️| WAIT[⏸️ Wait for dependency]
+    CHECK_DEPS -->|SubmitCustomer<br/>Depends on ValidateCustomer ⏸️| WAIT
+    CHECK_DEPS -->|SubmitOrder<br/>Depends on ValidateOrder + SubmitCustomer ⏸️| WAIT
 
-    DELEG -->|Send message| SQS_EC
-    DELEG -->|Send message| SQS_EM
-    DELEG -->|Send message| SQS_EO
-    DELEG -->|Send message<br/>after callback| SQS_TC
-    DELEG -->|Send message<br/>after callback| SQS_TM
-    DELEG -->|Send message<br/>after callback| SQS_TO
+    DELEG -->|Send message| SQS_VC
+    DELEG -->|Send message| SQS_VP
+    DELEG -->|Send message<br/>after ValidateCustomer| SQS_VO
+    DELEG -->|Send message<br/>after ValidateCustomer| SQS_SC
+    DELEG -->|Send message<br/>after ValidateOrder + ack| SQS_SO
 
     DELEG -.->|Includes| MSG_PAYLOAD
 
@@ -274,55 +271,50 @@ graph TB
 
     class ORCH,STEP_CONFIG,DELEG orchestrator
     class CREATE_JOB,CREATE_STEPS,CHECK_DEPS,WAIT database
-    class SQS_EC,SQS_EM,SQS_EO,SQS_TC,SQS_TM,SQS_TO queue
+    class SQS_VC,SQS_VP,SQS_VO,SQS_SC,SQS_SO queue
     class MSG_PAYLOAD payload
 ```
 
-**Step Configuration Example**:
+**Step Configuration Example** (real fields — `queueName`/`functionName`, not `sqsQueueName`/`lambdaFunctionName`; a slice of `DEFAULT_STEPS` from `workflow.config.ts`, see [Section 7.1](#71-extended-multi-cascade-example) for all 13):
 
 ```typescript
 // workflow.config.ts
-export const ORDER_PROCESSING_STEPS: StepDefinition[] = [
-  // === VALIDATE PHASE (All run in parallel) ===
+export const DEFAULT_STEPS: StepDefinition[] = [
+  // === Phase 1: Validate roots (parallel) ===
   {
     step: Step.ValidateCustomer,
     dependencies: [], // No dependencies - runs immediately
-    sqsQueueName: "order-validate-customer",
-    lambdaFunctionName: "validate-customer-worker",
+    queueName: "order-validate-customer",
+    functionName: "order-validate-customer",
   },
   {
-    step: Step.ValidateOrder,
+    step: Step.ValidateProduct,
     dependencies: [], // No dependencies - runs in parallel
-    sqsQueueName: "order-validate-order",
-    lambdaFunctionName: "validate-order-worker",
-  },
-  {
-    step: Step.ValidatePayment,
-    dependencies: [], // No dependencies - runs in parallel
-    sqsQueueName: "order-validate-payment",
-    lambdaFunctionName: "validate-payment-worker",
+    queueName: "order-validate-product",
+    functionName: "order-validate-product",
   },
 
-  // === SUBMIT PHASE (Depends on corresponding Validate) ===
+  // === Phase 2/3: Order needs Customer validated first ===
+  {
+    step: Step.ValidateOrder,
+    dependencies: [Step.ValidateCustomer],
+    queueName: "order-validate-order",
+    functionName: "order-validate-order",
+  },
+
+  // === Submit phase (depends on corresponding Validate) ===
   {
     step: Step.SubmitCustomer,
     dependencies: [Step.ValidateCustomer],
-    sqsQueueName: "order-submit-customer",
-    lambdaFunctionName: "submit-customer-worker",
+    queueName: "order-submit-customer",
+    functionName: "order-submit-customer",
     requiresAcknowledgement: true, // Waits for external system ACK
   },
   {
     step: Step.SubmitOrder,
-    dependencies: [Step.ValidateOrder],
-    sqsQueueName: "order-submit-order",
-    lambdaFunctionName: "submit-order-worker",
-    requiresAcknowledgement: true, // Waits for external system ACK
-  },
-  {
-    step: Step.SubmitPayment,
-    dependencies: [Step.ValidatePayment],
-    sqsQueueName: "order-submit-payment",
-    lambdaFunctionName: "submit-payment-worker",
+    dependencies: [Step.ValidateOrder, Step.SubmitCustomer],
+    queueName: "order-submit-order",
+    functionName: "order-submit-order",
     requiresAcknowledgement: true, // Waits for external system ACK
   },
 ];
@@ -940,7 +932,7 @@ When publishing Payment (or Shipment/LineItem) after Order ack — `payment` cas
 
 ## 7. Complete End-to-End Flow
 
-**Purpose**: Simplified view showing the entire journey of a job request from entry to completion.
+**Purpose**: Simplified view showing the entire journey of a job request from entry to completion — this section walks only the Customer/Product/Order slice (5 steps: `ValidateCustomer`, `ValidateProduct`, `ValidateOrder`, `SubmitCustomer`, `SubmitOrder`) of the real `default` variant. See [Section 7.1](#71-extended-multi-cascade-example) for the full 13-step DAG including LineItem fan-out, Payment, Shipment, and Archive.
 
 **Phases**:
 
@@ -956,7 +948,7 @@ graph LR
 
     DEDUP[🔒 Deduplication<br/>Check 24h window]
 
-    CREATE[💾 Create Job<br/>6 steps created<br/>status: PENDING]
+    CREATE[💾 Create Job<br/>5 steps created<br/>status: PENDING]
 
     PHASE1[⚡ Phase 1 PARALLEL<br/>ValidateCustomer<br/>ValidateProduct<br/>ValidateOrder depends on ValidateCustomer]
 
@@ -964,7 +956,7 @@ graph LR
 
     CASCADE[📢 Phase 3 CASCADE<br/>Publish Customer → ack<br/>Publish Order → ack<br/>Product never cascades]
 
-    COMPLETE[✅ Job COMPLETED<br/>All 6 steps done<br/>FKs injected]
+    COMPLETE[✅ Job COMPLETED<br/>All 5 steps done<br/>FKs injected]
 
     START --> DEDUP
     DEDUP -->|New request ✅| CREATE
