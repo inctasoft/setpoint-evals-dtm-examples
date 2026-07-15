@@ -205,23 +205,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Setup results directory based on mode — lives under the SUITE being scanned (EVAL_DIR),
-# not always the core setpoint-evals/ dir, so a delegated workflow suite gets its own .results/.
-RESULTS_DIR="$EVAL_DIR/.results/$MODE/$TIMESTAMP"
-mkdir -p "$RESULTS_DIR"
-
-# Redirect all output to a log file in addition to stdout
-exec > >(tee -a "$RESULTS_DIR/run.log") 2>&1
-
-# Source shared helpers for strip_ansi_codes function
-source "$SCRIPT_DIR/shared/helpers.sh"
-
 ################################################################################
 # Eval Definitions — filesystem autodiscovery (SE Conventions v2)
 ################################################################################
 # Any SE-<NN>-<name>/test.sh under EVAL_DIR, zero-padded numeric order. No hand-maintained
 # lists. A "00-template" dir (if present) never matches the SE-* glob, so it's naturally
-# excluded from discovery.
+# excluded from discovery. Runs BEFORE the .results/ dir is created so --list stays a pure
+# read-only query (no run dir, no log).
 
 ALL_EVALS=()
 while IFS= read -r -d '' se_path; do
@@ -239,6 +229,17 @@ if [ "$LIST_ONLY" = true ]; then
   done
   exit 0
 fi
+
+# Setup results directory based on mode — lives under the SUITE being scanned (EVAL_DIR),
+# not always the core setpoint-evals/ dir, so a delegated workflow suite gets its own .results/.
+RESULTS_DIR="$EVAL_DIR/.results/$MODE/$TIMESTAMP"
+mkdir -p "$RESULTS_DIR"
+
+# Redirect all output to a log file in addition to stdout
+exec > >(tee -a "$RESULTS_DIR/run.log") 2>&1
+
+# Source shared helpers for strip_ansi_codes function
+source "$SCRIPT_DIR/shared/helpers.sh"
 
 ################################################################################
 # Per-SE README metadata (v2 contract: server-config/docs/setpoint-eval-conventions.md)
