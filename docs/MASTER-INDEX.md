@@ -134,7 +134,6 @@ Quick navigation to all DTM documentation, organized by use case.
 ## AI Assistant Rules
 
 Located in `../.cursor/`:
-- **[se-writer.mdc](../.cursor/se-writer.mdc)** - SE creation guide
 - **[worker-writer.mdc](../.cursor/worker-writer.mdc)** - Worker development guide
 - **[architecture.mdc](../.cursor/architecture.mdc)** - Engine architecture
 

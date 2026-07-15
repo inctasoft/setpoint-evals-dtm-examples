@@ -449,7 +449,6 @@ Copy `workflows/00-template/` as a starting point. See existing workflows (espec
 
 AI assistant rules in `.cursor/*.mdc`:
 - `architecture.mdc` -- DTM engine architecture (generic)
-- `se-writer.mdc` -- SE creation guide
 - `worker-writer.mdc` -- Worker development guide
 - `testing.mdc` -- Testing standards
 - `code-quality.mdc` -- Code quality

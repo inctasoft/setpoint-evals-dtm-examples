@@ -104,12 +104,12 @@ export class CreateJobDto {
 // ✅ Good: Parameterized queries (TypeORM does this)
 const job = await this.repo
   .createQueryBuilder('job')
-  .where('job.consumer_no = :no', { no: consumerNo })
+  .where('job.customer_id = :id', { id: customerId })
   .getOne();
 
 // ❌ Bad: String concatenation (SQL injection risk)
 const job = await this.repo.query(
-  `SELECT * FROM jobs WHERE consumer_no = ${consumerNo}`
+  `SELECT * FROM jobs WHERE customer_id = ${customerId}`
 );
 ```
 
@@ -123,13 +123,13 @@ async handleMessage(payload: EachMessagePayload): Promise<void> {
     const data = JSON.parse(message.value?.toString() || '{}');
     
     // Validate structure
-    if (!data.consumerId || !data.consumerNo) {
+    if (!data.orderId || !data.customerId) {
       throw new BadRequestException('Invalid message format');
     }
-    
+
     // Validate types
-    if (typeof data.consumerNo !== 'number') {
-      throw new BadRequestException('consumerNo must be number');
+    if (typeof data.customerId !== 'number') {
+      throw new BadRequestException('customerId must be number');
     }
     
     // Process validated data
