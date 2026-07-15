@@ -38,7 +38,7 @@ EVAL_PURPOSE="Test WAITING_FOR_ACK -> delayed ACK -> downstream steps resume"
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: ENV-DEV"
+log_info "Entity ID: staging-eu (INST-STAGING-EU-2 chain)"
 log_info "Variant: default"
 log_info "ApplyCompute ackDelay: 5000ms (simulates long provisioning wait)"
 log_info "Expected: ApplyCompute enters WAITING_FOR_ACK, then completes after ACK"
@@ -55,13 +55,13 @@ PAYLOAD='{
   "enableDeduplication": false,
   "variant": "default",
   "payload": {
-    "environmentId": "ENV-DEV",
-    "networkId": "NET-DEV-1",
-    "instanceId": "INST-DEV-1",
-    "dnsRecordId": "DNS-DEV-1",
-    "certificateId": "CERT-DEV-1",
-    "loadBalancerId": "LB-DEV-1",
-    "entityId": "ENV-DEV"
+    "environmentId": "staging-eu",
+    "networkId": "NET-STAGING-EU-1",
+    "instanceId": "INST-STAGING-EU-2",
+    "dnsRecordId": "DNS-STAGING-EU-2",
+    "certificateId": "CERT-STAGING-EU-2",
+    "loadBalancerId": "LB-STAGING-EU-2",
+    "entityId": "staging-eu"
   },
   "testOptions": {
     "PlanEnvironment":    { "simDelay": 300 },
