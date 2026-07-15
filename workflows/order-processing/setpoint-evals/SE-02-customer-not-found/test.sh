@@ -33,7 +33,7 @@ EVAL_PURPOSE="Test failure handling when critical entity (customer) does not exi
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: customer-99999 (does NOT exist in source DB)"
+log_info "Entity ID: nobody-orders-here-99999 (customer_id=99999, the reserved not-found sentinel — does NOT exist in source DB, see ../../source-db/SEED-REGISTRY.md)"
 log_info "Variant: default"
 log_info "Expected Outcome: Job FAILS (critical entity failed)"
 echo ""
@@ -49,7 +49,7 @@ PAYLOAD='{
   "payload": {
     "customerId": 99999,
     "productId": 1,
-    "entityId": "customer-99999"
+    "entityId": "nobody-orders-here-99999"
   },
   "testOptions": {
     "ValidateCustomer":    { "simDelay": 300 },

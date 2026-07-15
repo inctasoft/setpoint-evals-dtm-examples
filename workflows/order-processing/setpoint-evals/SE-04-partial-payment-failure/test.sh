@@ -9,10 +9,15 @@
 #   - Customer and Order are CRITICAL entities (criticality: "required")
 #   - Payment is an OPTIONAL entity (criticality: "optional")
 #
+# Dedicated to Barbara Liskov's order (customer_id=7, order_id=7) at Ada's
+# Beans Cafe — order 7 has line items and a real shipment, but ZERO payment
+# rows: the beans left the roastery before the card finished processing.
+# Own rows, isolated from every other SE — see ../../source-db/SEED-REGISTRY.md.
+#
 # Expected behavior:
 #   1. ValidateCustomer, ValidateProduct, SubmitCustomer, ValidateOrder,
 #      SubmitOrder all succeed (critical entities)
-#   2. ValidatePayment fails (paymentId 99999 doesn't exist in source DB)
+#   2. ValidatePayment fails (paymentId 99999 sentinel — matches no order_id)
 #   3. SubmitPayment is SKIPPED (dependency ValidatePayment failed)
 #   4. Outcome rule fires for optional entity failure
 #   5. Job reaches PARTIAL_SUCCESS status
@@ -38,9 +43,9 @@ EVAL_PURPOSE="Test optional entity failure results in PARTIAL_SUCCESS"
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: customer-1000"
+log_info "Entity ID: barbara-liskov (customer_id=7, order_id=7)"
 log_info "Variant: default"
-log_info "ValidatePayment configured with non-existent paymentId (99999)"
+log_info "ValidatePayment configured with the not-found sentinel paymentId (99999)"
 log_info "Expected Outcome: PARTIAL_SUCCESS (payment is optional)"
 echo ""
 
@@ -54,12 +59,12 @@ PAYLOAD='{
   "enableDeduplication": false,
   "variant": "default",
   "payload": {
-    "customerId": 1,
+    "customerId": 7,
     "productId": 1,
-    "orderId": 1,
+    "orderId": 7,
     "paymentId": 99999,
-    "shipmentId": 1,
-    "entityId": "customer-1000"
+    "shipmentId": 7,
+    "entityId": "barbara-liskov"
   },
   "testOptions": {
     "ValidateCustomer":    { "simDelay": 300 },
