@@ -41,6 +41,7 @@
     "@dtm/database": "workspace:*",
     "@dtm/kafka-consumer": "workspace:*",
     "@dtm/kafka-producer": "workspace:*",
+    "@google-cloud/tasks": "^6.2.3",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
