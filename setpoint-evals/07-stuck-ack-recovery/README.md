@@ -90,12 +90,11 @@ sequenceDiagram
 
 ## Test Data
 
-| Field         | Value      | Notes                                               |
-| ------------- | ---------- | --------------------------------------------------- |
-| Consumer No   | 1011       | Reserved for Eval 12                                |
-| Membership No | 1410001011 | Standard format                                     |
-| SC skipAck    | true       | **ACK will never be sent**                          |
-| SO skipAck    | true       | Also skipped (but SO never reaches waiting_for_ack) |
+| Field         | Value        | Notes                                               |
+| ------------- | ------------ | ---------------------------------------------------- |
+| Variant       | `quick-order`| customerId 1 / orderId 1                            |
+| SC skipAck    | true         | **ACK will never be sent**                          |
+| SO skipAck    | true         | Also skipped (but SO never reaches waiting_for_ack) |
 
 ## Expected Duration
 

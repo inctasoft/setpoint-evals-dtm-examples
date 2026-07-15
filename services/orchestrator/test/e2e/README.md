@@ -32,7 +32,7 @@ This directory contains **Jest-based E2E tests** that directly query the databas
 
 ## Available Tests
 
-### 1. `payment-history-happy-path.e2e-spec.ts`
+### 1. `order-processing-happy-path.e2e-spec.ts`
 Tests the complete order-processing workflow:
 - Customer -> Order -> LineItems (fan-out)
 - Verifies database records directly
@@ -67,7 +67,7 @@ cd services/orchestrator
 npm run test:e2e:workflow
 
 # Run specific test file
-npm run test:e2e -- --testPathPattern=payment-history-happy-path
+npm run test:e2e -- --testPathPattern=order-processing-happy-path
 
 # Run with verbose output
 npm run test:e2e:workflow -- --verbose

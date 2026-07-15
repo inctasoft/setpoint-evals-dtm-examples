@@ -4,7 +4,7 @@ import { MigrationInterface, QueryRunner } from "typeorm";
  * Migration: Add Fan-Out Pattern columns to migration_steps
  *
  * This migration adds support for the Discovery + Fan-Out + Aggregation pattern
- * which allows one-to-many cascade relationships (e.g., 1 Membership → N Orders)
+ * which allows one-to-many cascade relationships (e.g., 1 Order → N LineItems)
  * to be processed individually rather than as a batch.
  *
  * New columns:

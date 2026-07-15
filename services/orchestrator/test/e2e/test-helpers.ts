@@ -234,12 +234,12 @@ export class DatabaseHelper {
   }
 
   /**
-   * Get consumer from workflow source DB by consumer_no
+   * Get customer from workflow source DB by customer_id
    */
-  async getWorkflowConsumer(consumerNo: number): Promise<Record<string, unknown> | null> {
+  async getWorkflowCustomer(customerId: number): Promise<Record<string, unknown> | null> {
     const result = await this.queryWorkflowSourceDB<Record<string, unknown>>(
-      `SELECT * FROM dbo.consumer WHERE consumer_no = $1 LIMIT 1`,
-      [consumerNo],
+      `SELECT * FROM ecommerce.customers WHERE customer_id = $1 LIMIT 1`,
+      [customerId],
     );
     return result.rows[0] || null;
   }

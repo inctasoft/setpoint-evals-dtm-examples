@@ -44,9 +44,9 @@ export class Job {
   @PrimaryGeneratedColumn('uuid')
   id: string;  // camelCase property name
 
-  @Column({ name: 'consumer_no', type: 'int', nullable: true })
+  @Column({ name: 'customer_id', type: 'int', nullable: true })
   @Index()  // Single column index
-  consumerNo: number;  // camelCase, matches snake_case column
+  customerId: number;  // camelCase, matches snake_case column
 
   @Column({ type: 'jsonb', default: {} })
   payload: Record<string, any>;
@@ -232,7 +232,7 @@ for (const job of jobs) {
 // ✅ Query JSONB field
 const job = await this.repo
   .createQueryBuilder('job')
-  .where("job.payload->>'consumerNo' = :consumerNo", { consumerNo: '1000' })
+  .where("job.payload->>'customerId' = :customerId", { customerId: '1000' })
   .getOne();
 
 // ✅ Query nested JSONB
@@ -283,32 +283,32 @@ const jobs = await this.repo
 
 ```typescript
 // ✅ Good: Read-only queries
-const consumer = await this.digitalHubRepo
+const customer = await this.orderProcessingRepo
   .createQueryBuilder('c')
-  .where('c.consumer_no = :no', { no: consumerNo })
+  .where('c.customer_id = :id', { id: customerId })
   .getOne();
 
 // ❌ Bad: Never write to workflow source DB
-await this.digitalHubRepo.save(consumer); // DON'T DO THIS
+await this.orderProcessingRepo.save(customer); // DON'T DO THIS
 ```
 
-### Querying Legacy Schema
+### Querying Source Schema
 ```typescript
 // Table names include schema prefix
-@Entity('dbo.consumer')
-export class Consumer {
-  @Column({ name: 'consumer_no', primary: true })
-  consumerNo: number;
+@Entity({ name: 'customers', schema: 'ecommerce' })
+export class Customer {
+  @Column({ name: 'customer_id', primary: true })
+  customerId: number;
 
-  @Column({ name: 'forename' })
-  forename: string;
+  @Column({ name: 'first_name' })
+  firstName: string;
 }
 
 // Query using schema-qualified names
-const consumers = await this.repo
+const customers = await this.repo
   .createQueryBuilder('c')
-  .from('dbo.consumer', 'c')
-  .where('c.consumer_no = :no', { no })
+  .from('ecommerce.customers', 'c')
+  .where('c.customer_id = :id', { id })
   .getRawMany();
 ```
 

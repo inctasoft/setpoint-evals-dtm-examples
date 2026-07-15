@@ -29,8 +29,8 @@ export enum StepStatus {
    * This status allows dependent steps to proceed with available data,
    * enabling graceful degradation instead of all-or-nothing blocking.
    *
-   * Example: If 2 of 3 PaymentMethods succeed, DiscoverPaymentHistory can
-   * still run and process PaymentHistory records linked to successful ones.
+   * Example: If 2 of 3 discovered Sensors succeed, DiscoverReadings can
+   * still run and process Reading records linked to successful ones.
    */
   PARTIAL_SUCCESS = "partial_success",
 }

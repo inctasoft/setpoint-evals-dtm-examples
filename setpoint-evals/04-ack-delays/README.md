@@ -91,12 +91,18 @@ sequenceDiagram
 
 ```json
 {
-  "membershipNo": 1410001000,
+  "variant": "quick-order",
+  "payload": {
+    "customerId": 1,
+    "orderId": 1,
+    "entityId": "<generated externalSystemId>"
+  },
+  "enableDeduplication": false,
   "testOptions": {
     "ValidateCustomer": { "simDelay": 2000 },
-    "ValidateOrder": { "simDelay": 2000 },
-    "SubmitCustomer": { "simDelay": 3000, "ackDelay": 10000 },
-    "SubmitOrder": { "simDelay": 3000, "ackDelay": 15000 }
+    "ValidateProduct": { "simDelay": 2000 },
+    "SubmitCustomer": { "simDelay": 3000, "ackDelay": 2000 },
+    "SubmitOrder": { "simDelay": 3000, "ackDelay": 3000 }
   }
 }
 ```

@@ -66,44 +66,50 @@ gantt
 
 We'll launch **3 concurrent jobs** with different configurations:
 
-#### Job 1: Consumer 1000 (Fast)
+#### Job 1: entityId `customer-101` (Fast)
 
 ```json
 {
-  "membershipNo": 1410001000,
+  "variant": "quick-order",
+  "payload": { "customerId": 1, "orderId": 1, "entityId": "customer-101" },
+  "enableDeduplication": false,
   "testOptions": {
-    "ValidateCustomer": { "simDelay": 2000 },
-    "ValidateOrder": { "simDelay": 2000 },
-    "SubmitCustomer": { "simDelay": 2000, "ackDelay": 2000 },
-    "SubmitOrder": { "simDelay": 2000, "ackDelay": 2000 }
+    "ValidateCustomer": { "simDelay": 500 },
+    "ValidateProduct": { "simDelay": 500 },
+    "SubmitCustomer": { "simDelay": 500, "ackDelay": 200 },
+    "SubmitOrder": { "simDelay": 500, "ackDelay": 200 }
   }
 }
 ```
 
-#### Job 2: Consumer 1000 (Medium Speed, Different Job ID)
+#### Job 2: entityId `customer-102` (Medium Speed, Different Job ID)
 
 ```json
 {
-  "membershipNo": 1410001000,
+  "variant": "quick-order",
+  "payload": { "customerId": 1, "orderId": 1, "entityId": "customer-102" },
+  "enableDeduplication": false,
   "testOptions": {
-    "ValidateCustomer": { "simDelay": 3000 },
-    "ValidateOrder": { "simDelay": 3000 },
-    "SubmitCustomer": { "simDelay": 3000, "ackDelay": 3000 },
-    "SubmitOrder": { "simDelay": 3000, "ackDelay": 3000 }
+    "ValidateCustomer": { "simDelay": 1000 },
+    "ValidateProduct": { "simDelay": 1000 },
+    "SubmitCustomer": { "simDelay": 1000, "ackDelay": 200 },
+    "SubmitOrder": { "simDelay": 1000, "ackDelay": 200 }
   }
 }
 ```
 
-#### Job 3: Consumer 1001 (Slow, Different Data)
+#### Job 3: entityId `customer-103` (Slow)
 
 ```json
 {
-  "membershipNo": 1410002000,
+  "variant": "quick-order",
+  "payload": { "customerId": 1, "orderId": 1, "entityId": "customer-103" },
+  "enableDeduplication": false,
   "testOptions": {
-    "ValidateCustomer": { "simDelay": 4000 },
-    "ValidateOrder": { "simDelay": 4000 },
-    "SubmitCustomer": { "simDelay": 4000, "ackDelay": 4000 },
-    "SubmitOrder": { "simDelay": 4000, "ackDelay": 4000 }
+    "ValidateCustomer": { "simDelay": 1500 },
+    "ValidateProduct": { "simDelay": 1500 },
+    "SubmitCustomer": { "simDelay": 1500, "ackDelay": 200 },
+    "SubmitOrder": { "simDelay": 1500, "ackDelay": 200 }
   }
 }
 ```
@@ -171,24 +177,23 @@ GROUP BY job_id;
 -- Expected: Each job has 4 steps, all completed
 ```
 
-### 3. Correct Consumer Data
+### 3. Correct Customer Data (No Cross-Contamination Despite Shared customerId)
 
 ```sql
--- Job 1 & 2 should extract consumer 1000
--- Job 3 should extract consumer 1001
+-- All 3 jobs use the same customerId (1) but different entityId markers
+-- (customer-101/102/103). Each job's output must carry its OWN entityId,
+-- never one leaked from a concurrently-running job.
 SELECT
   ms.job_id,
   ms.step_value,
-  ms.output->>'consumer'->>'consumer_no' as consumer_no
+  ms.output->'customer'->>'customerId' as customer_id
 FROM dtm_steps ms
 WHERE ms.job_id IN ('{JOB_ID_1}', '{JOB_ID_2}', '{JOB_ID_3}')
   AND ms.step_value = 'SubmitCustomer'
 ORDER BY ms.job_id;
 
--- Expected:
---   JOB_ID_1: consumer_no = 1000
---   JOB_ID_2: consumer_no = 1000
---   JOB_ID_3: consumer_no = 1001
+-- Expected: customer_id = 1 for all three (same source customer),
+-- while each job's own payload.entityId stays 'customer-101' / '-102' / '-103'
 ```
 
 ### 4. No Cross-Contamination

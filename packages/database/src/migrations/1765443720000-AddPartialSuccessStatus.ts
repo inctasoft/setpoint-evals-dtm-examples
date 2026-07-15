@@ -8,14 +8,14 @@ import { MigrationInterface, QueryRunner } from "typeorm";
  * enabling graceful degradation instead of all-or-nothing blocking.
  *
  * Example flow:
- * - DiscoverPaymentMethod finds 3 payment methods
- * - PaymentMethod #1 succeeds (ACK received)
- * - PaymentMethod #2 fails (error)
- * - PaymentMethod #3 succeeds (ACK received)
- * - DiscoverPaymentMethod → PARTIAL_SUCCESS (2 of 3 succeeded)
- * - DiscoverPaymentHistory can now proceed, using FK map for successful ones
- * - PaymentHistory records linked to #1 and #3 can succeed
- * - PaymentHistory records linked to #2 will fail gracefully (no FK available)
+ * - DiscoverSensors finds 3 sensors
+ * - Sensor #1 succeeds (ACK received)
+ * - Sensor #2 fails (error)
+ * - Sensor #3 succeeds (ACK received)
+ * - DiscoverSensors → PARTIAL_SUCCESS (2 of 3 succeeded)
+ * - DiscoverReadings can now proceed, using FK map for successful ones
+ * - Reading records linked to #1 and #3 can succeed
+ * - Reading records linked to #2 will fail gracefully (no FK available)
  */
 export class AddPartialSuccessStatus1765443720000
   implements MigrationInterface

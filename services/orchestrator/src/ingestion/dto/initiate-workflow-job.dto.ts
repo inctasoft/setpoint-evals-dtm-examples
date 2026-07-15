@@ -110,7 +110,7 @@ export class TestOptionSetDto {
 export class InitiateWorkflowJobDto {
   @ApiPropertyOptional({
     description:
-      'Workflow variant to use (e.g., "membership", "membership_batch"). ' +
+      'Workflow variant to use (e.g., "default", "quick-order"). ' +
       "If not provided, the workflow's default variant is used. " +
       'Each workflow defines its own set of variants with different step DAGs.',
     example: 'default',

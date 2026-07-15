@@ -2,9 +2,11 @@ import { MigrationInterface, QueryRunner } from "typeorm";
 
 /**
  * Drop legacy workflow-specific columns from dtm_jobs.
- * These columns (deal_id, membership_number, membership_id) were remnants
- * of the old migration-service-core project. All workflow-specific data
- * should be stored in the JSONB payload column instead.
+ * These columns (order_ref_id, customer_number, customer_id) were remnants
+ * of an earlier schema iteration that stored workflow-specific identifiers
+ * directly on the job row. All workflow-specific data should be stored in
+ * the JSONB payload column instead — see JobPayload in
+ * packages/database/src/entities/job.entity.ts.
  */
 export class DropLegacyWorkflowColumns1765443725000
   implements MigrationInterface
@@ -13,45 +15,43 @@ export class DropLegacyWorkflowColumns1765443725000
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Drop indexes first
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_dtm_jobs_deal_id"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_dtm_jobs_order_ref_id"`);
     await queryRunner.query(
-      `DROP INDEX IF EXISTS "IDX_dtm_jobs_membership_number"`,
+      `DROP INDEX IF EXISTS "IDX_dtm_jobs_customer_number"`,
     );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "IDX_dtm_jobs_membership_id"`,
-    );
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_dtm_jobs_customer_id"`);
 
     // Drop columns
     await queryRunner.query(
-      `ALTER TABLE "dtm_jobs" DROP COLUMN IF EXISTS "deal_id"`,
+      `ALTER TABLE "dtm_jobs" DROP COLUMN IF EXISTS "order_ref_id"`,
     );
     await queryRunner.query(
-      `ALTER TABLE "dtm_jobs" DROP COLUMN IF EXISTS "membership_number"`,
+      `ALTER TABLE "dtm_jobs" DROP COLUMN IF EXISTS "customer_number"`,
     );
     await queryRunner.query(
-      `ALTER TABLE "dtm_jobs" DROP COLUMN IF EXISTS "membership_id"`,
+      `ALTER TABLE "dtm_jobs" DROP COLUMN IF EXISTS "customer_id"`,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Re-add columns
     await queryRunner.query(
-      `ALTER TABLE "dtm_jobs" ADD "deal_id" varchar(255)`,
+      `ALTER TABLE "dtm_jobs" ADD "order_ref_id" varchar(255)`,
     );
     await queryRunner.query(
-      `ALTER TABLE "dtm_jobs" ADD "membership_number" varchar(255)`,
+      `ALTER TABLE "dtm_jobs" ADD "customer_number" varchar(255)`,
     );
-    await queryRunner.query(`ALTER TABLE "dtm_jobs" ADD "membership_id" uuid`);
+    await queryRunner.query(`ALTER TABLE "dtm_jobs" ADD "customer_id" uuid`);
 
     // Re-add indexes
     await queryRunner.query(
-      `CREATE INDEX "IDX_dtm_jobs_deal_id" ON "dtm_jobs" ("deal_id")`,
+      `CREATE INDEX "IDX_dtm_jobs_order_ref_id" ON "dtm_jobs" ("order_ref_id")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_dtm_jobs_membership_number" ON "dtm_jobs" ("membership_number")`,
+      `CREATE INDEX "IDX_dtm_jobs_customer_number" ON "dtm_jobs" ("customer_number")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_dtm_jobs_membership_id" ON "dtm_jobs" ("membership_id")`,
+      `CREATE INDEX "IDX_dtm_jobs_customer_id" ON "dtm_jobs" ("customer_id")`,
     );
   }
 }

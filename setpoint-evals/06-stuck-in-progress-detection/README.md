@@ -74,9 +74,9 @@ This test kills Lambda **container instances** (not function definitions) to sim
 
 ## 📊 Test Data
 
-- **Membership**: `1410001012`
-- **Consumer**: `1012`
-- **Source**: `02-data-example.sql`
+- **Variant**: `quick-order`
+- **customerId / orderId**: `1` / `1`
+- **Source**: `workflows/order-processing/source-db/init-scripts/01-schema-and-seed.sql`
 
 ## ⏱️ Expected Duration
 

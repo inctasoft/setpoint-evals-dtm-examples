@@ -350,7 +350,7 @@ export interface CascadeCriticalityRule {
 
   /**
    * For 'conditional' criticality: predicate to determine if cascade is required.
-   * Example: PaymentHistory is required only if PaymentMethod exists.
+   * Example: IngestReading is required only if a DiscoverSensors child (Sensor) exists.
    */
   condition?: (ctx: JobContext) => boolean;
 

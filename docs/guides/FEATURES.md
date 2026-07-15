@@ -339,7 +339,7 @@ Each Lambda worker receives the SQS message's `ApproximateReceiveCount` (attempt
 # Attempt 3 (NOT in failOnAttempts - succeeds)
 [Validate Customer] ℹ️ Attempt 3: Skipping simulated failure (not in failOnAttempts: [1, 2])
 [Validate Customer] ✓ Simulated work completed
-[Validate Customer] ✅ Consumer found: consumer_no=1000
+[Validate Customer] ✅ Customer found: customer_id=1000
 ```
 
 **Demo Scenario - Progressive Recovery:**
@@ -599,53 +599,6 @@ curl -X POST ... # → Another new job created
 curl -X POST ... # → Yet another new job created
 ```
 
-### Kafka Behavior
-
-#### When Deduplication is Enabled
-
-**Kafka Event:**
-
-```json
-{
-  "topic": "target.consumer.created",
-  "value": {
-    "consumerId": "consumer-123",
-    "entityNumber": 1000,
-    "eventType": "created"
-  }
-}
-```
-
-**First Event (Success):**
-
-```log
-[JobTriggerService] Triggering job for consumer consumer-123 (consumer_no: 1000) from created event
-[JobTriggerService] Created job abc-123-def for consumer consumer-123
-[JobTriggerService] ✅ Job started for consumer consumer-123: 4 steps created
-```
-
-**Second Event (Same Day - Duplicate):**
-
-```log
-[JobTriggerService] Job already exists for consumer consumer-123 (created) - Job ID: abc-123-def, Status: processing
-[ConsumerCreatedHandler] ⏭️  Job skipped for consumer consumer-123 (duplicate)
-```
-
-#### When Deduplication is Disabled
-
-**All Events Trigger Jobs:**
-
-```log
-# First event
-[JobTriggerService] Created job abc-123-def for consumer consumer-123
-
-# Second event (immediate duplicate)
-[JobTriggerService] Created job ghi-456-jkl for consumer consumer-123
-
-# Third event
-[JobTriggerService] Created job mno-789-pqr for consumer consumer-123
-```
-
 ### Implementation Details
 
 **Service Architecture:**
@@ -808,15 +761,15 @@ async triggerWorkflowJob(config: AutoJobConfig): Promise<boolean> {
 
 ```log
 # Request received
-[DeduplicationService] Checking for existing job: identifier=1410001000, source=api, context={"workflowName":"order-processing"}
+[DeduplicationService] Checking for existing job: identifier=1001, source=api, context={"workflowName":"order-processing"}
 
 # Duplicate found
-[DeduplicationService] Found existing job for 1410001000 (source: api) - Job ID: abc-123, Status: processing
-[IngestionController] Duplicate job request detected for entity 1410001000
+[DeduplicationService] Found existing job for 1001 (source: api) - Job ID: abc-123, Status: processing
+[IngestionController] Duplicate job request detected for entity 1001
 
 # No duplicate (new job)
-[DeduplicationService] No existing job found for 1410001000 (source: api)
-[IngestionController] Creating new job for entity 1410001000
+[DeduplicationService] No existing job found for 1001 (source: api)
+[IngestionController] Creating new job for entity 1001
 ```
 
 **Database Queries:**
@@ -828,7 +781,7 @@ SELECT
   submitted_by,
   submitted_at,
   payload->>'deduplicationKey' as dedup_key,
-  payload->>'dealId' as deal_id,
+  payload->>'orderId' as order_id,
   status
 FROM dtm_jobs
 WHERE submitted_at >= CURRENT_DATE
@@ -999,14 +952,14 @@ The Dev Acknowledgement Simulator supports **custom acknowledgement payloads** t
   "testOptions": {
     // Custom acknowledgement payloads (dev simulator only)
     "submitCustomerAckPayload": {
-      "ext_consumer_id": "12345",            // external system-assigned ID
+      "ext_customer_id": "12345",            // external system-assigned ID
       "processing_status": "verified",       // Validation result
       "enriched_field": "additional_data",   // external system enrichment
       "warnings": []                         // Validation warnings
     },
 
     "submitOrderAckPayload": {
-      "ext_membership_id": "67890",          // external system-assigned ID
+      "ext_order_id": "67890",               // external system-assigned ID
       "validation_errors": [],               // Validation errors
       "processed_at": "2025-01-01T12:00:00Z" // external system processing timestamp
     }
@@ -1021,8 +974,8 @@ The Dev Acknowledgement Simulator supports **custom acknowledgement payloads** t
 ```json
 {
   "submitCustomerAckPayload": {
-    "ext_consumer_id": "PROD-12345",
-    "credit_score": 750,
+    "ext_customer_id": "PROD-12345",
+    "fraud_score": 12,
     "risk_level": "low"
   }
 }
@@ -1044,7 +997,7 @@ The Dev Acknowledgement Simulator supports **custom acknowledgement payloads** t
 ```json
 {
   "submitCustomerAckPayload": {
-    "ext_consumer_id": "PROD-67890",
+    "ext_customer_id": "PROD-67890",
     "warnings": ["address_needs_verification", "phone_number_missing"],
     "status": "accepted_with_warnings"
   }
@@ -1067,9 +1020,9 @@ curl -X POST "http://localhost:3002/api/v1/workflows/order-processing/jobs" \
       "submitCustomerAckDelay": 5000,
       "submitOrderAckDelay": 3000,
       "submitCustomerAckPayload": {
-        "ext_consumer_id": "EXT-CONSUMER-12345",
+        "ext_customer_id": "EXT-CUSTOMER-12345",
         "processing_status": "verified",
-        "credit_score": 750
+        "loyalty_tier": "gold"
       },
       "submitOrderAckPayload": {
         "ext_order_id": "EXT-ORDER-67890",
@@ -1079,7 +1032,7 @@ curl -X POST "http://localhost:3002/api/v1/workflows/order-processing/jobs" \
   }'
 ```
 
-**Resulting Acknowledgement Message (Consumer):**
+**Resulting Acknowledgement Message (Kafka Consumer):**
 
 ```json
 {
@@ -1089,14 +1042,14 @@ curl -X POST "http://localhost:3002/api/v1/workflows/order-processing/jobs" \
   "simulator": "dev-ack-simulator",
 
   // Original message fields (echoed)
-  "dealId": "DEAL-123",
+  "orderId": "ORDER-123",
   "transformedData": { ... },
   "requiresAcknowledgement": true,
 
   // Custom payload fields (merged)
-  "ext_consumer_id": "EXT-CONSUMER-12345",
+  "ext_customer_id": "EXT-CUSTOMER-12345",
   "processing_status": "verified",
-  "credit_score": 750,
+  "loyalty_tier": "gold",
 
   "metadata": {
     "simulatedAckDelay": 5000,

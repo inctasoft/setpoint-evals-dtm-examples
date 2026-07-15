@@ -1,4 +1,4 @@
-# 🧪 Eval 03: DLQ Permanent Failure
+# 🧪 Eval 02: DLQ Permanent Failure
 
 ## 📋 Overview
 
@@ -76,21 +76,25 @@ sequenceDiagram
 
 ```json
 {
-  "consumerNo": 1003,
-  "membershipNo": 1410001003,
-  "externalSystemId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+  "variant": "quick-order",
+  "payload": {
+    "customerId": 1,
+    "orderId": 1,
+    "entityId": "<generated externalSystemId>"
+  },
+  "enableDeduplication": false,
   "testOptions": {
-    "ValidateCustomer": { "failOnAttempts": [1, 2] },
-    "ValidateOrder": { "failOnAttempts": [1] },
-    "SubmitCustomer": { "failOnAttempts": [1, 2] },
-    "SubmitOrder": { "failOnAttempts": [1, 2, 3, 4, 5, 6, 7] }
+    "ValidateCustomer": { "simDelay": 500, "failOnAttempts": [1, 2] },
+    "ValidateProduct": { "simDelay": 500, "failOnAttempts": [1] },
+    "SubmitCustomer": { "simDelay": 500, "ackDelay": 100, "failOnAttempts": [1, 2] },
+    "SubmitOrder": { "simDelay": 500, "ackDelay": 100, "failOnAttempts": [1, 2, 3, 4, 5, 6, 7] }
   }
 }
 ```
 
 **Failure Configuration:**
 - `ValidateCustomer.failOnAttempts: [1, 2]` - Fails twice, succeeds on attempt 3
-- `ValidateOrder.failOnAttempts: [1]` - Fails once, succeeds on attempt 2
+- `ValidateProduct.failOnAttempts: [1]` - Fails once, succeeds on attempt 2
 - `SubmitCustomer.failOnAttempts: [1, 2]` - Fails twice, succeeds on attempt 3
 - `SubmitOrder.failOnAttempts: [1, 2, 3, 4, 5, 6, 7]` - **PERMANENT FAILURE** (exceeds maxReceiveCount=3)
 
@@ -307,7 +311,7 @@ docker compose exec orchestrator env | grep ENABLE_REQUESTS_FOR_SIMULATED_DELAYS
 ## 🔗 Related Documentation
 
 - [SQS DLQ Configuration](../../docker-compose.workers.yml)
-- [Lambda Worker Utils](../../packages/lambda-worker-utils/src/simulation.ts)
+- [Worker SDK Simulation Helpers](../../packages/worker-sdk/src/simulation.ts)
 - [System Architecture](../../docs/guides/system-architecture.md)
 
 ## 📊 Metrics to Observe

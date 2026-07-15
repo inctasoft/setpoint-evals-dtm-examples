@@ -19,7 +19,7 @@ export class InitialMigrationSchema1765443716000 implements MigrationInterface {
       `CREATE TYPE "job_status_enum" AS ENUM('pending', 'processing', 'completed', 'failed', 'cancelled')`,
     );
     await queryRunner.query(
-      `CREATE TYPE "migration_type_enum" AS ENUM('membership', 'deal')`,
+      `CREATE TYPE "migration_type_enum" AS ENUM('default', 'batch')`,
     );
     await queryRunner.query(
       `CREATE TYPE "step_status_enum" AS ENUM('pending', 'delegated', 'in_progress', 'in_progress_retrying', 'completed', 'waiting_for_ack', 'failed', 'skipped')`,
@@ -33,9 +33,9 @@ export class InitialMigrationSchema1765443716000 implements MigrationInterface {
         "status" job_status_enum NOT NULL DEFAULT 'pending',
         "payload" jsonb NOT NULL,
         "results" jsonb,
-        "deal_id" character varying(255),
-        "membership_number" character varying(255),
-        "membership_id" uuid,
+        "order_ref_id" character varying(255),
+        "customer_number" character varying(255),
+        "customer_id" uuid,
         "submitted_by" character varying(255),
         "submitted_at" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "started_at" timestamp,
@@ -58,13 +58,13 @@ export class InitialMigrationSchema1765443716000 implements MigrationInterface {
       `CREATE INDEX "IDX_migration_jobs_status_type" ON "migration_jobs" ("status", "type")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_migration_jobs_deal_id" ON "migration_jobs" ("deal_id")`,
+      `CREATE INDEX "IDX_migration_jobs_order_ref_id" ON "migration_jobs" ("order_ref_id")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_migration_jobs_membership_number" ON "migration_jobs" ("membership_number")`,
+      `CREATE INDEX "IDX_migration_jobs_customer_number" ON "migration_jobs" ("customer_number")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_migration_jobs_membership_id" ON "migration_jobs" ("membership_id")`,
+      `CREATE INDEX "IDX_migration_jobs_customer_id" ON "migration_jobs" ("customer_id")`,
     );
     await queryRunner.query(
       `CREATE INDEX "IDX_migration_jobs_submitted_at" ON "migration_jobs" ("submitted_at")`,

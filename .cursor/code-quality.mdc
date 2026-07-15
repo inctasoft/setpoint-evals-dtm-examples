@@ -67,7 +67,7 @@ function CalculateTotal() { } // Use camelCase for functions
 ### When to Suppress
 ```typescript
 // ✅ Acceptable: Type assertion when parsing external data
-const data = JSON.parse(message) as NpdConsumerEvent;
+const data = JSON.parse(message) as OrderCreatedEvent;
 
 // ✅ Acceptable: Suppress for workspace compatibility
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -311,7 +311,7 @@ export class JobRepository {
 ### Logging
 ```typescript
 // ✅ Good: Structured logging with context
-this.logger.log('Job created', { jobId, consumerNo });
+this.logger.log('Job created', { jobId, customerId });
 this.logger.error('Job failed', { jobId, error: error.message });
 
 // ❌ Bad: Logging sensitive data

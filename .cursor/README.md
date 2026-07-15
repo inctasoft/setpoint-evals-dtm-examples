@@ -27,20 +27,6 @@ This directory contains specialized rule files for different aspects of the code
 - Debugging tests
 - CI/CD integration
 
-**[se-testing.mdc](se-testing.mdc)** - SE (Setpoint Eval) testing
-- SE structure and execution modes
-- Parallel vs. In-Band testing
-- Automated forensics collection
-- Rules for new SEs
-- Living documentation approach
-
-**[se-writer.mdc](se-writer.mdc)** - Creating new SEs
-- Complete guide for writing new Setpoint Evals
-- Template usage and structure
-- SQS/DLQ querying patterns (visibility timeout handling)
-- Test data integration
-- Verification and registration checklist
-
 ### Database & ORM
 **[typeorm.mdc](typeorm.mdc)** - TypeORM & PostgreSQL
 - Entity definitions
@@ -156,8 +142,6 @@ Each `.mdc` file can specify:
 ### When to Update
 - **architecture.mdc**: Any architectural changes
 - **testing.mdc**: New testing patterns or tools
-- **se-testing.mdc**: SE suite changes
-- **se-writer.mdc**: New SE patterns or best practices
 - **typeorm.mdc**: Database schema changes
 - **pnpm-expert.mdc**: Monorepo structure changes
 - **code-quality.mdc**: New linting rules or standards
@@ -194,8 +178,6 @@ Each `.mdc` file can specify:
 
 - ✅ architecture.mdc (333 lines)
 - ✅ testing.mdc (complete test guidelines)
-- ✅ se-testing.mdc (SE suite overview)
-- ✅ se-writer.mdc (comprehensive SE creation guide)
 - ✅ typeorm.mdc (database best practices)
 - ✅ pnpm-expert.mdc (monorepo management)
 - ✅ code-quality.mdc (standards & linting)
@@ -206,7 +188,7 @@ Each `.mdc` file can specify:
 - ✅ api-standards.mdc (API design)
 - ✅ deployment.mdc (deployment strategies)
 
-**Total**: 13 comprehensive rule files covering all aspects of development
+**Total**: 11 comprehensive rule files covering all aspects of development
 
 ---
 

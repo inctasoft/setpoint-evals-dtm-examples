@@ -753,21 +753,23 @@ graph TB
     class ACK_HANDLER,ACK_VALIDATE,UPDATE_DB,CONTINUE_ORCH orchestrator
 ```
 
-**Acknowledgement Topics**:
+**Acknowledgement Topics** (order-processing cascades — see `workflows/order-processing/workflow.config.ts` `CASCADES`):
 
-- `dtm.customer.ack` - external system acknowledges customer submission → provides `externalId`
-- `dtm.product.ack` - external system acknowledges product submission → provides `externalId`
-- `dtm.order.ack` - external system acknowledges order submission → provides `externalId`
-- `dtm.paymentmethod.ack` - external system acknowledges payment method submission → provides `externalId`
-- `dtm.paymenthistory.ack` - external system acknowledges payment history submission → provides `externalId`
+- `order-processing.customer.ack` - external system acknowledges customer submission → provides `externalId`
+- `order-processing.order.ack` - external system acknowledges order submission → provides `externalId`
+- `order-processing.line-item.ack` - external system acknowledges a line item submission → provides `externalId`
+- `order-processing.payment.ack` - external system acknowledges payment submission → provides `externalId`
+- `order-processing.shipment.ack` - external system acknowledges shipment submission → provides `externalId`
 
 **Completion Topics** (published by Orchestrator):
 
-- `dtm.customer.completed` - Customer submission ready for external system
-- `dtm.product.completed` - Product submission ready for external system (includes `externalId`)
-- `dtm.order.completed` - Order submission ready for external system (includes `externalId`)
-- `dtm.paymentmethod.completed` - PaymentMethod submission ready for external system (includes `externalId`)
-- `dtm.paymenthistory.completed` - PaymentHistory submission ready for external system (includes `externalId`)
+- `order-processing.customer.completed` - Customer submission ready for external system
+- `order-processing.order.completed` - Order submission ready for external system (includes `ext_customer_id`)
+- `order-processing.line-item.completed` - LineItem submission ready for external system (includes `ext_order_id`, per child)
+- `order-processing.payment.completed` - Payment submission ready for external system (includes `ext_order_id`)
+- `order-processing.shipment.completed` - Shipment submission ready for external system (includes `ext_order_id`)
+
+Note: `Product` is validate-only for this workflow — it has no submit step and does not cascade or publish to Kafka.
 
 **Dev Simulator Configuration**:
 
@@ -839,38 +841,39 @@ SubmitOrder     | completed | 5.023           | {"source": "dev-simulator", "sim
 - **FK Injection**: When a parent cascade is acknowledged, its `externalId` is injected into dependent cascades
 - **Cascade Trigger**: Each acknowledgement triggers a check for dependent cascades ready to publish
 
-**The Cascade Chain** (5 Entities):
+**The Cascade Chain** (5 Cascades — `default` variant, see `workflows/order-processing/workflow.config.ts`):
 
 ```
-Customer → Product → Orders
-   ↓           ↓          ↓
-externalId  ext_customer_id  ext_product_id
+Customer (root)
+   |  ext_customer_id
+   v
+Order
+   |  ext_order_id        |  ext_order_id       |  ext_order_id
+   v                        v                      v
+LineItem (fan-out)       Payment               Shipment
 
-                    └──→ PaymentMethod ────┐
-                           ↓                ↓ ext_payment_method_id
-                      ext_product_id   PaymentHistory
+Product (root, validate-only — no submit/cascade)
 ```
 
 **How It Works**:
 
 1. **Customer Ack Received** → Orchestrator stores `externalId`
    → Triggers cascade check
-   → Publishes Product with `ext_customer_id` injected (Customer's externalId)
+   → Publishes Order with `ext_customer_id` injected (Customer's externalId)
 
-2. **Product Ack Received** → Orchestrator stores `externalId`
+2. **Order Ack Received** → Orchestrator stores `externalId` (as `ext_order_id`)
    → Triggers cascade check
-   → Publishes Orders with `ext_product_id` injected
-   → Publishes PaymentMethod with `ext_product_id` injected
+   → Publishes each LineItem (fan-out children), Payment, and Shipment with `ext_order_id` injected
 
-3. **Orders Ack Received**
-   → Each stores `externalId` (as `ext_order_id`)
+3. **LineItem Ack Received** (per child)
+   → Stores `externalId` per fan-out child
 
-4. **PaymentMethod Ack Received**
-   → Stores `externalId` (as `ext_payment_method_id`)
-   → Publishes PaymentHistory with `targetProductId` + `npdPaymentMethodId` injected
+4. **Payment Ack Received**
+   → Stores `externalId`
 
-5. **PaymentHistory Ack Received**
-   → All cascade branches complete → Job marked COMPLETED
+5. **Shipment Ack Received**
+   → Stores `externalId`
+   → Once all attempted cascades are terminal → `evaluateOutcome()` runs → Job marked COMPLETED / PARTIAL_SUCCESS / FAILED
 
 ```mermaid
 sequenceDiagram
@@ -878,7 +881,7 @@ sequenceDiagram
     participant K as Kafka
     participant EXT as External System/Simulator
 
-    Note over O: All submits complete in parallel
+    Note over O: Customer + Order submits complete first (order depends on customer)
 
     O->>K: Publish Customer
     K->>EXT: customer.completed
@@ -889,12 +892,12 @@ sequenceDiagram
     O->>K: Publish Order
     K->>EXT: order.completed
     EXT->>K: order.ack + externalId
-    K->>O: Store externalId
+    K->>O: Store externalId (ext_order_id)
 
-    Note over O: Cascade: inject ext_order_id
-    O->>K: Publish Orders
-    K->>EXT: orders.completed
-    EXT->>K: orders.ack + externalId
+    Note over O: Cascade: inject ext_order_id into LineItem/Payment/Shipment
+    O->>K: Publish LineItem, Payment, Shipment (parallel)
+    K->>EXT: line-item/payment/shipment.completed
+    EXT->>K: acks + externalId (per cascade)
     K->>O: Job COMPLETED
 ```
 
@@ -1246,11 +1249,11 @@ interface SubmitBenefitsPayload {
   dependentStepOutputs: {
     SubmitCustomer: {
       targetCustomerId: string; // external system's ID for the customer
-      npdCustomerStatus: string;
+      customerStatus: string;
     };
     SubmitProduct: {
       targetProductId: string; // external system's ID for the product
-      npdProductNumber: string;
+      productNumber: string;
     };
   };
 }
@@ -1288,7 +1291,7 @@ POST /callback/progress
   "status": "completed",
   "output": {
     "targetCustomerId": "EXT-CUSTOMER-789",
-    "npdCustomerStatus": "active",
+    "customerStatus": "active",
     "email": "john.doe@example.com"
   }
 }
@@ -1303,7 +1306,7 @@ SET
   status = 'completed',
   output = '{
     "targetCustomerId": "EXT-CUSTOMER-789",
-    "npdCustomerStatus": "active",
+    "customerStatus": "active",
     "email": "john.doe@example.com"
   }'::jsonb,
   ended_at = NOW()
@@ -1447,14 +1450,14 @@ Here's what the actual SQS message looks like for `SubmitBenefits`:
     },
     "SubmitCustomer": {
       "targetCustomerId": "EXT-CUSTOMER-789",
-      "npdCustomerStatus": "active",
+      "customerStatus": "active",
       "email": "john.doe@example.com",
       "createdAt": "2025-11-20T10:00:00Z"
     },
     "SubmitProduct": {
       "targetProductId": "EXT-PRODUCT-456",
-      "npdProductNumber": "PROD-123456",
-      "npdProductType": "PREMIUM",
+      "productNumber": "PROD-123456",
+      "productType": "PREMIUM",
       "startDate": "2025-01-01",
       "createdAt": "2025-11-20T10:01:00Z"
     }
@@ -2047,7 +2050,7 @@ curl http://orchestrator:3000/api/v1/jobs/{jobId}
 | **Submit (output)** | `WAITING_FOR_ACK` | `AcknowledgementHandler` marks step COMPLETED |
 
 **Current Implementation**:
-- **Discovery steps** (DiscoverLineItems, DiscoverPaymentMethod, etc.): Set to `WAITING_FOR_CHILDREN`, wait for children only
+- **Discovery steps** (DiscoverLineItems, DiscoverSensors, etc.): Set to `WAITING_FOR_CHILDREN`, wait for children only
 - **Submit steps** (SubmitCustomer, SubmitOrder, etc.): Set to `WAITING_FOR_ACK`, wait for external ACK only
 - **No step does both**
 
@@ -2172,18 +2175,17 @@ if (steps.length === completedSteps.length) {
 
 ```
 Customer (root)
-    ↓ targetCustomerId
-Product
-    ↓ targetProductId
-    ├── Orders
-    ├── PaymentMethod ────┐
-    │       ↓ npdPaymentMethodId
-    └── PaymentHistory ◄──┘
+    ↓ ext_customer_id
+Order
+    ↓ ext_order_id
+    ├── LineItem (fan-out)
+    ├── Payment
+    └── Shipment
 ```
 
 **Why This Matters**:
 - Output steps receive FK values from parent cascade ACKs
-- If Product ACK hasn't arrived, Orders Submit cannot inject `targetProductId`
+- If the Customer ACK hasn't arrived, Order's Submit cannot inject `ext_customer_id`
 - `CascadePublishService` enforces this by checking `areCascadeDependenciesMet()`
 
 ---
@@ -2192,9 +2194,9 @@ Product
 
 **What CAN Run in Parallel**:
 - `ValidateCustomer` + `ValidateProduct` (same level, no dependency)
-- `DiscoverLineItems` + `DiscoverPaymentMethod` + `DiscoverPaymentHistory` (same level)
+- `DiscoverLineItems` + `ValidatePayment` + `ValidateShipment` (same level, all depend only on `ValidateOrder`)
 - Multiple `ValidateLineItem[N]` child steps (fan-out, same cascade)
-- Multiple `SubmitOrder[N]` child steps (fan-out, after all validates complete)
+- Multiple `SubmitLineItem[N]` child steps (fan-out, after their own validate completes)
 
 **What CANNOT Run in Parallel**:
 - `Validate` → `Submit` for same cascade (sequential dependency)

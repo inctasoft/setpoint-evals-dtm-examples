@@ -81,7 +81,7 @@ export class StepProgressDto {
     required: false,
     example: {
       type: 'database_table',
-      table: 'members_snapshot',
+      table: 'customers_snapshot',
       metadata: { entity_id: 'ENT-9001', record_count: 5 },
     },
   })
