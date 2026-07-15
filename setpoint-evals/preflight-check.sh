@@ -663,10 +663,13 @@ check_seed_data() {
   echo ""
   echo "🌱 Checking seed data..."
   echo ""
-  
-  # Check order-processing source DB has seed data (if running)
+
+  # Check order-processing source DB has seed data (if running).
+  # NOTE: table lives in the `ecommerce` schema, not `public` — a bare
+  # `customers` reference always 404s and silently falls back to "0" here,
+  # which used to false-warn "appears empty" on every healthy run.
   if docker exec ${COMPOSE_PROJECT_NAME:-dtm}-order-processing-source-db pg_isready -U order_user -d order_processing_db > /dev/null 2>&1; then
-    local customer_count=$(docker exec ${COMPOSE_PROJECT_NAME:-dtm}-order-processing-source-db psql -U order_user -d order_processing_db -tAc "SELECT COUNT(*) FROM customers LIMIT 1;" 2>/dev/null || echo "0")
+    local customer_count=$(docker exec ${COMPOSE_PROJECT_NAME:-dtm}-order-processing-source-db psql -U order_user -d order_processing_db -tAc "SELECT COUNT(*) FROM ecommerce.customers;" 2>/dev/null || echo "0")
     if [ "$customer_count" -gt "0" ] 2>/dev/null; then
       log_success "Order Processing source DB has seed data ($customer_count customers)"
     else
@@ -675,6 +678,21 @@ check_seed_data() {
   else
     log_info "Order Processing source DB not running — skipping seed data check"
   fi
+
+  # Full SEED-REGISTRY.md validation per workflow (row counts, per-SE owned
+  # rows, not-found sentinels) — see workflows/<name>/source-db/SEED-REGISTRY.md.
+  local wf_names=("order-processing" "iot-sensor-pipeline" "infra-provisioning")
+  for wf in "${wf_names[@]}"; do
+    local validator="$(dirname "${BASH_SOURCE[0]}")/../workflows/$wf/source-db/validate-seed-data.sh"
+    if [ ! -f "$validator" ]; then
+      continue
+    fi
+    if bash "$validator" > /tmp/seed-validate-$wf.log 2>&1; then
+      log_success "$wf seed data matches SEED-REGISTRY.md"
+    else
+      log_warning "$wf seed data DRIFTED from SEED-REGISTRY.md — see /tmp/seed-validate-$wf.log"
+    fi
+  done
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
