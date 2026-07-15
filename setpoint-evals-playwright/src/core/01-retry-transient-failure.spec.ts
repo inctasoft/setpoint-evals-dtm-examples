@@ -4,7 +4,7 @@
  * Tests the retry mechanism: ValidateCustomer and SubmitOrder fail on attempts
  * 1 & 2, then succeed on attempt 3. SQS manages retries via 30s visibility timeout.
  *
- * Mirrors: setpoint-evals/01-retry-transient-failure/test.sh
+ * Mirrors: setpoint-evals/SE-01-retry-transient-failure/test.sh
  *
  * Expected duration: ~134s (2 phases × 2 retries × 30s SQS visibility)
  * Expected outcome: Job COMPLETES after retries

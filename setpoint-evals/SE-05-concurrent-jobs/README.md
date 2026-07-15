@@ -1,5 +1,11 @@
 # E2E Eval 10: Concurrent Jobs
 
+## Setpoint Eval Metadata
+
+**Timeout**: 125s
+**Isolation**: destructive
+**Category**: scalability
+
 ## 📋 Overview
 
 **Category**: Scalability & Performance  
@@ -405,7 +411,7 @@ docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
 ## 🏁 Running This Eval
 
 ```bash
-cd setpoint-evals/05-concurrent-jobs
+cd setpoint-evals/SE-05-concurrent-jobs
 ./test.sh
 ```
 

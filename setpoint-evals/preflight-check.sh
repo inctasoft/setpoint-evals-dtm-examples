@@ -836,7 +836,7 @@ main() {
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo "Next steps:"
-    echo "  • Run single eval:  cd setpoint-evals/01-retry-transient-failure && ./test.sh"
+    echo "  • Run single eval:  cd setpoint-evals/SE-01-retry-transient-failure && ./test.sh"
     echo "  • Run all evals:    ./setpoint-evals/run-all.sh"
     echo ""
     exit 0

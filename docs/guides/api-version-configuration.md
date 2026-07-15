@@ -195,10 +195,10 @@ E2E tests now support the same configuration:
 
 ```bash
 # Run E2E test against v1 (default)
-./setpoint-evals/01-retry-transient-failure/test.sh
+./setpoint-evals/SE-01-retry-transient-failure/test.sh
 
 # Run E2E test against v2
-API_VERSION=v2 ./setpoint-evals/01-retry-transient-failure/test.sh
+API_VERSION=v2 ./setpoint-evals/SE-01-retry-transient-failure/test.sh
 
 # Run against staging
 export ORCHESTRATOR_HOST=https://staging.example.com

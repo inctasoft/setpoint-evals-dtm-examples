@@ -1,5 +1,11 @@
 # Eval 15: Orphaned Job Recovery
 
+## Setpoint Eval Metadata
+
+**Timeout**: 95s
+**Isolation**: destructive
+**Category**: maintenance
+
 ## 🎯 Purpose
 
 ### 🌊 Flow Diagram
@@ -90,7 +96,7 @@ Tests the **OrphanedJobRecoveryTask** maintenance task, which recovers "zombie" 
 
 ```bash
 # Standalone
-./setpoint-evals/09-orphaned-job-recovery/test.sh
+./setpoint-evals/SE-09-orphaned-job-recovery/test.sh
 
 # Via runner
 ./setpoint-evals/run-all.sh --eval 09

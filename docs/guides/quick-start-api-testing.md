@@ -33,7 +33,7 @@ export ORCHESTRATOR_HOST=https://qa.example.com
 ./scripts/test-health.sh
 ./scripts/test-new-api.sh
 ./scripts/monitor-jobs-api.sh
-./setpoint-evals/01-retry-transient-failure/test.sh
+./setpoint-evals/SE-01-retry-transient-failure/test.sh
 ```
 
 ## 📋 All Available Variables

@@ -8,7 +8,7 @@
  * 4. Wait for both jobs to complete
  * 5. Retry first request after completion → 409 (dedup persists)
  *
- * Mirrors: setpoint-evals/03-deduplication/test.sh
+ * Mirrors: setpoint-evals/SE-03-deduplication/test.sh
  *
  * Expected duration: ~30s
  * Expected outcome: Deduplication correctly rejects duplicate requests

@@ -1,5 +1,11 @@
 # Eval 14: Health Metrics
 
+## Setpoint Eval Metadata
+
+**Timeout**: 150s
+**Isolation**: destructive
+**Category**: maintenance
+
 ## 🎯 Purpose
 
 ### 🌊 Flow Diagram
@@ -94,7 +100,7 @@ Uses multiple `quick-order` jobs to create diverse job states:
 
 ```bash
 # Standalone
-./setpoint-evals/08-health-metrics/test.sh
+./setpoint-evals/SE-08-health-metrics/test.sh
 
 # Via runner
 ./setpoint-evals/run-all.sh

@@ -1,5 +1,11 @@
 # E2E Eval 01: Transient Failure Recovery
 
+## Setpoint Eval Metadata
+
+**Timeout**: 185s
+**Isolation**: parallel-safe
+**Category**: stability
+
 ## 📋 Overview
 
 **Category**: Retry & Resilience  
@@ -340,7 +346,7 @@ WHERE job_id = '{JOB_ID}'
 ## 🏁 Running This Eval
 
 ```bash
-cd setpoint-evals/01-retry-transient-failure
+cd setpoint-evals/SE-01-retry-transient-failure
 ./test.sh
 ```
 

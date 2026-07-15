@@ -5,6 +5,13 @@ on:
   push:
     branches:
       - master
+  schedule:
+    # Weekly placeholder for a full-stack --quick SE run (see the `se-full-stack-quick` job
+    # below) — GitHub-hosted runners can't reliably host Kafka+Postgres+LocalStack+Lambda, so
+    # this job is echo-only today. The real gate is local execution evidence pasted into PR
+    # bodies (see setpoint-eval-conventions.md).
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch: {}
 
 env:
   NODE_VERSION: "22"
@@ -92,3 +99,47 @@ jobs:
           else
             git diff "$BEFORE_SHA" "${{ github.sha }}" | bash scripts/hygiene/scan.sh
           fi
+
+  se-structure:
+    name: Setpoint Eval README/layout hygiene
+    runs-on: ubuntu-latest # pure bash + git; no special runner needed
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate SE README layout (diff-scoped)
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            base="$(git rev-parse HEAD~1 2>/dev/null || echo HEAD)"
+          fi
+          bash scripts/validate-se-readmes.sh --base "$base"
+
+  se-full-stack-quick:
+    name: Full-stack SE run (--quick) [placeholder]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Explain why this is echo-only
+        run: |
+          echo "GitHub-hosted runners cannot reliably host the full DTM stack"
+          echo "(Kafka + Postgres x4 + LocalStack + Lambda pollers) — Docker-in-Docker"
+          echo "resource limits and LocalStack Lambda cold-starts make this job flaky"
+          echo "on shared runners, which would make it a false gate."
+          echo ""
+          echo "The REAL gate is local execution evidence: run"
+          echo "  ./scripts/local-env.sh start --standalone --orchestrator"
+          echo "  ./scripts/local-env.sh deploy-workers"
+          echo "  ./setpoint-evals/run-all.sh --all-workflows --quick"
+          echo "locally (or on a self-hosted runner with Docker) and paste the 28/28"
+          echo "summary table into the PR body — see setpoint-eval-conventions.md and"
+          echo "the workspace verification-model STANDING LAW (SEs are the review)."
+          echo ""
+          echo "This job is a placeholder for wiring a self-hosted runner later; it"
+          echo "intentionally does not claim to have run anything."

@@ -98,6 +98,28 @@ strip_ansi_codes() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
+# SE Conventions v2 (server-config/docs/setpoint-eval-conventions.md)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# exit-77 SKIP sentinel — run-all.sh treats exit 77 as SKIP (not FAIL), across every
+# execution mode (parallel/destructive/in-band). Use when an SE can't meaningfully run
+# in the current environment (missing optional dependency, etc.) — never as a way to
+# silence a real failure.
+se_skip() {
+  log_warning "SKIP: ${1:-no reason given}" >&2
+  exit 77
+}
+
+# --quick opt-in helper. An SE that declares '**Quick**: yes' in its README may wrap a
+# delay literal with this to zero it when SE_QUICK=1 (exported by `run-all.sh --quick`):
+#   "ackDelay": $(qdelay 5000)
+# No SE in this repo currently opts in — SE_QUICK is exported and ready, this is the
+# hook future SEs use; today --quick is a functional no-op here.
+qdelay() {
+  if [ "${SE_QUICK:-0}" = "1" ]; then echo 0; else echo "${1:-0}"; fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Configuration
 # ═══════════════════════════════════════════════════════════════════════════
 

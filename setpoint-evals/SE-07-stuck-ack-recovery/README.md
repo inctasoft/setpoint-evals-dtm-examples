@@ -1,5 +1,11 @@
 # Eval 12: Stuck Acknowledgement Recovery
 
+## Setpoint Eval Metadata
+
+**Timeout**: 95s
+**Isolation**: destructive
+**Category**: maintenance
+
 > ✅ **NON-DESTRUCTIVE TEST**: This eval uses `testOptions.SubmitCustomer.skipAck` to simulate stuck acknowledgements without killing any services.
 
 ## Purpose
@@ -128,7 +134,7 @@ sequenceDiagram
 
 ```bash
 # Standalone
-./setpoint-evals/07-stuck-ack-recovery/test.sh
+./setpoint-evals/SE-07-stuck-ack-recovery/test.sh
 
 # Via runner
 ./setpoint-evals/run-all.sh

@@ -1,5 +1,11 @@
 # E2E Eval: Deduplication Testing
 
+## Setpoint Eval Metadata
+
+**Timeout**: 95s
+**Isolation**: parallel-safe
+**Category**: feature
+
 ## 🎯 **Objective**
 
 Validate that the DTM orchestrator correctly implements **idempotent request handling** through deduplication logic, preventing duplicate job submissions for the same entity.
@@ -207,7 +213,7 @@ ENABLE_DEDUPLICATION=false
 ### **Execute**
 
 ```bash
-cd setpoint-evals/03-deduplication
+cd setpoint-evals/SE-03-deduplication
 chmod +x test.sh
 ./test.sh
 ```

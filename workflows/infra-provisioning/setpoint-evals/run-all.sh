@@ -1,29 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Delegates to the SAME core SE runner (SE Conventions v2 — no forked runner) — see
+# server-config/docs/setpoint-eval-conventions.md. This suite's SE-<NN>-<name>/ dirs
+# are discovered and executed by setpoint-evals/run-all.sh via --dir.
+#
+# Defaults to --in-band (sequential): these SEs share the SAME core dtm_jobs/dtm_steps
+# tables (and, for feature-flag SEs, process-wide env) with every other suite and were
+# never verified under concurrent execution — pass --parallel explicitly to opt in.
 set -e
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo "=========================================="
-echo "  infra-provisioning: Running All SEs"
-echo "=========================================="
-PASSED=0
-FAILED=0
-TOTAL=0
-for test_dir in "$SCRIPT_DIR"/*/; do
-  test_script="$test_dir/test.sh"
-  if [[ -f "$test_script" ]]; then
-    TOTAL=$((TOTAL + 1))
-    test_name=$(basename "$test_dir")
-    echo ""
-    echo "--- Running: $test_name ---"
-    if bash "$test_script"; then
-      PASSED=$((PASSED + 1))
-    else
-      FAILED=$((FAILED + 1))
-      echo "FAILED: $test_name"
-    fi
-  fi
-done
-echo ""
-echo "=========================================="
-echo "  Results: $PASSED passed, $FAILED failed (of $TOTAL)"
-echo "=========================================="
-[[ $FAILED -eq 0 ]] && exit 0 || exit 1
+SUITE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CORE_RUNNER="$(cd "$SUITE_DIR/../../../setpoint-evals" && pwd)/run-all.sh"
+exec bash "$CORE_RUNNER" --dir "$SUITE_DIR" --in-band "$@"

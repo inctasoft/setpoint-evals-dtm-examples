@@ -1,5 +1,11 @@
 # SE 10: Stuck Waiting-For-Children Recovery
 
+## Setpoint Eval Metadata
+
+**Timeout**: 120s
+**Isolation**: parallel-safe
+**Category**: maintenance
+
 ## Purpose
 
 Tests the **StuckWaitingForChildrenTask** maintenance task, which recovers discovery steps stuck in `WAITING_FOR_CHILDREN` after their fan-out children have already completed.

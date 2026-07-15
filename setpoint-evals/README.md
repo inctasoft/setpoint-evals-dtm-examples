@@ -6,10 +6,10 @@ Setpoint Evals verify orchestrator engine behavior through end-to-end tests that
 
 ```
 setpoint-evals/                                    # Core engine SEs (13 tests)
-  01-retry-transient-failure/
-  02-dlq-permanent-failure/
+  SE-01-retry-transient-failure/
+  SE-02-dlq-permanent-failure/
   ...
-  13-in-progress-auto-timeout/
+  SE-13-in-progress-auto-timeout/
   shared/helpers.sh                     # Generic helper functions
   run-all.sh                            # Core SE runner
   preflight-check.sh                    # Pre-flight checks
@@ -54,13 +54,13 @@ Test workflow-specific functionality:
 ./setpoint-evals/run-all.sh --all-workflows
 
 # Run a specific core SE
-./setpoint-evals/03-deduplication/test.sh
+./setpoint-evals/SE-03-deduplication/test.sh
 
 # Run all SEs for a specific workflow
 ./workflows/order-processing/setpoint-evals/run-all.sh
 
 # Run a specific workflow SE
-./workflows/order-processing/setpoint-evals/01-happy-path/test.sh
+./workflows/order-processing/setpoint-evals/SE-01-happy-path/test.sh
 
 # Common options (both runners)
 ./setpoint-evals/run-all.sh --parallel          # Default: parallel safe, sequential destructive

@@ -1,5 +1,11 @@
 # SE 11: Stuck Delegated Recovery
 
+## Setpoint Eval Metadata
+
+**Timeout**: 120s
+**Isolation**: parallel-safe
+**Category**: maintenance
+
 ## Purpose
 
 Tests the **StuckDelegatedTask** maintenance task, which re-delegates steps stuck in `DELEGATED` status (sent to SQS but never picked up by a worker).

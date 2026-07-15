@@ -10,11 +10,15 @@ build
 *.tsbuildinfo
 
 # Environment files
-.env
 .env.*
 !.env.example
 !.env.development
 !.env.test
+# NOTE: plain .env is intentionally NOT ignored — Dockerfile.db-init does
+# `COPY .env ./.env` to bundle it for the TypeORM migration CLI. Excluding it
+# here broke every fresh-clone build (discovered while running the mandatory
+# full-stack SE verification for the tooling-v2 uplift; pre-existing since the
+# initial commit, unrelated to SE tooling itself).
 
 # IDE
 .vscode
