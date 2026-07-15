@@ -29,9 +29,10 @@ export class CloudTasksTransport extends QueueTransport implements OnModuleInit 
     super();
     this.project = process.env.GCP_PROJECT || 'valko-local';
     this.location = process.env.GCP_LOCATION || 'local';
-    this.workerEndpoint = (
-      process.env.DTM_WORKER_ENDPOINT || 'http://localhost:3000'
-    ).replace(/\/$/, '');
+    this.workerEndpoint = (process.env.DTM_WORKER_ENDPOINT || 'http://localhost:3000').replace(
+      /\/$/,
+      '',
+    );
     this.emulatorEndpoint = process.env.CLOUD_TASKS_ENDPOINT;
   }
 
