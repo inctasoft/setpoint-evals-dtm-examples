@@ -5,11 +5,13 @@
 ```gherkin
 Feature: order-processing seed data matches SEED-REGISTRY.md
   Scenario: the validator passes against the real seed and catches a deleted row
-    Given the order-processing source DB seeded from 01-schema-and-seed.sql
+    Given the worker-facing order_processing_db on dtm-db (the copy the
+      Lambda workers read), seeded from the canonical 01-schema-and-seed.sql
     When source-db/validate-seed-data.sh runs against the live database
     Then it exits 0 and reports RESULT: PASS
     And when the same validator is pointed at a throwaway clone with SE-03's
-      dedicated customer (Donald Knuth, customer_id=6) deleted
+      dedicated customer (Donald Knuth, customer_id=6) deleted — FK chain
+      first (order 6's items/payments/shipments, then order 6, then customer)
     Then it exits 1 and names that exact row in a FAIL line
 ```
 
@@ -18,7 +20,7 @@ Feature: order-processing seed data matches SEED-REGISTRY.md
 sequenceDiagram
     participant T as test.sh
     participant V as validate-seed-data.sh
-    participant DB as order_processing_db
+    participant DB as order_processing_db (on dtm-db)
     participant Clone as seed_check_tmp_op (clone)
 
     T->>V: run (no override)
@@ -28,7 +30,7 @@ sequenceDiagram
 
     T->>DB: CREATE DATABASE seed_check_tmp_op
     T->>DB: pg_dump order_processing_db | psql seed_check_tmp_op
-    T->>Clone: DELETE FROM customers WHERE customer_id=6
+    T->>Clone: DELETE order 6's items/payments/shipments, order 6, customer 6 (FK order)
     T->>V: run with SEED_CHECK_DB=seed_check_tmp_op
     V->>Clone: SELECT last_name FROM customers WHERE customer_id=6
     Clone-->>V: 0 rows
@@ -40,7 +42,10 @@ sequenceDiagram
 
 ### Seed / fixture
 The row deleted for the negative control (from `01-schema-and-seed.sql`,
-`SEED-REGISTRY.md` "SE-03-fan-out-order-items" ownership row):
+`SEED-REGISTRY.md` "SE-03-fan-out-order-items" ownership row). Its FK
+dependents (order 6 with its order_items) are deleted first — a bare DELETE
+of the customer is an FK violation that silently leaves the row in place and
+turns the negative control into a vacuous pass:
 ```sql
 INSERT INTO ecommerce.customers (customer_id, first_name, last_name, email, phone, address, created_at) VALUES
 (6, 'Donald',   'Knuth',      'donald.knuth@example.com',       '(650) 555-0106', '1 TeX Terrace, Palo Alto, CA 94301',                '2025-05-10 08:15:00'),

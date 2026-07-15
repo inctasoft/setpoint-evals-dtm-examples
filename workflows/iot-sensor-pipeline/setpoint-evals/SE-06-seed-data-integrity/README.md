@@ -5,7 +5,8 @@
 ```gherkin
 Feature: iot-sensor-pipeline seed data matches SEED-REGISTRY.md
   Scenario: the validator passes against the real seed and catches a deleted row
-    Given the iot-sensor-pipeline source DB seeded from 01-schema-and-seed.sql
+    Given the worker-facing iot_sensor_pipeline_db on dtm-db (the copy the Lambda
+      workers read), seeded from the canonical 01-schema-and-seed.sql
     When source-db/validate-seed-data.sh runs against the live database
     Then it exits 0 and reports RESULT: PASS
     And when the same validator is pointed at a throwaway clone with SE-04's
@@ -18,7 +19,7 @@ Feature: iot-sensor-pipeline seed data matches SEED-REGISTRY.md
 sequenceDiagram
     participant T as test.sh
     participant V as validate-seed-data.sh
-    participant DB as iot_sensor_pipeline_db
+    participant DB as iot_sensor_pipeline_db (on dtm-db)
     participant Clone as seed_check_tmp_iot (clone)
 
     T->>V: run (no override)

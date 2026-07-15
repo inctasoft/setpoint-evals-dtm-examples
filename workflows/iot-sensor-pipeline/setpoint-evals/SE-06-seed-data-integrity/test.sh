@@ -15,7 +15,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 WF_ROOT="$(cd "$HERE/../.." && pwd)"           # workflows/iot-sensor-pipeline
 VALIDATOR="$WF_ROOT/source-db/validate-seed-data.sh"
-CONTAINER="dtm-iot-sensor-pipeline-source-db"
+# dtm-db is the copy the Lambda workers actually read (see validator header);
+# clone/drop need CREATEDB, which only the container superuser (dtm_user) has there.
+CONTAINER="dtm-db"
+ADMIN_USER="dtm_user"
 REAL_DB="iot_sensor_pipeline_db"
 CLONE_DB="seed_check_tmp_iot"
 
@@ -25,13 +28,13 @@ if ! docker exec "$CONTAINER" true >/dev/null 2>&1; then
 fi
 
 cleanup() {
-  docker exec "$CONTAINER" psql -U iot_user -d postgres -v ON_ERROR_STOP=1 \
+  docker exec "$CONTAINER" psql -U "$ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 \
     -c "DROP DATABASE IF EXISTS $CLONE_DB" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 # --- act (1): the validator against the REAL, untouched seed -----------------
-real_output="$(bash "$VALIDATOR" 2>&1)"
+real_output="$(SEED_CHECK_CONTAINER="$CONTAINER" bash "$VALIDATOR" 2>&1)"
 real_rc=$?
 
 # --- act (2): negative control — clone the DB, delete a seeded row, re-run ---
@@ -39,10 +42,10 @@ real_rc=$?
 # that opens its own connection — so this uses a real throwaway clone instead,
 # and the validator is pointed at it via the SEED_CHECK_DB env var it already
 # supports.
-docker exec "$CONTAINER" psql -U iot_user -d postgres -v ON_ERROR_STOP=1 \
+docker exec "$CONTAINER" psql -U "$ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 \
   -c "DROP DATABASE IF EXISTS $CLONE_DB" >/dev/null 2>&1 || true
-docker exec "$CONTAINER" psql -U iot_user -d postgres -v ON_ERROR_STOP=1 \
-  -c "CREATE DATABASE $CLONE_DB" >/dev/null 2>&1
+docker exec "$CONTAINER" psql -U "$ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 \
+  -c "CREATE DATABASE $CLONE_DB OWNER iot_user" >/dev/null 2>&1
 clone_created=$?
 
 if [ "$clone_created" -eq 0 ]; then
@@ -51,7 +54,7 @@ if [ "$clone_created" -eq 0 ]; then
   docker exec "$CONTAINER" psql -U iot_user -d "$CLONE_DB" -v ON_ERROR_STOP=1 \
     -c "DELETE FROM dbo.alerts WHERE device_id='greenhouse-4'" >/dev/null 2>&1
 
-  clone_output="$(SEED_CHECK_DB="$CLONE_DB" bash "$VALIDATOR" 2>&1)"
+  clone_output="$(SEED_CHECK_CONTAINER="$CONTAINER" SEED_CHECK_DB="$CLONE_DB" bash "$VALIDATOR" 2>&1)"
   clone_rc=$?
 else
   clone_output=""

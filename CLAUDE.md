@@ -70,6 +70,8 @@ Each workflow defines its own source database:
 | iot-sensor-pipeline | dtm-iot-sensor-pipeline-source-db | 5450 | iot_sensor_pipeline_db | iot_user |
 | infra-provisioning | dtm-infra-provisioning-source-db | 5451 | infra_provisioning_db | infra_user |
 
+> ⚠️ **TWO live copies of every source DB exist — the Lambda workers do NOT read the containers above.** `deploy-workers` points `<WORKFLOW>_DB_HOST` at **`dtm-db`**, which hosts its own `order_processing_db` / `iot_sensor_pipeline_db` / `infra_provisioning_db`, created by `scripts/docker/init-all-databases.sh`. Since 2026-07-16 that script loads the **canonical seed files** (`workflows/*/source-db/init-scripts/01-schema-and-seed.sql`, mounted via `docker-compose.yml`) instead of an inlined copy — the inlined copy silently drifted and every worker-touching SE failed with "not found in source database" while the dedicated containers looked perfectly seeded. **Never inline seed SQL into init-all-databases.sh.** When debugging "row not found" from a worker, query `dtm-db`, not the dedicated container. Seed changes require wiping the `postgres_data` volume (dtm-db init scripts only run on first boot).
+
 ### Other Services
 - **Orchestrator**: port 3002 (host) → 3000 (container). API base: `http://localhost:3002/api/v1`
 - **Monitor Dashboard**: port 5173 (Vite dev server). Source: `apps/monitor/` (Preact + Vite terminal-themed UI). Start: `cd apps/monitor && pnpm dev`. Connects via WebSocket (`ws://localhost:3002/ws/events`) with REST polling fallback.
@@ -608,6 +610,8 @@ Open `http://localhost:8090` — inspect topics, messages, consumer lag.
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | HTTP 000 / connection refused | Wrong port (3000 vs 3002) | Use `ORCHESTRATOR_URL="http://localhost:3002/api/v1"` |
+| SE POST gets 404 `{"message":"Cannot POST /api/v1/workflows/...","error":"Not Found"}` (raw-Nest shape, NOT the orchestrator's `{"code":"NOT_FOUND",...}` filter shape) and nothing in `docker logs dtm-orchestrator` | **No `.env.local` in this checkout/worktree** → helpers fall back to `.env` → `ORCHESTRATOR_PORT=3000` (container-internal) → the request hits whatever else binds host port 3000 (e.g. connectivity-tester, a NestJS app that answers with a plausible 404) | `cp .env.local.example .env.local` — MANDATORY in every fresh worktree (gitignored files don't come along) |
+| Worker fails "X not found in source database" while the dedicated source-db container clearly has the row | Workers read the `dtm-db` copies, not the dedicated containers (see Workflow Source DBs warning above) | Query `dtm-db`; if it's stale, wipe `postgres_data` volume and restart so init-all-databases.sh reloads the canonical seed files |
 | Step stuck in WAITING_FOR_ACK | ACK not arrived from dev-ack-simulator | Check simulator logs, Kafka consumer lag |
 | Step stuck in PENDING | Dependencies not met (check if parent is WAITING_FOR_ACK) | Wait for ACK or check continueJob() logs |
 | SE timeout despite steps completing | ACK roundtrip takes ~5-30s | Increase poll timeout to 600s |

@@ -83,5 +83,8 @@ narrative needs).
 ## Validator
 
 `bash source-db/validate-seed-data.sh` — asserts the counts and key rows
-above against the running `dtm-infra-provisioning-source-db` container.
+above against `dtm-db` by default — the copy the Lambda workers actually
+read (both it and the dedicated `dtm-infra-provisioning-source-db` container
+load this same canonical seed file; override with SEED_CHECK_CONTAINER to
+validate the dedicated container instead).
 Wired as its own eval: `setpoint-evals/SE-06-seed-data-integrity/`.

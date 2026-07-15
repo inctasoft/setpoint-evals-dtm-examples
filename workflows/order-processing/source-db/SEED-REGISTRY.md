@@ -76,5 +76,8 @@ this deliberately: order 7 legitimately has zero payment rows, so
 ## Validator
 
 `bash source-db/validate-seed-data.sh` — asserts the counts and key rows
-above against the running `dtm-order-processing-source-db` container.
+above against `dtm-db` by default — the copy the Lambda workers actually
+read (both it and the dedicated `dtm-order-processing-source-db` container
+load this same canonical seed file; override with SEED_CHECK_CONTAINER to
+validate the dedicated container instead).
 Wired as its own eval: `setpoint-evals/SE-06-seed-data-integrity/`.

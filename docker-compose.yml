@@ -89,6 +89,13 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/docker/init-all-databases.sh:/docker-entrypoint-initdb.d/init-all-databases.sh:ro
+      # Canonical workflow seeds — the SAME files the per-workflow source-db
+      # containers load. init-all-databases.sh replays them verbatim so the
+      # dtm-db copies (which the Lambda workers actually read) can never drift
+      # from workflows/*/source-db/init-scripts/. Do NOT inline seed SQL.
+      - ./workflows/order-processing/source-db/init-scripts/01-schema-and-seed.sql:/dtm-workflow-seeds/order-processing.sql:ro
+      - ./workflows/iot-sensor-pipeline/source-db/init-scripts/01-schema-and-seed.sql:/dtm-workflow-seeds/iot-sensor-pipeline.sql:ro
+      - ./workflows/infra-provisioning/source-db/init-scripts/01-schema-and-seed.sql:/dtm-workflow-seeds/infra-provisioning.sql:ro
     networks:
       - dtm
     profiles:

@@ -5,7 +5,8 @@
 ```gherkin
 Feature: infra-provisioning seed data matches SEED-REGISTRY.md
   Scenario: the validator passes against the real seed and catches a deleted row
-    Given the infra-provisioning source DB seeded from 01-schema-and-seed.sql
+    Given the worker-facing infra_provisioning_db on dtm-db (the copy the Lambda
+      workers read), seeded from the canonical 01-schema-and-seed.sql
     When source-db/validate-seed-data.sh runs against the live database
     Then it exits 0 and reports RESULT: PASS
     And when the same validator is pointed at a throwaway clone with SE-04's
@@ -18,7 +19,7 @@ Feature: infra-provisioning seed data matches SEED-REGISTRY.md
 sequenceDiagram
     participant T as test.sh
     participant V as validate-seed-data.sh
-    participant DB as infra_provisioning_db
+    participant DB as infra_provisioning_db (on dtm-db)
     participant Clone as seed_check_tmp_infra (clone)
 
     T->>V: run (no override)

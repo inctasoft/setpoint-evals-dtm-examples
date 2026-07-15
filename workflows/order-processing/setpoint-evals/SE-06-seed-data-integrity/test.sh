@@ -15,7 +15,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 WF_ROOT="$(cd "$HERE/../.." && pwd)"           # workflows/order-processing
 VALIDATOR="$WF_ROOT/source-db/validate-seed-data.sh"
-CONTAINER="dtm-order-processing-source-db"
+# dtm-db is the copy the Lambda workers actually read (see validator header);
+# clone/drop need CREATEDB, which only the container superuser (dtm_user) has there.
+CONTAINER="dtm-db"
+ADMIN_USER="dtm_user"
 REAL_DB="order_processing_db"
 CLONE_DB="seed_check_tmp_op"
 
@@ -25,13 +28,13 @@ if ! docker exec "$CONTAINER" true >/dev/null 2>&1; then
 fi
 
 cleanup() {
-  docker exec "$CONTAINER" psql -U order_user -d postgres -v ON_ERROR_STOP=1 \
+  docker exec "$CONTAINER" psql -U "$ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 \
     -c "DROP DATABASE IF EXISTS $CLONE_DB" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 # --- act (1): the validator against the REAL, untouched seed -----------------
-real_output="$(bash "$VALIDATOR" 2>&1)"
+real_output="$(SEED_CHECK_CONTAINER="$CONTAINER" bash "$VALIDATOR" 2>&1)"
 real_rc=$?
 
 # --- act (2): negative control — clone the DB, delete a seeded row, re-run ---
@@ -39,19 +42,29 @@ real_rc=$?
 # that opens its own connection (see setpoint-eval-conventions.md D6-style
 # vacuous-pass guards) — so this uses a real throwaway clone instead, and the
 # validator is pointed at it via the SEED_CHECK_DB env var it already supports.
-docker exec "$CONTAINER" psql -U order_user -d postgres -v ON_ERROR_STOP=1 \
+docker exec "$CONTAINER" psql -U "$ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 \
   -c "DROP DATABASE IF EXISTS $CLONE_DB" >/dev/null 2>&1 || true
-docker exec "$CONTAINER" psql -U order_user -d postgres -v ON_ERROR_STOP=1 \
-  -c "CREATE DATABASE $CLONE_DB" >/dev/null 2>&1
+docker exec "$CONTAINER" psql -U "$ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 \
+  -c "CREATE DATABASE $CLONE_DB OWNER order_user" >/dev/null 2>&1
 clone_created=$?
 
 if [ "$clone_created" -eq 0 ]; then
   docker exec "$CONTAINER" sh -c "pg_dump -U order_user -d $REAL_DB | psql -U order_user -d $CLONE_DB" >/dev/null 2>&1
-  # Delete SE-03's dedicated customer (Donald Knuth, customer_id=6) from the CLONE only.
-  docker exec "$CONTAINER" psql -U order_user -d "$CLONE_DB" -v ON_ERROR_STOP=1 \
-    -c "DELETE FROM ecommerce.customers WHERE customer_id=6" >/dev/null 2>&1
+  # Delete SE-03's dedicated customer (Donald Knuth, customer_id=6) from the
+  # CLONE only — FK-dependents first (order_items/payments/shipments → orders
+  # → customer), else the final DELETE is an FK violation and the row SURVIVES,
+  # turning the negative control into a vacuous pass (exactly what happened on
+  # 2026-07-16: ON_ERROR_STOP failed the DELETE, 2>/dev/null swallowed it, and
+  # the "RED-proof" assertion caught the validator still passing).
+  docker exec -i "$CONTAINER" psql -U order_user -d "$CLONE_DB" -v ON_ERROR_STOP=1 <<'SQL' >/dev/null 2>&1
+DELETE FROM ecommerce.order_items WHERE order_id=6;
+DELETE FROM ecommerce.payments    WHERE order_id=6;
+DELETE FROM ecommerce.shipments   WHERE order_id=6;
+DELETE FROM ecommerce.orders      WHERE order_id=6;
+DELETE FROM ecommerce.customers   WHERE customer_id=6;
+SQL
 
-  clone_output="$(SEED_CHECK_DB="$CLONE_DB" bash "$VALIDATOR" 2>&1)"
+  clone_output="$(SEED_CHECK_CONTAINER="$CONTAINER" SEED_CHECK_DB="$CLONE_DB" bash "$VALIDATOR" 2>&1)"
   clone_rc=$?
 else
   clone_output=""

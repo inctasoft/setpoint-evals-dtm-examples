@@ -5,14 +5,20 @@
 #
 # Exit 0 = seed matches the registry. Exit 1 = drift detected (see FAIL lines).
 #
+# Default target is dtm-db — the copy the Lambda workers ACTUALLY read
+# (deploy-workers points ORDER_PROCESSING_DB_HOST at dtm-db, seeded by
+# scripts/docker/init-all-databases.sh from the same canonical seed file).
+# The dedicated dtm-order-processing-source-db container loads the identical
+# file; point SEED_CHECK_CONTAINER at it to validate that copy instead.
+#
 # Target override (used by SE-06's negative control to point this SAME
 # script at a throwaway clone database instead of the live one):
-#   SEED_CHECK_CONTAINER (default: dtm-order-processing-source-db)
+#   SEED_CHECK_CONTAINER (default: dtm-db)
 #   SEED_CHECK_DB        (default: order_processing_db)
 #   SEED_CHECK_USER      (default: order_user)
 set -uo pipefail
 
-CONTAINER="${SEED_CHECK_CONTAINER:-dtm-order-processing-source-db}"
+CONTAINER="${SEED_CHECK_CONTAINER:-dtm-db}"
 DB="${SEED_CHECK_DB:-order_processing_db}"
 DBUSER="${SEED_CHECK_USER:-order_user}"
 
