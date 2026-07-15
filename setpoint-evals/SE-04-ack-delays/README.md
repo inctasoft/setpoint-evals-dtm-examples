@@ -1,5 +1,11 @@
 # E2E Eval 09: Acknowledgement Delays
 
+## Setpoint Eval Metadata
+
+**Timeout**: 95s
+**Isolation**: parallel-safe
+**Category**: stability
+
 ## 📋 Overview
 
 **Category**: Asynchronous Behavior  
@@ -403,7 +409,7 @@ Topics: dtm.jobs.completed
 ## 🏁 Running This Eval
 
 ```bash
-cd setpoint-evals/04-ack-delays
+cd setpoint-evals/SE-04-ack-delays
 ./test.sh
 ```
 

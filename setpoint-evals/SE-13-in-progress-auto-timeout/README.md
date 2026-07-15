@@ -1,5 +1,11 @@
 # SE 13: In-Progress Auto-Timeout
 
+## Setpoint Eval Metadata
+
+**Timeout**: 120s
+**Isolation**: parallel-safe
+**Category**: maintenance
+
 ## Purpose
 
 Tests the **StuckInProgressTask** maintenance task with **auto-fail enabled**, which automatically fails steps stuck in `IN_PROGRESS` beyond their timeout threshold.

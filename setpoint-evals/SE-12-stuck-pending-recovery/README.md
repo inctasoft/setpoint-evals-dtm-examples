@@ -1,5 +1,11 @@
 # SE 12: Stuck Pending Recovery
 
+## Setpoint Eval Metadata
+
+**Timeout**: 120s
+**Isolation**: parallel-safe
+**Category**: maintenance
+
 ## Purpose
 
 Tests the **StuckPendingTask** maintenance task, which recovers steps stuck in `PENDING` status despite their dependencies being satisfied.

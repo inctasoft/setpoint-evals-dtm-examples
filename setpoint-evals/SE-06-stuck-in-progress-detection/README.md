@@ -1,5 +1,11 @@
 # Eval 13: Stuck In-Progress Detection
 
+## Setpoint Eval Metadata
+
+**Timeout**: 120s
+**Isolation**: destructive
+**Category**: maintenance
+
 ## 🎯 Purpose
 
 ### 🌊 Flow Diagram
@@ -115,7 +121,7 @@ MAINTENANCE_STUCK_IN_PROGRESS_TIMEOUT_MINUTES=30  # Default: 30 minutes
 
 ```bash
 # Standalone
-./setpoint-evals/06-stuck-in-progress-detection/test.sh
+./setpoint-evals/SE-06-stuck-in-progress-detection/test.sh
 
 # Via runner
 ./setpoint-evals/run-all.sh --in-band

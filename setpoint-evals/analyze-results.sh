@@ -162,6 +162,15 @@ if [ "$ANALYZE_COMPARE" = true ]; then
         if echo "$last_line" | grep -q "^PASS:"; then
           status="PASS"
           duration=$(echo "$last_line" | cut -d':' -f2)
+        elif echo "$last_line" | grep -q "^XFAIL:"; then
+          status="XFAIL"
+          duration=$(echo "$last_line" | cut -d':' -f2)
+        elif echo "$last_line" | grep -q "^UPASS:"; then
+          status="UPASS"
+          duration=$(echo "$last_line" | cut -d':' -f2)
+        elif echo "$last_line" | grep -q "^SKIP:"; then
+          status="SKIP"
+          duration=$(echo "$last_line" | cut -d':' -f2)
         elif echo "$last_line" | grep -q "^FAIL:"; then
           status="FAIL"
           duration=$(echo "$last_line" | cut -d':' -f2)
@@ -234,8 +243,8 @@ if [ "$ANALYZE_COMPARE" = true ]; then
     change_color="${NC}"
     a_pass=false
     b_pass=false
-    [[ "$a_result" == "PASS" || "$a_result" == "PASSED" ]] && a_pass=true
-    [[ "$b_result" == "PASS" || "$b_result" == "PASSED" ]] && b_pass=true
+    [[ "$a_result" == "PASS" || "$a_result" == "PASSED" || "$a_result" == "XFAIL" ]] && a_pass=true
+    [[ "$b_result" == "PASS" || "$b_result" == "PASSED" || "$b_result" == "XFAIL" ]] && b_pass=true
 
     if [ "$a_pass" = true ] && [ "$b_pass" = false ] && [ "$b_result" != "N/A" ]; then
       change="REGRESSION"
@@ -415,6 +424,15 @@ if [ "$ANALYZE_STATS" = true ]; then
       if echo "$last_line" | grep -q "^PASS:"; then
         status="PASS"
         duration=$(echo "$last_line" | cut -d':' -f2)
+      elif echo "$last_line" | grep -q "^XFAIL:"; then
+        status="XFAIL"
+        duration=$(echo "$last_line" | cut -d':' -f2)
+      elif echo "$last_line" | grep -q "^UPASS:"; then
+        status="UPASS"
+        duration=$(echo "$last_line" | cut -d':' -f2)
+      elif echo "$last_line" | grep -q "^SKIP:"; then
+        status="SKIP"
+        duration=$(echo "$last_line" | cut -d':' -f2)
       elif echo "$last_line" | grep -q "^FAIL:"; then
         status="FAIL"
         duration=$(echo "$last_line" | cut -d':' -f2)
@@ -431,15 +449,18 @@ if [ "$ANALYZE_STATS" = true ]; then
         fi
       fi
 
-      # Update run-level counts
+      # Update run-level counts (XFAIL counts as pass-equivalent; SKIP is neutral;
+      # UPASS is an anomaly — an eval marked EXPECTED-FAIL actually passed — treated as a failure)
       case "$status" in
-        PASS) run_pass=$((run_pass + 1)) ;;
+        PASS|XFAIL) run_pass=$((run_pass + 1)) ;;
+        SKIP) : ;;
+        UPASS) run_fail=$((run_fail + 1)); failed_evals="$failed_evals $eval_id" ;;
         FAIL) run_fail=$((run_fail + 1)); failed_evals="$failed_evals $eval_id" ;;
         TIMEOUT) run_timeout=$((run_timeout + 1)); failed_evals="$failed_evals $eval_id" ;;
       esac
 
       # Update per-eval tracking
-      if [ "$status" = "PASS" ]; then
+      if [ "$status" = "PASS" ] || [ "$status" = "XFAIL" ] || [ "$status" = "SKIP" ]; then
         cur=$(cat "$TMPDIR_STATS/pass_$eval_id" 2>/dev/null || echo 0)
         echo $((cur + 1)) > "$TMPDIR_STATS/pass_$eval_id"
       else
@@ -767,6 +788,15 @@ if [ "$ANALYZE_ALL" = true ]; then
 
       if echo "$last_line" | grep -q "^PASS:"; then
         run_pass=$((run_pass + 1))
+      elif echo "$last_line" | grep -q "^XFAIL:"; then
+        run_pass=$((run_pass + 1))
+      elif echo "$last_line" | grep -q "^SKIP:"; then
+        : # neutral — not counted as pass or fail
+      elif echo "$last_line" | grep -q "^UPASS:"; then
+        run_fail=$((run_fail + 1))
+        failed_evals="${failed_evals}${eval_id},"
+        EVAL_FAILURE_COUNT[$eval_id]=$((${EVAL_FAILURE_COUNT[$eval_id]:-0} + 1))
+        EVAL_FAILURE_DIRS[$eval_id]="${EVAL_FAILURE_DIRS[$eval_id]} $run_dir/$filename"
       elif echo "$last_line" | grep -q "^TIMEOUT:"; then
         run_timeout=$((run_timeout + 1))
         failed_evals="${failed_evals}${eval_id},"
@@ -968,6 +998,9 @@ FAILURE_PATTERNS=(
 TOTAL_PASS=0
 TOTAL_FAIL=0
 TOTAL_TIMEOUT=0
+TOTAL_XFAIL=0
+TOTAL_UPASS=0
+TOTAL_SKIP=0
 TOTAL_DURATION=0
 
 echo -e "${BLUE}Analyzing log files...${NC}"
@@ -1010,6 +1043,27 @@ for log_file in "$RESULTS_DIR"/*.log; do
     EVAL_STATUS[$eval_id]="PASS"
     EVAL_DURATION[$eval_id]=$duration
     TOTAL_PASS=$((TOTAL_PASS + 1))
+    TOTAL_DURATION=$((TOTAL_DURATION + duration))
+  elif echo "$last_line" | grep -q "^XFAIL:"; then
+    # Anchored EXPECTED-FAIL eval failed as expected — counts as a green result.
+    duration=$(echo "$last_line" | cut -d':' -f2)
+    EVAL_STATUS[$eval_id]="XFAIL"
+    EVAL_DURATION[$eval_id]=$duration
+    TOTAL_XFAIL=$((TOTAL_XFAIL + 1))
+    TOTAL_DURATION=$((TOTAL_DURATION + duration))
+  elif echo "$last_line" | grep -q "^UPASS:"; then
+    # Anchored EXPECTED-FAIL eval unexpectedly passed — an anomaly, counts as red.
+    duration=$(echo "$last_line" | cut -d':' -f2)
+    EVAL_STATUS[$eval_id]="UPASS"
+    EVAL_DURATION[$eval_id]=$duration
+    TOTAL_UPASS=$((TOTAL_UPASS + 1))
+    TOTAL_DURATION=$((TOTAL_DURATION + duration))
+  elif echo "$last_line" | grep -q "^SKIP:"; then
+    # exit-77 sentinel — intentionally not run; excluded from pass/fail totals.
+    duration=$(echo "$last_line" | cut -d':' -f2)
+    EVAL_STATUS[$eval_id]="SKIP"
+    EVAL_DURATION[$eval_id]=$duration
+    TOTAL_SKIP=$((TOTAL_SKIP + 1))
     TOTAL_DURATION=$((TOTAL_DURATION + duration))
   elif echo "$last_line" | grep -q "^TIMEOUT:"; then
     duration=$(echo "$last_line" | cut -d':' -f2)
@@ -1119,6 +1173,15 @@ for eval_id in $ALL_EVAL_IDS; do
       PASS)
         status_display="${GREEN}✅ PASS${NC}   "
         ;;
+      XFAIL)
+        status_display="${GREEN}✅ XFAIL${NC}  "
+        ;;
+      UPASS)
+        status_display="${RED}⚠️  UPASS${NC}  "
+        ;;
+      SKIP)
+        status_display="${YELLOW}⏭️  SKIP${NC}   "
+        ;;
       FAIL)
         status_display="${RED}❌ FAIL${NC}   "
         ;;
@@ -1175,10 +1238,10 @@ done
 
 echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╣${NC}"
 
-# Calculate percentages
-TOTAL_TESTS=$((TOTAL_PASS + TOTAL_FAIL + TOTAL_TIMEOUT))
+# Calculate percentages (SKIP is neutral — excluded; XFAIL counts as a pass; UPASS as a fail)
+TOTAL_TESTS=$((TOTAL_PASS + TOTAL_XFAIL + TOTAL_FAIL + TOTAL_UPASS + TOTAL_TIMEOUT))
 if [ $TOTAL_TESTS -gt 0 ]; then
-  PASS_PCT=$((TOTAL_PASS * 100 / TOTAL_TESTS))
+  PASS_PCT=$(( (TOTAL_PASS + TOTAL_XFAIL) * 100 / TOTAL_TESTS ))
 else
   PASS_PCT=0
 fi
@@ -1192,21 +1255,21 @@ else
   total_duration_str="${minutes}m ${seconds}s"
 fi
 
-echo -e "║ ${GREEN}✅ PASSED:${NC} $(printf "%3d" $TOTAL_PASS)  ${RED}❌ FAILED:${NC} $(printf "%3d" $TOTAL_FAIL)  ${YELLOW}⏱️  TIMEOUT:${NC} $(printf "%3d" $TOTAL_TIMEOUT)  │ 📊 Success Rate: ${PASS_PCT}%  │ ⏱️  Total: $(printf "%-104s" "$total_duration_str") ║"
+echo -e "║ ${GREEN}✅ PASSED:${NC} $(printf "%3d" $TOTAL_PASS)  ${GREEN}✅ XFAIL:${NC} $(printf "%3d" $TOTAL_XFAIL)  ${RED}❌ FAILED:${NC} $(printf "%3d" $TOTAL_FAIL)  ${RED}⚠️  UPASS:${NC} $(printf "%3d" $TOTAL_UPASS)  ${YELLOW}⏱️  TIMEOUT:${NC} $(printf "%3d" $TOTAL_TIMEOUT)  ${YELLOW}⏭️  SKIP:${NC} $(printf "%3d" $TOTAL_SKIP)  │ 📊 Success Rate: ${PASS_PCT}%  │ ⏱️  Total: $(printf "%-30s" "$total_duration_str") ║"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# Show failure details if any
-if [ $TOTAL_FAIL -gt 0 ] || [ $TOTAL_TIMEOUT -gt 0 ]; then
+# Show failure details if any (UPASS is an anomaly and belongs here too; XFAIL/SKIP do not)
+if [ $TOTAL_FAIL -gt 0 ] || [ $TOTAL_TIMEOUT -gt 0 ] || [ $TOTAL_UPASS -gt 0 ]; then
   echo ""
   echo -e "${CYAN}╔═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗${NC}"
   echo -e "${CYAN}║                                                          FAILURE DETAILS                                                                                    ║${NC}"
   echo -e "${CYAN}╚═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝${NC}"
   echo ""
-  
+
   for eval_id in $ALL_EVAL_IDS; do
     status="${EVAL_STATUS[$eval_id]}"
-    if [ "$status" = "FAIL" ] || [ "$status" = "TIMEOUT" ] || [ "$status" = "UNKNOWN" ]; then
+    if [ "$status" = "FAIL" ] || [ "$status" = "TIMEOUT" ] || [ "$status" = "UNKNOWN" ] || [ "$status" = "UPASS" ]; then
       log_file=$(ls $RESULTS_DIR/${eval_id}_*.log 2>/dev/null | head -1)
       if [ -n "$log_file" ]; then
         eval_name=$(basename "$log_file" | cut -d'_' -f2)
@@ -1231,8 +1294,8 @@ if [ $TOTAL_FAIL -gt 0 ] || [ $TOTAL_TIMEOUT -gt 0 ]; then
   done
 fi
 
-# Exit with appropriate code
-if [ $TOTAL_FAIL -gt 0 ] || [ $TOTAL_TIMEOUT -gt 0 ]; then
+# Exit with appropriate code (UPASS is an anomaly and fails the analyzer too)
+if [ $TOTAL_FAIL -gt 0 ] || [ $TOTAL_TIMEOUT -gt 0 ] || [ $TOTAL_UPASS -gt 0 ]; then
   exit 1
 else
   exit 0

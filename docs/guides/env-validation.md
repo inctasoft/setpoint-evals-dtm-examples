@@ -96,7 +96,7 @@ This document defines **required environment variables** for different scenarios
 
 | Eval                         | Additional Requirements                               |
 | ---------------------------- | ----------------------------------------------------- |
-| **01-happy-path**            | Standard delays working                               |
+| **SE-01-happy-path**            | Standard delays working                               |
 | **03-dlq-permanent-failure** | SQS DLQ configured, max retries = 3                   |
 | **04-custom-ack-payloads**   | `dev-ack-simulator` container running                 |
 
@@ -394,7 +394,7 @@ Environment not properly configured for E2E testing
 
 # Fix reported issues
 # Then re-run eval
-./setpoint-evals/01-retry-transient-failure/test.sh
+./setpoint-evals/SE-01-retry-transient-failure/test.sh
 ```
 
 ---
@@ -435,7 +435,7 @@ ENABLE_DEV_ACK_SIMULATOR=false ./scripts/validate-env.sh --scenario e2e-tests
 1. **Run validation before every E2E test**
 
    ```bash
-   ./scripts/validate-env.sh && ./setpoint-evals/01-retry-transient-failure/test.sh
+   ./scripts/validate-env.sh && ./setpoint-evals/SE-01-retry-transient-failure/test.sh
    ```
 
 2. **Keep `.env.*.example` files updated**

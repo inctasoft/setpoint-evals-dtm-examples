@@ -6,7 +6,7 @@
  * Verifies that steps transition through WAITING_FOR_ACK and that the
  * orchestrator waits for all acknowledgements before completing the job.
  *
- * Mirrors: setpoint-evals/04-ack-delays/test.sh
+ * Mirrors: setpoint-evals/SE-04-ack-delays/test.sh
  *
  * Expected duration: ~8s
  * Expected outcome: Job COMPLETES after all acks received

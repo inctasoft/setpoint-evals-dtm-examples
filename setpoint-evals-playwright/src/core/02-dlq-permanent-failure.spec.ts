@@ -5,7 +5,7 @@
  * attempts (failOnAttempts: [1,2,3,4,5,6,7] — always fails). After SQS
  * maxReceiveCount (3), the message is routed to DLQ and the step is marked FAILED.
  *
- * Mirrors: setpoint-evals/02-dlq-permanent-failure/test.sh
+ * Mirrors: setpoint-evals/SE-02-dlq-permanent-failure/test.sh
  *
  * Architecture: Orchestrator does NOT re-delegate. SQS handles all retries.
  * Expected duration: ~120s (SQS visibility timeouts × 3 attempts)

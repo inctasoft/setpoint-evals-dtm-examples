@@ -1,5 +1,11 @@
 # 🧪 Eval 02: DLQ Permanent Failure
 
+## Setpoint Eval Metadata
+
+**Timeout**: 335s
+**Isolation**: parallel-safe
+**Category**: stability
+
 ## 📋 Overview
 
 **Category**: Stability & Reliability  

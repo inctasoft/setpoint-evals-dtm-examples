@@ -251,7 +251,7 @@ cd setpoint-evals
 - **Controller:** `services/orchestrator/src/ingestion/ingestion.controller.ts`
 - **Payload Types:** `packages/database/src/entities/job.entity.ts`
 - **Worker Utils:** `packages/lambda-worker-utils/src/simulation.ts`
-- **Test:** `setpoint-evals/03-deduplication/test.sh`
+- **Test:** `setpoint-evals/SE-03-deduplication/test.sh`
 - **Runner:** `setpoint-evals/run-all.sh`
 
 ---

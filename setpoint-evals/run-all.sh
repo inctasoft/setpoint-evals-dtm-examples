@@ -1,18 +1,27 @@
 #!/bin/bash
 
 ################################################################################
-# Core SE Runner
+# SE Runner (SE Conventions v2 — server-config/docs/setpoint-eval-conventions.md)
 #
-# Runs all core System Test Evaluations in parallel (default) or in-band
-# (sequential) mode.
+# Runs all Setpoint Evals under a directory in parallel (default) or in-band
+# (sequential) mode. SEs are discovered from the filesystem (any SE-<NN>-<name>/
+# test.sh, zero-padded numeric order) — no hand-maintained lists. Per-SE
+# behavior (timeout, parallel-safe vs destructive isolation, category, XFAIL
+# anchoring, --quick opt-in) comes from that SE's README.md metadata; a missing
+# README (pre-v2 legacy estate) degrades to defaults rather than erroring.
 #
 # Parallel Mode (default):
-#   - Phase 1: Runs safe evals concurrently
-#   - Phase 2: Runs isolated evals sequentially (05, 06, 07, 08, 09)
+#   - Phase 1: Runs parallel-safe evals concurrently
+#   - Phase 2: Runs destructive evals sequentially (isolation: destructive in the README)
 #   - Reason: Phase 2 evals use global maintenance tasks, are destructive, or need isolated resources
 #
 # In-Band Mode:
 #   - Runs all evals sequentially (safe for all scenarios)
+#
+# Verdict markers (last line of each per-eval log, `VERDICT:<durationSeconds>`):
+#   PASS · FAIL · TIMEOUT · SKIP (test.sh exited 77 — the se_skip sentinel) ·
+#   XFAIL (README anchored `**Expected outcome:** EXPECTED-FAIL` and it failed — green) ·
+#   UPASS (anchored EXPECTED-FAIL but it PASSED — anomaly, red, fails the run)
 #
 # Dynamic Lambda Pre-Warming:
 #   - Automatically scales Lambda workers based on eval count
@@ -27,7 +36,7 @@
 #   ./setpoint-evals/run-all.sh [--parallel|--in-band] [options]
 #
 # Modes:
-#   --parallel         Run safe evals in parallel, destructive sequentially (default)
+#   --parallel         Run parallel-safe evals concurrently, destructive sequentially (default)
 #   --in-band          Run all evals sequentially
 #
 # Options:
@@ -35,8 +44,14 @@
 #   --skip-checks           Skip preflight checks (still warms up Lambdas)
 #   --skip-warmup           Skip Lambda pre-warming (saves time if already warm)
 #   --purge-between         Purge between each eval (in-band mode only)
-#   --category <cat>        Run specific category (stability/feature/scalability/maintenance/all)
-#   --eval <id>             Run specific eval (e.g., 01 or 01-retry-transient-failure)
+#   --category <cat>        Run only SEs whose README declares this **Category** (default: all)
+#   --eval <id>, --se <id>  Run specific eval(s) (e.g., 01 or SE-01-retry-transient-failure);
+#                           repeatable
+#   --dir <path>            Discover/run SEs under this directory instead of this script's own
+#                           (lets a workflow suite's run-all.sh delegate to this SAME runner)
+#   --list                  Print the discovered execution order and exit (runs nothing)
+#   --quick                 Export SE_QUICK=1 — SEs that opt in via README `**Quick**: yes`
+#                           may shorten their internal waits
 #   --worker-instances=N    Lambda instances per worker type per eval (default: 3)
 #   --add-timeout=N         Add N seconds to the timeout of each eval (default: 0)
 #   --max-parallel=N        Max concurrent evals in parallel mode (default: 6, 0=unlimited)
@@ -75,6 +90,11 @@ ALL_WORKFLOWS=false
 WORKER_INSTANCES_PER_EVAL=3  # Default: 3 instances per worker type per eval
 MAX_PARALLEL=6  # Default: max 6 concurrent evals in parallel mode (0=unlimited)
 export ADDITIONAL_TIMEOUT=0  # Default: 0 additional seconds (Exported globally)
+EVAL_DIR="$SCRIPT_DIR"  # Directory to auto-discover SE-*/test.sh in (SE Conventions v2).
+                        # Overridable via --dir so a workflow suite's run-all.sh can delegate
+                        # to THIS runner instead of forking its own copy.
+LIST_ONLY=false
+export SE_QUICK=0      # --quick exports SE_QUICK=1; SEs may opt in to shortened waits
 
 # Result Arrays (Associative to handle "08", "09" string keys correctly)
 declare -A RESULTS
@@ -115,12 +135,24 @@ while [[ $# -gt 0 ]]; do
       CATEGORY="$2"
       shift 2
       ;;
-    --eval)
+    --eval|--se)
       shift
       while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
         SPECIFIC_EVALS+=("$1")
         shift
       done
+      ;;
+    --dir)
+      EVAL_DIR="$(cd "$2" && pwd)"
+      shift 2
+      ;;
+    --list)
+      LIST_ONLY=true
+      shift
+      ;;
+    --quick)
+      export SE_QUICK=1
+      shift
       ;;
     --skip)
       shift
@@ -162,7 +194,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --help)
-      sed -n '3,45p' "$0"
+      sed -n '3,61p' "$0"
       exit 0
       ;;
     *)
@@ -173,8 +205,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Setup results directory based on mode
-RESULTS_DIR="$SCRIPT_DIR/.results/$MODE/$TIMESTAMP"
+# Setup results directory based on mode — lives under the SUITE being scanned (EVAL_DIR),
+# not always the core setpoint-evals/ dir, so a delegated workflow suite gets its own .results/.
+RESULTS_DIR="$EVAL_DIR/.results/$MODE/$TIMESTAMP"
 mkdir -p "$RESULTS_DIR"
 
 # Redirect all output to a log file in addition to stdout
@@ -184,73 +217,116 @@ exec > >(tee -a "$RESULTS_DIR/run.log") 2>&1
 source "$SCRIPT_DIR/shared/helpers.sh"
 
 ################################################################################
-# Eval Definitions (moved up to calculate count before preflight)
+# Eval Definitions — filesystem autodiscovery (SE Conventions v2)
 ################################################################################
+# Any SE-<NN>-<name>/test.sh under EVAL_DIR, zero-padded numeric order. No hand-maintained
+# lists. A "00-template" dir (if present) never matches the SE-* glob, so it's naturally
+# excluded from discovery.
 
-# ALL evals - 13 core SEs
-ALL_EVALS=(
-  # === RECOVERY (stuck state detection & auto-fix) ===
-  "01:01-retry-transient-failure"
-  "02:02-dlq-permanent-failure"
-  "03:03-deduplication"
-  "04:04-ack-delays"
-  "05:05-concurrent-jobs"
-  "06:06-stuck-in-progress-detection"
-  "07:07-stuck-ack-recovery"
-  "08:08-health-metrics"
-  "09:09-orphaned-job-recovery"
-  "10:10-stuck-waiting-for-children-recovery"
-  "11:11-stuck-delegated-recovery"
-  "12:12-stuck-pending-recovery"
-  "13:13-in-progress-auto-timeout"
-)
+ALL_EVALS=()
+while IFS= read -r -d '' se_path; do
+  se_name="$(basename "$se_path")"
+  if [[ "$se_name" =~ ^SE-([0-9]+)-(.+)$ ]] && [ -f "$se_path/test.sh" ]; then
+    ALL_EVALS+=("${BASH_REMATCH[1]}:${se_name}")
+  fi
+done < <(find "$EVAL_DIR" -maxdepth 1 -mindepth 1 -type d -name 'SE-*' -print0 | sort -z -V)
 
-# SAFE evals (can run in parallel without interfering)
-SAFE_EVALS=(
-  "01:01-retry-transient-failure"
-  "02:02-dlq-permanent-failure"
-  "03:03-deduplication"
-  "04:04-ack-delays"
-  "10:10-stuck-waiting-for-children-recovery"
-  "11:11-stuck-delegated-recovery"
-  "12:12-stuck-pending-recovery"
-  "13:13-in-progress-auto-timeout"
-)
+if [ "$LIST_ONLY" = true ]; then
+  echo "Discovered SEs in $EVAL_DIR:"
+  for eval_spec in "${ALL_EVALS[@]}"; do
+    IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+    echo "  [$eval_id] $eval_dir"
+  done
+  exit 0
+fi
 
-# SEQUENTIAL evals (must run isolated - cannot run in parallel with ANY other evals)
-DESTRUCTIVE_EVALS=(
-  "05:05-concurrent-jobs"
-  "06:06-stuck-in-progress-detection"
-  "07:07-stuck-ack-recovery"
-  "08:08-health-metrics"
-  "09:09-orphaned-job-recovery"
-)
+################################################################################
+# Per-SE README metadata (v2 contract: server-config/docs/setpoint-eval-conventions.md)
+################################################################################
+# '**Timeout**: <n>s' (default 120s) · '**Isolation**: parallel-safe|destructive'
+# (default parallel-safe) · '**Category**: <cat>' (default uncategorized) ·
+# '**Expected outcome:** EXPECTED-FAIL' (XFAIL anchor) · '**Quick**: yes' (opts into
+# SE_QUICK). A missing README is the pre-v2 legacy/grandfathered case — every reader
+# below degrades to its default rather than erroring, and every grep is `|| true`-guarded
+# so a non-match can never trip `set -e`.
 
-# Category arrays (for --category filter)
-STABILITY_EVALS=(
-  "01:01-retry-transient-failure"
-  "02:02-dlq-permanent-failure"
-  "04:04-ack-delays"
-)
+se_meta_raw() {
+  # $1 = SE dir name, $2 = bold-key WITHOUT trailing colon (e.g. "Timeout")
+  local readme="$EVAL_DIR/$1/README.md"
+  [ -f "$readme" ] || { printf ''; return 0; }
+  grep -m1 -E "\*\*${2}\*\*:" "$readme" 2>/dev/null || true
+}
 
-FEATURE_EVALS=(
-  "03:03-deduplication"
-)
+se_timeout() {
+  local raw val
+  raw="$(se_meta_raw "$1" "Timeout")"
+  val="$(printf '%s' "$raw" | sed -E 's/.*\*\*Timeout\*\*:[[:space:]]*([0-9]+)s?.*/\1/')"
+  if [ -n "$val" ] && [[ "$val" =~ ^[0-9]+$ ]]; then printf '%s' "$val"; else printf '120'; fi
+}
 
-SCALABILITY_EVALS=(
-  "05:05-concurrent-jobs"
-)
+se_isolation() {
+  local raw val
+  raw="$(se_meta_raw "$1" "Isolation")"
+  val="$(printf '%s' "$raw" | sed -E 's/.*\*\*Isolation\*\*:[[:space:]]*([A-Za-z-]+).*/\1/')"
+  if [ "$val" = "destructive" ]; then printf 'destructive'; else printf 'parallel-safe'; fi
+}
 
-MAINTENANCE_EVALS=(
-  "06:06-stuck-in-progress-detection"
-  "07:07-stuck-ack-recovery"
-  "08:08-health-metrics"
-  "09:09-orphaned-job-recovery"
-  "10:10-stuck-waiting-for-children-recovery"
-  "11:11-stuck-delegated-recovery"
-  "12:12-stuck-pending-recovery"
-  "13:13-in-progress-auto-timeout"
-)
+se_category() {
+  local raw val
+  raw="$(se_meta_raw "$1" "Category")"
+  val="$(printf '%s' "$raw" | sed -E 's/.*\*\*Category\*\*:[[:space:]]*([A-Za-z0-9_-]+).*/\1/')"
+  if [ -n "$val" ]; then printf '%s' "$val"; else printf 'uncategorized'; fi
+}
+
+se_is_xfail_anchor() {
+  local readme="$EVAL_DIR/$1/README.md"
+  [ -f "$readme" ] || return 1
+  grep -qE '\*\*Expected outcome:\*\*[[:space:]]*EXPECTED-FAIL' "$readme" 2>/dev/null
+}
+
+# Verdict from a test.sh exit code + whether the SE is anchored EXPECTED-FAIL.
+# 77 => SKIP (se_skip sentinel) · 124 => TIMEOUT (from the `timeout` wrapper) ·
+# 0 => PASS, or UPASS if XFAIL-anchored (unexpected pass = anomaly) ·
+# nonzero => FAIL, or XFAIL if XFAIL-anchored (expected fail = green).
+se_verdict_from_exit() {
+  local ec="$1" xfail="$2"
+  if [ "$ec" -eq 77 ]; then echo "SKIP"; return; fi
+  if [ "$ec" -eq 124 ]; then echo "TIMEOUT"; return; fi
+  if [ "$ec" -eq 0 ]; then
+    if [ "$xfail" = "1" ]; then echo "UPASS"; else echo "PASS"; fi
+  else
+    if [ "$xfail" = "1" ]; then echo "XFAIL"; else echo "FAIL"; fi
+  fi
+}
+
+# "Green" verdicts (no notes/forensics needed): PASS, legacy PASSED, XFAIL (expected fail),
+# SKIP (intentionally not run). Everything else (FAIL/TIMEOUT/UPASS/ERROR) is a problem.
+se_is_ok_verdict() {
+  case "$1" in
+    PASS|PASSED|XFAIL|SKIP) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+declare -A PARALLEL_TIMEOUTS
+declare -A ISOLATION_MAP
+declare -A CATEGORY_MAP
+declare -A XFAIL_ANCHOR
+
+SAFE_EVALS=()
+DESTRUCTIVE_EVALS=()
+for eval_spec in "${ALL_EVALS[@]}"; do
+  IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
+  PARALLEL_TIMEOUTS[$eval_id]="$(se_timeout "$eval_dir")"
+  ISOLATION_MAP[$eval_id]="$(se_isolation "$eval_dir")"
+  CATEGORY_MAP[$eval_id]="$(se_category "$eval_dir")"
+  if se_is_xfail_anchor "$eval_dir"; then XFAIL_ANCHOR[$eval_id]=1; else XFAIL_ANCHOR[$eval_id]=0; fi
+  if [ "${ISOLATION_MAP[$eval_id]}" = "destructive" ]; then
+    DESTRUCTIVE_EVALS+=("$eval_spec")
+  else
+    SAFE_EVALS+=("$eval_spec")
+  fi
+done
 
 ################################################################################
 # Select Evals to Run (moved up to calculate count before preflight)
@@ -289,18 +365,22 @@ if [ ${#SPECIFIC_EVALS[@]} -gt 0 ]; then
   done
 elif [ "$CATEGORY" == "all" ]; then
   EVALS_TO_RUN=("${ALL_EVALS[@]}")
-elif [ "$CATEGORY" == "stability" ]; then
-  EVALS_TO_RUN=("${STABILITY_EVALS[@]}")
-elif [ "$CATEGORY" == "feature" ]; then
-  EVALS_TO_RUN=("${FEATURE_EVALS[@]}")
-elif [ "$CATEGORY" == "scalability" ]; then
-  EVALS_TO_RUN=("${SCALABILITY_EVALS[@]}")
-elif [ "$CATEGORY" == "maintenance" ]; then
-  EVALS_TO_RUN=("${MAINTENANCE_EVALS[@]}")
 else
-  echo -e "${RED}Unknown category: ${CATEGORY}${NC}"
-  echo "Available categories: all, stability, feature, scalability, maintenance"
-  exit 1
+  for eval_spec in "${ALL_EVALS[@]}"; do
+    IFS=':' read -r eval_id _ <<< "$eval_spec"
+    if [ "${CATEGORY_MAP[$eval_id]:-uncategorized}" == "$CATEGORY" ]; then
+      EVALS_TO_RUN+=("$eval_spec")
+    fi
+  done
+  if [ ${#EVALS_TO_RUN[@]} -eq 0 ]; then
+    echo -e "${RED}No evals found in category: ${CATEGORY}${NC}"
+    echo "Available categories (from discovered SE READMEs):"
+    for eval_spec in "${ALL_EVALS[@]}"; do
+      IFS=':' read -r eval_id _ <<< "$eval_spec"
+      echo "  [$eval_id] ${CATEGORY_MAP[$eval_id]:-uncategorized}"
+    done
+    exit 1
+  fi
 fi
 
 # Filter out skipped evals
@@ -600,30 +680,6 @@ collect_failure_logs() {
 }
 
 ################################################################################
-# Parallel Timeouts for Evals
-################################################################################
-
-# Parallel timeouts for each eval
-# Note: Retry-based tests need longer timeouts (SQS Visibility Timeout = 30s)
-# With 30s visibility and 15s Lambda timeout, retries happen much faster!
-# We also add a buffer to account for poller intervals (200ms) and system jitter.
-declare -A PARALLEL_TIMEOUTS=(
-  ["01"]=185   # Retries
-  ["02"]=335   # Retries
-  ["03"]=95    # Deduplication
-  ["04"]=95    # Ack delays
-  ["05"]=125   # Concurrent
-  ["06"]=120   # Stuck in progress
-  ["07"]=95    # Stuck ack
-  ["08"]=150   # Health metrics
-  ["09"]=95    # Orphaned job
-  ["10"]=120   # Stuck waiting for children
-  ["11"]=120   # Stuck delegated
-  ["12"]=120   # Stuck pending
-  ["13"]=120   # In-progress auto-timeout
-)
-
-################################################################################
 # Purge System
 ################################################################################
 
@@ -740,6 +796,9 @@ if [ "$MODE" = "parallel" ]; then
   FAIL_COUNT=0
   TIMEOUT_COUNT=0
   ERROR_COUNT=0
+  XFAIL_COUNT=0
+  UPASS_COUNT=0
+  SKIP_COUNT=0
   TOTAL_DURATION=0
 
   #############################################################################
@@ -781,26 +840,19 @@ if [ "$MODE" = "parallel" ]; then
 
       (
         start_time=$(date +%s)
-        cd "$SCRIPT_DIR/$eval_dir"
-      # Pass ADDITIONAL_TIMEOUT to the test script via environment variable
-      # This allows the test script to adjust its internal timeouts/polls
-      export ADDITIONAL_TIMEOUT
+        cd "$EVAL_DIR/$eval_dir"
+        # Pass ADDITIONAL_TIMEOUT/SE_QUICK to the test script via environment variable
+        # This allows the test script to adjust its internal timeouts/polls
+        export ADDITIONAL_TIMEOUT SE_QUICK
 
-      if timeout "$timeout_val" ./test.sh > "$result_file" 2>&1; then
-          end_time=$(date +%s)
-          duration=$((end_time - start_time))
-          echo "PASS:$duration" >> "$result_file"
-        else
-          exit_code=$?
-          end_time=$(date +%s)
-          duration=$((end_time - start_time))
-
-          if [ $exit_code -eq 124 ]; then
-            echo "TIMEOUT:$duration" >> "$result_file"
-          else
-            echo "FAIL:$duration" >> "$result_file"
-          fi
-        fi
+        set +e
+        timeout "$timeout_val" ./test.sh > "$result_file" 2>&1
+        exit_code=$?
+        set -e
+        end_time=$(date +%s)
+        duration=$((end_time - start_time))
+        verdict="$(se_verdict_from_exit "$exit_code" "${XFAIL_ANCHOR[$eval_id]:-0}")"
+        echo "${verdict}:${duration}" >> "$result_file"
       ) &
 
       PIDS[$eval_id]=$!
@@ -852,7 +904,7 @@ if [ "$MODE" = "parallel" ]; then
                 fi
 
                 # Extract Notes (last failure message or relevant info)
-                if [ "${RESULTS[$eval_id]}" != "PASS" ] && [ "${RESULTS[$eval_id]}" != "PASSED" ]; then
+                if ! se_is_ok_verdict "${RESULTS[$eval_id]}"; then
                     # Try to find specific error message
                     error_msg=$(grep -i "error" "$result_file" | tail -n 1 | sed 's/.*Error: //')
                     if [ -z "$error_msg" ]; then
@@ -862,7 +914,7 @@ if [ "$MODE" = "parallel" ]; then
                 fi
 
                 # Collect forensics if failed
-                if [ "${RESULTS[$eval_id]}" != "PASS" ] && [ "${RESULTS[$eval_id]}" != "PASSED" ]; then
+                if ! se_is_ok_verdict "${RESULTS[$eval_id]}"; then
                     collect_failure_logs "$eval_id" "$job_id" "$RESULTS_DIR"
                 fi
               else
@@ -933,23 +985,27 @@ if [ "$MODE" = "parallel" ]; then
 
       log_info "Running [$eval_id] $eval_name..."
 
-      start_time=$(date +%s)
-      cd "$SCRIPT_DIR/$eval_dir"
+      base_timeout=${PARALLEL_TIMEOUTS[$eval_id]:-120}
+      timeout_val=$((base_timeout + ADDITIONAL_TIMEOUT))
 
-      if ./test.sh > "$result_file" 2>&1; then
-        end_time=$(date +%s)
-        duration=$((end_time - start_time))
-        echo "PASS:$duration" >> "$result_file"  # Append marker for analyze-results.sh
-        RESULTS[$eval_id]="PASS"
-        DURATIONS[$eval_id]=$duration
-        log_success "[$eval_id] PASSED (${duration}s)"
+      start_time=$(date +%s)
+      cd "$EVAL_DIR/$eval_dir"
+      export ADDITIONAL_TIMEOUT SE_QUICK
+
+      set +e
+      timeout "$timeout_val" ./test.sh > "$result_file" 2>&1
+      exit_code=$?
+      set -e
+      end_time=$(date +%s)
+      duration=$((end_time - start_time))
+      verdict="$(se_verdict_from_exit "$exit_code" "${XFAIL_ANCHOR[$eval_id]:-0}")"
+      echo "${verdict}:${duration}" >> "$result_file"  # Append marker for analyze-results.sh
+      RESULTS[$eval_id]="$verdict"
+      DURATIONS[$eval_id]=$duration
+      if [ "$verdict" = "PASS" ] || [ "$verdict" = "XFAIL" ] || [ "$verdict" = "SKIP" ]; then
+        log_success "[$eval_id] $verdict (${duration}s)"
       else
-        end_time=$(date +%s)
-        duration=$((end_time - start_time))
-        echo "FAIL:$duration" >> "$result_file"  # Append marker for analyze-results.sh
-        RESULTS[$eval_id]="FAIL"
-        DURATIONS[$eval_id]=$duration
-        log_error "[$eval_id] FAILED (${duration}s)"
+        log_error "[$eval_id] $verdict (${duration}s)"
       fi
 
       # Strip ANSI codes from log file
@@ -964,7 +1020,7 @@ if [ "$MODE" = "parallel" ]; then
       fi
 
       # Extract Notes
-      if [ "${RESULTS[$eval_id]}" != "PASS" ] && [ "${RESULTS[$eval_id]}" != "PASSED" ]; then
+      if ! se_is_ok_verdict "${RESULTS[$eval_id]}"; then
           error_msg=$(grep -i "error" "$result_file" | tail -n 1 | sed 's/.*Error: //')
           if [ -z "$error_msg" ]; then
                 error_msg=$(tail -n 1 "$result_file")
@@ -973,7 +1029,7 @@ if [ "$MODE" = "parallel" ]; then
       fi
 
       # Collect forensics if failed
-      if [ "${RESULTS[$eval_id]}" != "PASS" ] && [ "${RESULTS[$eval_id]}" != "PASSED" ]; then
+      if ! se_is_ok_verdict "${RESULTS[$eval_id]}"; then
           collect_failure_logs "$eval_id" "$job_id" "$RESULTS_DIR"
       fi
 
@@ -1014,6 +1070,15 @@ if [ "$MODE" = "parallel" ]; then
       PASS)
         PASS_COUNT=$((PASS_COUNT + 1))
         ;;
+      XFAIL)
+        XFAIL_COUNT=$((XFAIL_COUNT + 1))
+        ;;
+      UPASS)
+        UPASS_COUNT=$((UPASS_COUNT + 1))
+        ;;
+      SKIP)
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        ;;
       FAIL)
         FAIL_COUNT=$((FAIL_COUNT + 1))
         ;;
@@ -1037,6 +1102,10 @@ else
 
   PASS_COUNT=0
   FAIL_COUNT=0
+  TIMEOUT_COUNT=0
+  XFAIL_COUNT=0
+  UPASS_COUNT=0
+  SKIP_COUNT=0
   TOTAL_DURATION=0
 
   log_section "RUNNING EVALUATIONS"
@@ -1055,29 +1124,33 @@ else
 
     result_file="$RESULTS_DIR/${eval_id}_${eval_name}_${TIMESTAMP}.log"
 
+    base_timeout=${PARALLEL_TIMEOUTS[$eval_id]:-120}
+    timeout_val=$((base_timeout + ADDITIONAL_TIMEOUT))
+
     start_time=$(date +%s)
-    cd "$SCRIPT_DIR/$eval_dir"
+    cd "$EVAL_DIR/$eval_dir"
 
-    # Pass ADDITIONAL_TIMEOUT to the test script via environment variable
-    export ADDITIONAL_TIMEOUT
+    # Pass ADDITIONAL_TIMEOUT/SE_QUICK to the test script via environment variable
+    export ADDITIONAL_TIMEOUT SE_QUICK
 
-    if ./test.sh > "$result_file" 2>&1; then
-      end_time=$(date +%s)
-      duration=$((end_time - start_time))
-      RESULTS[$eval_id]="PASSED"
-      DURATIONS[$eval_id]=$duration
-      PASS_COUNT=$((PASS_COUNT + 1))
-      echo "PASS:$duration" >> "$result_file"
-      log_success "$eval_name completed in ${duration}s"
-    else
-      end_time=$(date +%s)
-      duration=$((end_time - start_time))
-      RESULTS[$eval_id]="FAILED"
-      DURATIONS[$eval_id]=$duration
-      FAIL_COUNT=$((FAIL_COUNT + 1))
-      echo "FAIL:$duration" >> "$result_file"
-      log_error "$eval_name failed after ${duration}s"
-    fi
+    set +e
+    timeout "$timeout_val" ./test.sh > "$result_file" 2>&1
+    exit_code=$?
+    set -e
+    end_time=$(date +%s)
+    duration=$((end_time - start_time))
+    verdict="$(se_verdict_from_exit "$exit_code" "${XFAIL_ANCHOR[$eval_id]:-0}")"
+    RESULTS[$eval_id]="$verdict"
+    DURATIONS[$eval_id]=$duration
+    echo "${verdict}:${duration}" >> "$result_file"
+    case "$verdict" in
+      PASS)  PASS_COUNT=$((PASS_COUNT + 1)); log_success "$eval_name completed in ${duration}s" ;;
+      XFAIL) XFAIL_COUNT=$((XFAIL_COUNT + 1)); log_success "$eval_name XFAIL (expected) in ${duration}s" ;;
+      SKIP)  SKIP_COUNT=$((SKIP_COUNT + 1)); log_warning "$eval_name SKIPPED after ${duration}s" ;;
+      UPASS) UPASS_COUNT=$((UPASS_COUNT + 1)); log_error "$eval_name UPASS (unexpected pass) after ${duration}s" ;;
+      TIMEOUT) TIMEOUT_COUNT=$((TIMEOUT_COUNT + 1)); log_error "$eval_name TIMED OUT after ${duration}s" ;;
+      FAIL)  FAIL_COUNT=$((FAIL_COUNT + 1)); log_error "$eval_name failed after ${duration}s" ;;
+    esac
 
     # Strip ANSI codes from log file
     temp_file=$(mktemp)
@@ -1097,12 +1170,17 @@ else
     fi
 
     # Extract Notes
-    if [ "${RESULTS[$eval_id]}" != "PASSED" ]; then
+    if ! se_is_ok_verdict "${RESULTS[$eval_id]}"; then
         error_msg=$(grep -i "error" "$result_file" | tail -n 1 | sed 's/.*Error: //')
         if [ -z "$error_msg" ]; then
               error_msg=$(tail -n 1 "$result_file")
         fi
         NOTES[$eval_id]="${error_msg:0:50}..."
+    fi
+
+    # Collect forensics if failed
+    if ! se_is_ok_verdict "${RESULTS[$eval_id]}"; then
+        collect_failure_logs "$eval_id" "$job_id" "$RESULTS_DIR"
     fi
 
     TOTAL_DURATION=$((TOTAL_DURATION + duration))
@@ -1160,6 +1238,12 @@ for eval_spec in "${EVALS_TO_RUN[@]}"; do
 
   if [ "$result" = "PASS" ] || [ "$result" = "PASSED" ]; then
     status="${GREEN}PASS${NC}"
+  elif [ "$result" = "XFAIL" ]; then
+    status="${GREEN}XFAIL${NC}"
+  elif [ "$result" = "SKIP" ]; then
+    status="${YELLOW}SKIP${NC}"
+  elif [ "$result" = "UPASS" ]; then
+    status="${RED}UPASS${NC}"
   elif [ "$result" = "TIMEOUT" ]; then
     status="${YELLOW}TIME${NC}"
   elif [ "$result" = "ERROR" ]; then
@@ -1174,7 +1258,7 @@ done
 
 echo "+===========================================================================================================================================================================+"
 
-echo -e "| ${GREEN}PASSED:${NC}  $(printf "%-3d" "${PASS_COUNT:-0}")    ${RED}FAILED:${NC}  $(printf "%-3d" "${FAIL_COUNT:-0}")    ${CYAN}TOTAL:${NC} $(printf "%4ds" "${TOTAL_DURATION:-0}")                                                                                                             |"
+echo -e "| ${GREEN}PASSED:${NC}  $(printf "%-3d" "${PASS_COUNT:-0}")    ${GREEN}XFAIL:${NC}  $(printf "%-3d" "${XFAIL_COUNT:-0}")    ${RED}FAILED:${NC}  $(printf "%-3d" "${FAIL_COUNT:-0}")    ${RED}UPASS:${NC}  $(printf "%-3d" "${UPASS_COUNT:-0}")    ${YELLOW}SKIP:${NC}  $(printf "%-3d" "${SKIP_COUNT:-0}")    ${CYAN}TOTAL:${NC} $(printf "%4ds" "${TOTAL_DURATION:-0}")                                                                                     |"
 
 echo "+===========================================================================================================================================================================+"
 
@@ -1206,7 +1290,10 @@ RESULTS_JSON="$RESULTS_DIR/results.json"
   echo "    \"passed\": ${PASS_COUNT:-0},"
   echo "    \"failed\": ${FAIL_COUNT:-0},"
   echo "    \"timedOut\": ${TIMEOUT_COUNT:-0},"
-  echo "    \"errors\": ${ERROR_COUNT:-0}"
+  echo "    \"errors\": ${ERROR_COUNT:-0},"
+  echo "    \"xfail\": ${XFAIL_COUNT:-0},"
+  echo "    \"upass\": ${UPASS_COUNT:-0},"
+  echo "    \"skipped\": ${SKIP_COUNT:-0}"
   echo "  },"
   echo "  \"evals\": ["
   json_first=true
@@ -1246,14 +1333,14 @@ fi
 # Display Failure Details
 ################################################################################
 
-if [ "${FAIL_COUNT:-0}" -gt 0 ] || [ "${TIMEOUT_COUNT:-0}" -gt 0 ] || [ "${ERROR_COUNT:-0}" -gt 0 ]; then
+if [ "${FAIL_COUNT:-0}" -gt 0 ] || [ "${TIMEOUT_COUNT:-0}" -gt 0 ] || [ "${ERROR_COUNT:-0}" -gt 0 ] || [ "${UPASS_COUNT:-0}" -gt 0 ]; then
   log_section "FAILURE DETAILS"
 
   for eval_spec in "${EVALS_TO_RUN[@]}"; do
     IFS=':' read -r eval_id eval_dir <<< "$eval_spec"
     result="${RESULTS[$eval_id]}"
 
-    if [ "$result" = "FAIL" ] || [ "$result" = "FAILED" ] || [ "$result" = "ERROR" ] || [ "$result" = "TIMEOUT" ]; then
+    if [ "$result" = "FAIL" ] || [ "$result" = "FAILED" ] || [ "$result" = "ERROR" ] || [ "$result" = "TIMEOUT" ] || [ "$result" = "UPASS" ]; then
       eval_name=$(basename "$eval_dir")
       result_file="$RESULTS_DIR/${eval_id}_${eval_name}_${TIMESTAMP}.log"
 
@@ -1277,11 +1364,15 @@ fi
 
 log_section "FINAL STATUS"
 
-if [ "${PASS_COUNT:-0}" -eq ${#EVALS_TO_RUN[@]} ]; then
-  log_success "ALL EVALUATIONS PASSED!"
+# A run is clean iff nothing FAILED/TIMED-OUT/ERRORED/UPASSED. PASS, XFAIL (expected fail,
+# anchored) and SKIP (exit-77 sentinel) are all "not a problem" outcomes.
+PROBLEM_COUNT=$(( ${FAIL_COUNT:-0} + ${TIMEOUT_COUNT:-0} + ${ERROR_COUNT:-0} + ${UPASS_COUNT:-0} ))
+
+if [ "$PROBLEM_COUNT" -eq 0 ]; then
+  log_success "ALL EVALUATIONS PASSED! (${PASS_COUNT:-0} pass, ${XFAIL_COUNT:-0} xfail, ${SKIP_COUNT:-0} skip)"
   log_info "Results saved to: $RESULTS_DIR"
   FINAL_EXIT_CODE=0
-elif [ "${FAIL_COUNT:-0}" -eq 0 ]; then
+elif [ "${FAIL_COUNT:-0}" -eq 0 ] && [ "${UPASS_COUNT:-0}" -eq 0 ]; then
   log_warning "SOME EVALUATIONS TIMED OUT OR HAD ERRORS"
   log_info "Review failure details above"
   log_info "Results saved to: $RESULTS_DIR"

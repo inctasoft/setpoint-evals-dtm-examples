@@ -2235,7 +2235,7 @@ Order
 
 **E2E Evaluations** (Living Documentation):
 
-- [SE 01: Retry Transient Failure](../../setpoint-evals/01-retry-transient-failure/README.md) - Basic retry flow
+- [SE 01: Retry Transient Failure](../../setpoint-evals/SE-01-retry-transient-failure/README.md) - Basic retry flow
 
 ---
 

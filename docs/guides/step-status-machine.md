@@ -141,7 +141,7 @@ PENDING → PROCESSING → COMPLETED
 - Maintenance tasks: `docs/guides/MAINTENANCE-TASKS.md`
 - WAITING_FOR_CHILDREN feature: `CHANGELOG/features/2026-02-05-waiting-for-children-status.md`
 - SE coverage: 4 maintenance SEs test recovery for each stuck state:
-  - SE 10: `setpoint-evals/10-stuck-waiting-for-children-recovery/` -- WAITING_FOR_CHILDREN recovery
-  - SE 11: `setpoint-evals/11-stuck-delegated-recovery/` -- DELEGATED re-delegation
-  - SE 12: `setpoint-evals/12-stuck-pending-recovery/` -- PENDING with satisfied deps
-  - SE 13: `setpoint-evals/13-in-progress-auto-timeout/` -- IN_PROGRESS auto-fail (sequential only)
+  - SE 10: `setpoint-evals/SE-10-stuck-waiting-for-children-recovery/` -- WAITING_FOR_CHILDREN recovery
+  - SE 11: `setpoint-evals/SE-11-stuck-delegated-recovery/` -- DELEGATED re-delegation
+  - SE 12: `setpoint-evals/SE-12-stuck-pending-recovery/` -- PENDING with satisfied deps
+  - SE 13: `setpoint-evals/SE-13-in-progress-auto-timeout/` -- IN_PROGRESS auto-fail (sequential only)
