@@ -520,20 +520,20 @@ graph TB
     end
 
     subgraph "Orchestrator - Callback Service"
-        CALLBACK_ENDPOINT[📥 POST /callback/progress<br/>Receive worker results]
+        CALLBACK_ENDPOINT[📥 POST /callback/step-progress<br/>Receive worker results]
         VALIDATE[✅ Validate<br/>jobId, stepId exist]
         UPDATE_STEP[💾 Update Step<br/>status, output, endedAt<br/>Clear error on success<br/>Add to execution_history]
     end
 
     subgraph "Decision Logic"
         CHECK_STEP_TYPE{Step Type?}
-        IS_VALIDATE[Validate Step<br/>ValidateCustomer<br/>ValidateOrder<br/>ValidateOrder]
-        IS_SUBMIT[Submit Step<br/>SubmitCustomer<br/>SubmitOrder<br/>SubmitOrder]
+        IS_VALIDATE[Validate Step<br/>ValidateCustomer<br/>ValidateProduct<br/>ValidateOrder]
+        IS_SUBMIT[Submit Step<br/>SubmitCustomer<br/>SubmitOrder<br/>Product has no submit step]
     end
 
     subgraph "Kafka Publishing"
         CHECK_ACK_REQUIRED{Requires<br/>Acknowledgement?}
-        PUBLISH_KAFKA[📢 Publish to Kafka<br/>dtm.jobs.completed<br/>dtm.jobs.completed<br/>dtm.jobs.completed]
+        PUBLISH_KAFKA[📢 Publish to Kafka<br/>order-processing.customer.completed<br/>order-processing.order.completed<br/>etc. — see workflow.config.ts CASCADES]
         SET_WAITING[⏸️ Set Step Status<br/>WAITING_FOR_ACK<br/>Record kafka_published_at]
     end
 
@@ -600,41 +600,40 @@ graph TB
   "status": "completed",
   "output": {
     "customer": {
-      "customer_id": 1000,
-      "forename": "John",
-      "surname": "Doe"
+      "customerId": 1000,
+      "firstName": "John",
+      "lastName": "Doe"
     }
   },
-  "metadata": {
-    "duration": 123,
-    "recordsProcessed": 1
-  }
+  "recordsProcessed": 1
 }
 ```
 
-**Kafka Completion Event Example**:
+**Kafka Completion Event Example** (`TransformedEvent`, published by `CascadePublishService`):
 
 ```json
 {
   "jobId": "abc-123-def-456",
   "stepId": "step-uuid-456",
-  "type": "customer",
-  "processedData": {
-    "targetCustomerId": "EXT-123456",
-    "firstName": "John",
-    "lastName": "Doe",
-    "email": "john.doe@example.com"
-  },
-  "metadata": {
-    "sourceSystem": "order-processing",
-    "submittedAt": "2025-11-20T10:30:00Z"
-  },
+  "tableName": "customer",
+  "recordCount": 1,
+  "transformedAt": "2026-07-15T10:30:00Z",
+  "eventTimestamp": "2026-07-15T10:30:00Z",
   "requiresAcknowledgement": true,
   "testOptions": {
     "SubmitCustomer": { "ackDelay": 5000 }
-  }
+  },
+  "submittedCustomers": [
+    {
+      "sourceCustomerId": 1000,
+      "fullName": "John Doe",
+      "emailAddress": "john.doe@example.com"
+    }
+  ]
 }
 ```
+
+`submittedCustomers` is the cascade's `outputDataKey` (from `CascadeConfig` in `workflow.config.ts`) — the key name is dynamic per cascade (`submittedOrders`, `submittedLineItems`, `submittedPayments`, `submittedShipments` for the others).
 
 **Database Updates**:
 
@@ -696,7 +695,7 @@ graph TB
         EXT_SYSTEM[🎯 External System<br/>Real System]
         EXT_CONSUME[📥 Consume Completion Event<br/>Process submitted data]
         EXT_VALIDATE[✅ Validate & Store<br/>Data quality checks]
-        EXT_ACK[📢 Publish Acknowledgement<br/>dtm.customer.ack<br/>dtm.order.ack<br/>dtm.order.ack]
+        EXT_ACK[📢 Publish Acknowledgement<br/>order-processing.customer.ack<br/>order-processing.order.ack<br/>plus lineItem, payment, shipment acks]
     end
 
     subgraph "Development Mode"
@@ -777,7 +776,6 @@ Note: `Product` is validate-only for this workflow — it has no submit step and
 {
   "testOptions": {
     "SubmitCustomer": { "ackDelay": 10000 },
-    "SubmitProduct": { "ackDelay": 8000 },
     "SubmitOrder": { "ackDelay": 5000 }
   }
 }
@@ -820,11 +818,10 @@ WHERE job_id = 'your-job-id'
 **Expected Output**:
 
 ```
-step_value          | status    | ack_wait_seconds | ack_metadata
---------------------+-----------+------------------+--------------
-SubmitCustomer   | completed | 10.234          | {"source": "dev-simulator", "simulatedDelay": 10000}
-SubmitOrder | completed | 8.105           | {"source": "dev-simulator", "simulatedDelay": 8000}
-SubmitOrder     | completed | 5.023           | {"source": "dev-simulator", "simulatedDelay": 5000}
+step_value       | status    | ack_wait_seconds | ack_metadata
+-----------------+-----------+------------------+--------------
+SubmitCustomer   | completed | 10.234           | {"source": "dev-simulator", "simulatedDelay": 10000}
+SubmitOrder      | completed | 5.023            | {"source": "dev-simulator", "simulatedDelay": 5000}
 ```
 
 **Previous**: [← Callback & Event Publishing](#5-callback--event-publishing) | **Next**: [Cascade Publishing & FK Injection →](#61-cascade-publishing--fk-injection)
@@ -901,35 +898,35 @@ sequenceDiagram
     K->>O: Job COMPLETED
 ```
 
-**FK Injection Example**:
+**FK Injection Example** (real `fkExtractor` functions from `workflow.config.ts`):
 
-When publishing Product after Customer ack:
+When publishing Order after Customer ack — `order` cascade's `fkExtractor: ({ customer }) => ({ ext_customer_id: customer?.externalId })`:
 
 ```json
 {
   "jobId": "abc-123",
-  "stepId": "product-step-456",
-  "tableName": "product",
-  "processedProducts": [{
-    "product_id": 1001,
-    "targetCustomerId": "target-customer-789"  // ← Injected from Customer ack
-  }],
-  "requiresAcknowledgement": true
+  "stepId": "order-step-456",
+  "tableName": "order",
+  "requiresAcknowledgement": true,
+  "submittedOrders": [{
+    "sourceOrderId": 100001,
+    "ext_customer_id": "target-customer-789"
+  }]
 }
 ```
 
-When publishing Orders after Product ack:
+When publishing Payment (or Shipment/LineItem) after Order ack — `payment` cascade's `fkExtractor: ({ order }) => ({ ext_order_id: order?.externalId })`:
 
 ```json
 {
   "jobId": "abc-123",
-  "stepId": "orders-step-789",
-  "tableName": "orders",
-  "processedOrders": [{
-    "order_id": 100001,
-    "targetProductId": "target-product-456"  // ← Injected from Product ack
-  }],
-  "requiresAcknowledgement": true
+  "stepId": "payment-step-789",
+  "tableName": "payment",
+  "requiresAcknowledgement": true,
+  "submittedPayments": [{
+    "sourcePaymentId": 5001,
+    "ext_order_id": "target-order-456"
+  }]
 }
 ```
 
@@ -961,11 +958,11 @@ graph LR
 
     CREATE[💾 Create Job<br/>6 steps created<br/>status: PENDING]
 
-    PHASE1[⚡ Phase 1 PARALLEL<br/>ValidateCustomer<br/>ValidateOrder<br/>ValidateOrder]
+    PHASE1[⚡ Phase 1 PARALLEL<br/>ValidateCustomer<br/>ValidateProduct<br/>ValidateOrder depends on ValidateCustomer]
 
-    PHASE2[⚡ Phase 2 PARALLEL<br/>SubmitCustomer<br/>SubmitOrder<br/>SubmitOrder]
+    PHASE2[⚡ Phase 2<br/>SubmitCustomer<br/>then SubmitOrder once SubmitCustomer acked]
 
-    CASCADE[📢 Phase 3 CASCADE<br/>Publish Customer → ack<br/>Publish Product → ack<br/>Publish Orders → ack]
+    CASCADE[📢 Phase 3 CASCADE<br/>Publish Customer → ack<br/>Publish Order → ack<br/>Product never cascades]
 
     COMPLETE[✅ Job COMPLETED<br/>All 6 steps done<br/>FKs injected]
 
@@ -1013,19 +1010,18 @@ Example configuration:
     "ValidateProduct": { "simDelay": 6000 },
     "ValidateOrder": { "simDelay": 5000 },
     "SubmitCustomer": { "simDelay": 8000, "ackDelay": 5000 },
-    "SubmitProduct": { "simDelay": 4000, "ackDelay": 3000 },
     "SubmitOrder": { "simDelay": 3000, "ackDelay": 2000 }
   }
 }
 ```
 
-| Phase     | Steps                        | Duration | Notes                          |
-| --------- | ---------------------------- | -------- | ------------------------------ |
-| Entry     | Deduplication + Job Creation | ~100ms   | Not affected by delays         |
-| Phase 1   | Validate (parallel)           | **10s**  | max(10s, 6s, 5s) = 10s         |
-| Phase 2   | Submit (parallel)         | **8s**   | max(8s, 4s, 3s) = 8s           |
-| Phase 3   | Cascade Publish + Acks       | **10s**  | Sequential: 5s + 3s + 2s = 10s |
-| **Total** | -                            | **~28s** | Demo/testing mode              |
+| Phase     | Steps                             | Duration | Notes                                                       |
+| --------- | ---------------------------------- | -------- | ------------------------------------------------------------ |
+| Entry     | Deduplication + Job Creation       | ~100ms   | Not affected by delays                                       |
+| Phase 1   | Validate (parallel)                | **10s**  | max(10s, 6s) — ValidateOrder waits on ValidateCustomer        |
+| Phase 2   | SubmitCustomer + ack                | **13s**  | 8s + 5s ack                                                   |
+| Phase 3   | ValidateOrder + SubmitOrder + ack  | **10s**  | 5s + 3s + 2s ack (ValidateOrder can overlap Phase 2)          |
+| **Total** | -                                   | **~28s** | Demo/testing mode                                             |
 
 **Key Characteristics**:
 
@@ -1043,114 +1039,137 @@ Example configuration:
 
 ## 7.1. Extended Multi-Cascade Example
 
-> **📋 PARTIAL IMPLEMENTATION**
->
-> **Currently Implemented**: Customer, Product, and Order entities (6 steps) with cascade publishing and FK injection.
->
-> **Future Entities**: This section shows how the system will be extended with additional entities (Benefits, Payments, DMC) when business requirements are finalized. The architecture and dependency management patterns shown here are fully supported by the orchestrator.
->
-> See the infrastructure planning document for the full target: 17 SQS queues, 8 Kafka topics, 18 Lambda functions.
+**Status**: Fully implemented. This section mirrors `workflows/order-processing/workflow.config.ts` (`DEFAULT_STEPS`, the `default` variant) exactly — every step, dependency, and field name below exists in that file today. It is the real DAG behind [Section 7's](#7-complete-end-to-end-flow) simplified 3-entity view once LineItem, Payment, and Shipment are added.
 
-**Purpose**: Demonstrates the full orchestration capabilities with a complex multi-cascade job showing advanced dependency management and data flow between steps.
+**Purpose**: Demonstrates the full orchestration capabilities with a multi-cascade job — cross-step data dependencies, a fan-out cascade, three cascades running in parallel off the same parent, and a fan-in aggregation step.
 
-**Scenario**: Full order-processing job including Customer, Product, Benefits, Orders, Payments, and DMC data.
+**Scenario**: A `default`-variant order-processing job: one customer, one product (validate-only), one order, N line items (fan-out), one payment, one shipment.
 
 **Key Advanced Features**:
 
-- **Complex Dependencies**: Submit steps depend on multiple Validate steps
-- **Data Flow**: Output steps receive data from dependent steps
-- **Parallel Execution**: Independent branches run simultaneously
-- **Cross-Cascade Dependencies**: Benefits submission needs both Customer AND Product data
-- **Sequential Dependencies**: Payments submission needs Orders data
+- **Validate-Only Root**: `Product` has a `ValidateProduct` step but no submit step — it never cascades or publishes to Kafka (see the comment at the top of `workflow.config.ts`)
+- **Cross-Step Data Dependencies**: `SubmitOrder` depends on both `ValidateOrder` (raw order row) and `SubmitCustomer` (target-system customer name) — see [Data Flow Between Steps](#data-flow-between-steps) below
+- **Fan-Out**: `DiscoverLineItems` spawns one `ValidateLineItem` → `SubmitLineItem` child chain per discovered line item ID
+- **Parallel Cascades Off One Parent**: LineItem, Payment, and Shipment all cascade from `Order`'s acknowledgement (`ext_order_id`) and process independently — one branch failing doesn't block the others
+- **Fan-In**: `ArchiveProcessedOrder` depends on all five terminal cascades (`SubmitCustomer`, `SubmitOrder`, `DiscoverLineItems`, `SubmitPayment`, `SubmitShipment`) and requires no acknowledgement of its own
 
 ### Step Configuration
 
 ```typescript
-// 📋 PARTIAL IMPLEMENTATION: This shows the FULL target configuration
-// Currently implemented: Customer, Product, Orders (6 steps)
-// Future: Benefits, Payments, DMC, etc.
-
-// Target full job configuration
-export const FULL_ORDER_PROCESSING_STEPS: StepDefinition[] = [
-  // === PHASE 1: VALIDATE (All run in parallel) ===
+// workflows/order-processing/workflow.config.ts — DEFAULT_STEPS (field values abridged; see source for full metadata)
+const DEFAULT_STEPS: StepDefinition[] = [
+  // ── Phase 1: Validate root entities (parallel) ──────────────────────────
   {
     step: Step.ValidateCustomer,
     dependencies: [],
-    sqsQueueName: "order-validate-customer",
+    functionName: 'order-validate-customer',
+    queueName: 'order-validate-customer',
   },
   {
     step: Step.ValidateProduct,
     dependencies: [],
-    sqsQueueName: "order-validate-product",
-  },
-  {
-    step: Step.ValidateBenefits,
-    dependencies: [],
-    sqsQueueName: "order-validate-benefits",
-  },
-  {
-    step: Step.ValidateOrder,
-    dependencies: [],
-    sqsQueueName: "order-validate-order",
+    functionName: 'order-validate-product',
+    queueName: 'order-validate-product',
   },
 
-  // === PHASE 2: SUBMIT CORE ENTITIES ===
+  // ── Phase 2: Submit customer ─────────────────────────────────────────────
   {
     step: Step.SubmitCustomer,
     dependencies: [Step.ValidateCustomer],
-    sqsQueueName: "order-submit-customer",
+    functionName: 'order-submit-customer',
+    queueName: 'order-submit-customer',
     requiresAcknowledgement: true,
-  },
-  {
-    step: Step.SubmitProduct,
-    dependencies: [Step.ValidateProduct],
-    sqsQueueName: "order-submit-product",
-    requiresAcknowledgement: true,
+    collectDependencyOutputs: true,
   },
 
-  // === PHASE 3: SUBMIT DEPENDENT ENTITIES ===
+  // ── Phase 3: Validate order (depends on customer validation) ────────────
   {
-    step: Step.SubmitBenefits,
-    dependencies: [
-      Step.ValidateBenefits,
-      Step.SubmitCustomer, // Needs customer external system ID
-      Step.SubmitProduct,  // Needs product external system ID
-    ],
-    sqsQueueName: "order-submit-benefits",
-    requiresAcknowledgement: true,
+    step: Step.ValidateOrder,
+    dependencies: [Step.ValidateCustomer],
+    functionName: 'order-validate-order',
+    queueName: 'order-validate-order',
   },
+
+  // ── Phase 4: Submit order (depends on validate + customer submit) ───────
   {
     step: Step.SubmitOrder,
-    dependencies: [
-      Step.ValidateOrder,
-      Step.SubmitProduct, // Needs product external system ID
-    ],
-    sqsQueueName: "order-submit-order",
+    dependencies: [Step.ValidateOrder, Step.SubmitCustomer],
+    functionName: 'order-submit-order',
+    queueName: 'order-submit-order',
     requiresAcknowledgement: true,
+    collectDependencyOutputs: true,
   },
 
-  // === PHASE 4: SUBMIT PAYMENTS (Depends on Orders) ===
+  // ── Phase 5: Fan-Out — LineItems ─────────────────────────────────────────
   {
-    step: Step.ValidatePayments,
-    dependencies: [Step.SubmitOrder], // Wait for orders to be created in external system
-    sqsQueueName: "order-validate-payments",
+    step: Step.DiscoverLineItems,
+    dependencies: [Step.ValidateOrder],
+    functionName: 'order-discover-line-items',
+    queueName: 'order-discover-line-items',
+    fanOut: {
+      enabled: true,
+      childStepType: Step.ValidateLineItem,
+      itemIdField: 'orderItemIds',
+      childStepChain: [Step.ValidateLineItem, Step.SubmitLineItem],
+    },
   },
   {
-    step: Step.SubmitPayments,
-    dependencies: [
-      Step.ValidatePayments,
-      Step.SubmitOrder, // Needs order external system IDs
-    ],
-    sqsQueueName: "order-submit-payments",
+    step: Step.ValidateLineItem,
+    dependencies: [],
+    isChildStep: true,
+    functionName: 'order-validate-line-item',
+    queueName: 'order-validate-line-item',
+  },
+  {
+    step: Step.SubmitLineItem,
+    dependencies: [Step.ValidateLineItem],
+    isChildStep: true,
+    functionName: 'order-submit-line-item',
+    queueName: 'order-submit-line-item',
     requiresAcknowledgement: true,
+    collectDependencyOutputs: true,
   },
 
-  // === PHASE 5: DMC (Final step, depends on everything) ===
+  // ── Phase 5: Validate + submit payment (parallel with LineItem/Shipment) ─
   {
-    step: Step.SubmitDMC,
-    dependencies: [Step.SubmitCustomer, Step.SubmitProduct, Step.SubmitBenefits, Step.SubmitOrder, Step.SubmitPayments],
-    sqsQueueName: "order-submit-dmc",
+    step: Step.ValidatePayment,
+    dependencies: [Step.ValidateOrder],
+    functionName: 'order-validate-payment',
+    queueName: 'order-validate-payment',
+  },
+  {
+    step: Step.SubmitPayment,
+    dependencies: [Step.ValidatePayment, Step.SubmitOrder],
+    functionName: 'order-submit-payment',
+    queueName: 'order-submit-payment',
     requiresAcknowledgement: true,
+    collectDependencyOutputs: true,
+  },
+
+  // ── Phase 5: Validate + submit shipment (parallel with LineItem/Payment) ─
+  {
+    step: Step.ValidateShipment,
+    dependencies: [Step.ValidateOrder],
+    functionName: 'order-validate-shipment',
+    queueName: 'order-validate-shipment',
+  },
+  {
+    step: Step.SubmitShipment,
+    dependencies: [Step.ValidateShipment, Step.SubmitOrder],
+    functionName: 'order-submit-shipment',
+    queueName: 'order-submit-shipment',
+    requiresAcknowledgement: true,
+    collectDependencyOutputs: true,
+  },
+
+  // ── Final: Archive all processed data to product DB (fan-in, no ack) ────
+  {
+    step: Step.ArchiveProcessedOrder,
+    dependencies: [Step.SubmitCustomer, Step.SubmitOrder, Step.DiscoverLineItems, Step.SubmitPayment, Step.SubmitShipment],
+    functionName: 'order-archive-processed-order',
+    queueName: 'order-archive-processed-order',
+    requiresAcknowledgement: false,
+    collectDependencyOutputs: true,
   },
 ];
 ```
@@ -1159,141 +1178,150 @@ export const FULL_ORDER_PROCESSING_STEPS: StepDefinition[] = [
 
 ```mermaid
 graph TB
-    START[Job Created<br/>Full Job]
+    START["Job Created<br/>default variant"]
 
-    subgraph "Phase 1: Validate (Parallel)"
-        E_CUSTOMER[ValidateCustomer<br/>Query source DB]
-        E_PRODUCT[ValidateProduct<br/>Query source DB]
-        E_BENEFITS[ValidateBenefits<br/>Query source DB]
-        E_ORDERS[ValidateOrder<br/>Query source DB]
+    subgraph "Phase 1: Validate roots (parallel)"
+        VC["ValidateCustomer<br/>Query customers table"]
+        VP["ValidateProduct<br/>Query products table<br/>validate-only, no submit"]
     end
 
-    subgraph "Phase 2: Submit Core (Parallel after Phase 1)"
-        T_CUSTOMER[SubmitCustomer<br/>→ External System Customer<br/>⏸️ Wait for Ack]
-        T_PRODUCT[SubmitProduct<br/>→ External System Product<br/>⏸️ Wait for Ack]
+    subgraph "Phase 2-4: Customer then Order"
+        SC["SubmitCustomer<br/>Target system<br/>Wait for ack"]
+        VO["ValidateOrder<br/>Query orders table"]
+        SO["SubmitOrder<br/>Uses ValidateOrder + SubmitCustomer<br/>Wait for ack"]
     end
 
-    subgraph "Phase 3: Submit Dependent (Parallel after Phase 2)"
-        T_BENEFITS[SubmitBenefits<br/>Uses Customer + Product IDs<br/>→ External System Benefits<br/>⏸️ Wait for Ack]
-        T_ORDERS[SubmitOrder<br/>Uses Product ID<br/>→ External System Orders<br/>⏸️ Wait for Ack]
+    subgraph "Phase 5: Fan-out LineItems"
+        DLI["DiscoverLineItems<br/>Query order_items by orderId"]
+        VLI["ValidateLineItem<br/>per child"]
+        SLI["SubmitLineItem<br/>per child, wait for ack"]
     end
 
-    subgraph "Phase 4: Validate & Submit Payments"
-        E_PAYMENTS[ValidatePayments<br/>Query by Orders<br/>Wait for Orders in external system]
-        T_PAYMENTS[SubmitPayments<br/>Uses Order IDs<br/>→ External System Payments<br/>⏸️ Wait for Ack]
+    subgraph "Phase 5: Payment"
+        VPAY["ValidatePayment"]
+        SPAY["SubmitPayment<br/>Wait for ack"]
     end
 
-    subgraph "Phase 5: Final Aggregation"
-        T_DMC[SubmitDMC<br/>Aggregate all data<br/>→ DMC System<br/>⏸️ Wait for Ack]
+    subgraph "Phase 5: Shipment"
+        VSHIP["ValidateShipment"]
+        SSHIP["SubmitShipment<br/>Wait for ack"]
     end
 
-    COMPLETE[✅ Job COMPLETED<br/>All entities processed]
+    ARCHIVE["ArchiveProcessedOrder<br/>Fan-in, writes product DB<br/>no ack required"]
+    COMPLETE["Job COMPLETED"]
 
-    START --> E_CUSTOMER
-    START --> E_PRODUCT
-    START --> E_BENEFITS
-    START --> E_ORDERS
+    START --> VC
+    START --> VP
 
-    E_CUSTOMER --> T_CUSTOMER
-    E_PRODUCT --> T_PRODUCT
+    VC --> SC
+    VC --> VO
+    VO --> SO
+    SC --> SO
 
-    T_CUSTOMER --> T_BENEFITS
-    T_PRODUCT --> T_BENEFITS
-    E_BENEFITS --> T_BENEFITS
+    VO --> DLI
+    DLI --> VLI
+    VLI --> SLI
 
-    T_PRODUCT --> T_ORDERS
-    E_ORDERS --> T_ORDERS
+    VO --> VPAY
+    VPAY --> SPAY
+    SO --> SPAY
 
-    T_ORDERS --> E_PAYMENTS
-    E_PAYMENTS --> T_PAYMENTS
-    T_ORDERS --> T_PAYMENTS
+    VO --> VSHIP
+    VSHIP --> SSHIP
+    SO --> SSHIP
 
-    T_CUSTOMER --> T_DMC
-    T_PRODUCT --> T_DMC
-    T_BENEFITS --> T_DMC
-    T_ORDERS --> T_DMC
-    T_PAYMENTS --> T_DMC
+    SC --> ARCHIVE
+    SO --> ARCHIVE
+    DLI --> ARCHIVE
+    SPAY --> ARCHIVE
+    SSHIP --> ARCHIVE
+    ARCHIVE --> COMPLETE
 
-    T_DMC --> COMPLETE
-
-    classDef extract fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef validate fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     classDef submit fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef waiting fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef fanout fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     classDef complete fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
 
-    class E_CUSTOMER,E_PRODUCT,E_BENEFITS,E_ORDERS,E_PAYMENTS extract
-    class T_CUSTOMER,T_PRODUCT,T_BENEFITS,T_ORDERS,T_PAYMENTS,T_DMC submit
-    class COMPLETE complete
+    class VC,VP,VO,VPAY,VSHIP validate
+    class SC,SO,SPAY,SSHIP submit
+    class DLI,VLI,SLI fanout
+    class ARCHIVE,COMPLETE complete
 ```
+
+Note `VP` (`ValidateProduct`) has no outgoing edge past Phase 1 — Product is validate-only and never joins the cascade or the archive fan-in. This is intentional; it's the workflow's showcase of a root entity with no submit step.
 
 ### Data Flow Between Steps
 
-**Example: SubmitBenefits receives data from dependencies**
+**Real example: `SubmitOrder` receives data from two dependencies** (`workflows/order-processing/workers/src/handlers/submit-order.ts`)
 
 ```typescript
-// SubmitBenefits Worker receives payload from orchestrator
-interface SubmitBenefitsPayload {
-  jobId: string;
-  stepId: string;
-
-  // Raw validated data
-  extractedBenefits: {
-    benefit_id: number;
-    customer_id: number;
-    product_id: number;
-    benefit_type: string;
-    // ... more fields
-  }[];
-
-  // Data from dependent Submit steps
-  dependentStepOutputs: {
-    SubmitCustomer: {
-      targetCustomerId: string; // external system's ID for the customer
-      customerStatus: string;
-    };
-    SubmitProduct: {
-      targetProductId: string; // external system's ID for the product
-      productNumber: string;
-    };
-  };
+// Source order shape (from ValidateOrder's output)
+interface SourceOrder {
+  orderId: number;
+  customerId: number;
+  orderDate: string;
+  status: string;
+  totalAmount: number;
+  shippingAddress: string | null;
 }
 
-// Worker uses both sources to create the submission
-async function processBenefits(payload: SubmitBenefitsPayload) {
-  const processedBenefits = payload.extractedBenefits.map((benefit) => ({
-    // Use external system IDs from dependent submits
-    targetCustomerId: payload.dependentStepOutputs.SubmitCustomer.targetCustomerId,
-    targetProductId: payload.dependentStepOutputs.SubmitProduct.targetProductId,
+// Target order shape (what SubmitOrder produces)
+interface TargetOrder {
+  sourceOrderId: number;
+  sourceCustomerId: number;
+  customerName: string | null;
+  orderPlacedAt: string;
+  orderStatus: string;
+  totalValue: number;
+  currency: string;
+  deliveryAddress: string | null;
+  transformedAt: string;
+}
 
-    // Process benefit data
-    benefitType: mapBenefitType(benefit.benefit_type),
-    // ... more processing
-  }));
+async function processProcessingWork(message: ProcessingWorkMessage, /* ... */) {
+  const { jobId, stepId, input, callbackUrl } = message;
 
-  return processedBenefits;
+  // input.dependencyData is populated because SubmitOrder sets collectDependencyOutputs: true
+  const dependencyData = input.dependencyData as Record<string, Record<string, unknown>>;
+
+  // Get order data from ValidateOrder's output ({ order: SourceOrder })
+  const validateOrderData = dependencyData['ValidateOrder'];
+  const orderData = validateOrderData.order as SourceOrder;
+
+  // Get customer name from SubmitCustomer's output ({ submittedCustomers: TargetCustomer[] })
+  const submitCustomerData = dependencyData['SubmitCustomer'];
+  const customerName = (submitCustomerData?.submittedCustomers as any)?.[0]?.fullName ?? null;
+
+  const transformedOrder: TargetOrder = transformOrderData(orderData, customerName);
+
+  await sendSuccessCallback(callbackUrl, jobId, stepId, { submittedOrders: [transformedOrder] }, 1, /* ... */);
 }
 ```
 
+`ValidateOrder` outputs `{ order: SourceOrder }`; `SubmitCustomer` outputs `{ submittedCustomers: TargetCustomer[] }` (`submittedCustomers` is the cascade's `outputDataKey` from `CascadeConfig`). `SubmitOrder` needs a field from each — the raw order row from the first, the already-submitted customer's target-system name from the second — and the orchestrator hands it both under `input.dependencyData`, keyed by step name.
+
 ### Implementation: How Dependency Outputs Are Injected
 
-**The Big Question**: When `SubmitBenefits` depends on `SubmitCustomer` and `SubmitProduct`, how does the orchestrator know to wait for both, fetch their outputs, and include them in the SQS message?
+**The Big Question**: When `SubmitOrder` depends on `ValidateOrder` and `SubmitCustomer`, how does the orchestrator know to wait for both, fetch their outputs, and include them in the SQS message?
 
 #### Step 1: Database Tracks All Step Outputs
 
 When any worker completes, it sends an HTTP callback with its output:
 
 ```typescript
-// Worker callback to orchestrator
-POST /callback/progress
+// Worker callback to orchestrator — POST /api/v1/callback/step-progress (StepProgressDto)
 {
   "jobId": "abc-123",
   "stepId": "step-customer-456",
   "status": "completed",
   "output": {
-    "targetCustomerId": "EXT-CUSTOMER-789",
-    "customerStatus": "active",
-    "email": "john.doe@example.com"
-  }
+    "submittedCustomers": [{
+      "sourceCustomerId": 1000,
+      "fullName": "John Doe",
+      "emailAddress": "john.doe@example.com"
+    }]
+  },
+  "recordsProcessed": 1
 }
 ```
 
@@ -1303,240 +1331,85 @@ The orchestrator stores this in the database:
 -- dtm_steps table
 UPDATE dtm_steps
 SET
-  status = 'completed',
-  output = '{
-    "targetCustomerId": "EXT-CUSTOMER-789",
-    "customerStatus": "active",
-    "email": "john.doe@example.com"
-  }'::jsonb,
-  ended_at = NOW()
+  status = 'waiting_for_ack',   -- requiresAcknowledgement: true, so not 'completed' yet
+  output = '{"submittedCustomers": [{"sourceCustomerId": 1000, "fullName": "John Doe", ...}]}'::jsonb,
+  kafka_published_at = NOW()
 WHERE id = 'step-customer-456';
 ```
 
-#### Step 2: Orchestrator Evaluates Dependencies
+#### Step 2: Orchestrator Evaluates Dependencies (`continueJob`)
 
-When a callback is received, the orchestrator calls `continueJob()`:
+Every callback triggers `continueJob()` in `services/orchestrator/src/orchestration/orchestration.service.ts`. It fetches all steps for the job, classifies them (completed, pending, failed, in-progress), and calls `findReadySteps()` — a pending step is ready once every entry in its `dependencies` array is in a completed (or partial-success) state, and any acknowledgement-requiring dependency has `ackReceivedAt` set.
 
-```typescript
-// orchestration.service.ts
-async continueJob(jobId: string): Promise<void> {
-  const job = await this.jobRepository.findById(jobId);
-  const allSteps = await this.stepRepository.findByJobId(jobId);
+#### Step 3: Orchestrator Collects Dependency Outputs
 
-  // Get step configuration (defines dependencies)
-  const stepConfig = getStepsForJobType(job.type);
-
-  // Find steps that are ready to execute
-  for (const stepDef of stepConfig) {
-    const step = allSteps.find(s => s.step === stepDef.step);
-
-    // Skip if already delegated/completed
-    if (step.status !== 'pending') continue;
-
-    // Check if all dependencies are completed
-    const allDependenciesMet = stepDef.dependencies.every(depStep => {
-      const depStepRecord = allSteps.find(s => s.step === depStep);
-      return depStepRecord.status === 'completed';
-    });
-
-    if (allDependenciesMet) {
-      // ✅ All dependencies completed - ready to delegate!
-      await this.delegateStep(job, step, stepDef, allSteps);
-    }
-  }
-}
-```
-
-#### Step 3: Orchestrator Fetches Dependency Outputs
-
-When delegating a step with dependencies, the orchestrator fetches outputs from all dependent steps:
+For a ready step whose definition sets `collectDependencyOutputs: true`, the private `collectDependencyOutputs()` helper builds the payload:
 
 ```typescript
-// orchestration.service.ts
-async delegateStep(
-  job: Job,
-  step: Step,
+// orchestration.service.ts (abridged)
+private collectDependencyOutputs(
   stepDef: StepDefinition,
-  allSteps: Step[]
-): Promise<void> {
+  completedSteps: DbStep[],
+): Record<string, Record<string, unknown>> {
+  const dependencyData: Record<string, Record<string, unknown>> = {};
 
-  // 1. Fetch outputs from all dependency steps
-  const dependencyOutputs = {};
-
-  for (const depStepName of stepDef.dependencies) {
-    const depStep = allSteps.find(s => s.step === depStepName);
-
-    if (!depStep || !depStep.output) {
-      throw new Error(`Dependency ${depStepName} has no output`);
+  for (const depStepValue of stepDef.dependencies) {
+    const completedDepStep = completedSteps.find((s) => s.stepValue === depStepValue);
+    if (completedDepStep?.output) {
+      dependencyData[depStepValue] = completedDepStep.output; // keyed by step name
     }
-
-    // Store the dependency's output keyed by step name
-    dependencyOutputs[depStepName] = depStep.output;
   }
 
-  // 2. Construct the SQS message payload
-  const sqsMessage = {
-    jobId: job.id,
-    stepId: step.id,
-    step: step.step,
-
-    // Original job payload (has customerId, orderId, etc.)
-    payload: job.payload,
-
-    // 🎯 KEY: Include outputs from all dependency steps
-    dependencyOutputs: dependencyOutputs,
-
-    // Configuration
-    testOptions: job.payload.testOptions,
-    metadata: {
-      attemptNumber: 1,
-      delegatedAt: new Date().toISOString(),
-    }
-  };
-
-  // 3. Send to SQS
-  await this.delegationService.sendToQueue(
-    stepDef.sqsQueueName,
-    sqsMessage
-  );
-
-  // 4. Update step status
-  await this.stepRepository.update(step.id, {
-    status: 'delegated',
-    delegatedAt: new Date(),
-  });
+  return dependencyData;
 }
 ```
 
-#### Step 4: Complete SQS Message Structure
+For `SubmitOrder`, `stepDef.dependencies = [Step.ValidateOrder, Step.SubmitCustomer]`, so `dependencyData` ends up with exactly those two keys.
 
-Here's what the actual SQS message looks like for `SubmitBenefits`:
+#### Step 4: Complete SQS Message Structure (`LambdaStepPayload`)
 
 ```json
 {
   "jobId": "abc-123-def-456",
-  "stepId": "step-benefits-789",
-  "step": "SubmitBenefits",
-
-  "payload": {
-    "customerId": 1,
-    "orderId": 1,
-    "externalSystemId": "demo",
-    "webhookUrl": "https://api.example.com/webhook",
-    "testOptions": {
-      "SubmitBenefits": { "simDelay": 4000 }
-    }
-  },
-
-  "dependencyOutputs": {
-    "ValidateBenefits": {
-      "benefits": [
-        {
-          "benefit_id": 1,
-          "customer_id": 1,
-          "product_id": 1001,
-          "benefit_type": "TRAVEL_INSURANCE",
-          "coverage_amount": 50000,
-          "status": "ACTIVE"
-        },
-        {
-          "benefit_id": 2,
-          "customer_id": 1,
-          "product_id": 1001,
-          "benefit_type": "ROADSIDE_ASSISTANCE",
-          "status": "ACTIVE"
+  "stepId": "step-order-789",
+  "stepValue": "SubmitOrder",
+  "jobType": "default",
+  "callbackUrl": "http://orchestrator:3000/api/v1/callback/step-progress",
+  "correlationId": "corr-xyz-789",
+  "input": {
+    "dependencyData": {
+      "ValidateOrder": {
+        "order": {
+          "orderId": 1,
+          "customerId": 1000,
+          "orderDate": "2026-07-10",
+          "status": "pending",
+          "totalAmount": 149.99,
+          "shippingAddress": "12 Main St"
         }
-      ]
-    },
-    "SubmitCustomer": {
-      "targetCustomerId": "EXT-CUSTOMER-789",
-      "customerStatus": "active",
-      "email": "john.doe@example.com",
-      "createdAt": "2025-11-20T10:00:00Z"
-    },
-    "SubmitProduct": {
-      "targetProductId": "EXT-PRODUCT-456",
-      "productNumber": "PROD-123456",
-      "productType": "PREMIUM",
-      "startDate": "2025-01-01",
-      "createdAt": "2025-11-20T10:01:00Z"
+      },
+      "SubmitCustomer": {
+        "submittedCustomers": [{
+          "sourceCustomerId": 1000,
+          "fullName": "John Doe",
+          "emailAddress": "john.doe@example.com"
+        }]
+      }
     }
-  },
-
-  "metadata": {
-    "attemptNumber": 1,
-    "delegatedAt": "2025-11-20T10:02:00.000Z",
-    "sqsMessageId": "msg-xyz-789"
   }
 }
 ```
+
+Note `dependencyData` lives under `input` (`LambdaStepPayload.input`) — the top-level payload also carries `sourceConfig`/`processingConfig` when the step definition sets them (see `services/orchestrator/src/delegation/dto/step-delegation.dto.ts`).
 
 #### Step 5: Lambda Worker Receives and Uses Data
 
-The Lambda worker (e.g., `submit-benefits-worker`) receives this via SQS event:
-
-```typescript
-// submit-benefits-worker/src/index.ts
-export async function handler(event: SQSEvent): Promise<void> {
-  for (const record of event.Records) {
-    // Parse the SQS message body
-    const message = JSON.parse(record.body);
-
-    const {
-      jobId,
-      stepId,
-      payload, // Original job payload
-      dependencyOutputs, // 🎯 Outputs from dependency steps!
-      metadata,
-    } = message;
-
-    // Extract dependency data
-    const extractedBenefits = dependencyOutputs.ValidateBenefits.benefits;
-    const targetCustomerId = dependencyOutputs.SubmitCustomer.targetCustomerId;
-    const targetProductId = dependencyOutputs.SubmitProduct.targetProductId;
-
-    // Process the benefits using dependency data
-    const processedBenefits = extractedBenefits.map((benefit) => ({
-      // 🎯 Use external system IDs from dependent submits
-      targetCustomerId: targetCustomerId,
-      targetProductId: targetProductId,
-
-      // Process benefit fields
-      benefitType: mapBenefitType(benefit.benefit_type),
-      coverageAmount: benefit.coverage_amount,
-      status: mapStatus(benefit.status),
-
-      // Original metadata
-      sourceId: benefit.benefit_id,
-      sourceSystem: "order-processing",
-    }));
-
-    // Send callback with processed data
-    await sendCallback({
-      jobId,
-      stepId,
-      status: "completed",
-      output: {
-        benefits: processedBenefits,
-        benefitCount: processedBenefits.length,
-      },
-    });
-  }
-}
-```
+Already shown above — `submit-order.ts` reads `input.dependencyData['ValidateOrder'].order` and `input.dependencyData['SubmitCustomer'].submittedCustomers[0].fullName`, transforms them, and calls `sendSuccessCallback(..., { submittedOrders: [transformedOrder] }, ...)`.
 
 #### Step 6: Database Query to See the Flow
 
-You can see the dependency chain and outputs in the database:
-
 ```sql
--- See all steps with their dependencies and outputs
-SELECT
-  step_value,
-  status,
-  jsonb_pretty(output) as step_output,
-  started_at,
-  ended_at
+SELECT step_value, status, jsonb_pretty(output) AS step_output, started_at, ended_at
 FROM dtm_steps
 WHERE job_id = 'abc-123-def-456'
 ORDER BY started_at;
@@ -1545,16 +1418,14 @@ ORDER BY started_at;
 **Output**:
 
 ```
-step_value          | status    | step_output                            | started_at
---------------------|-----------|----------------------------------------|---------------------
-ValidateCustomer    | completed | {"customer": {...}}                    | 10:00:00
-ValidateProduct     | completed | {"product": {...}}                     | 10:00:00
-ValidateBenefits    | completed | {"benefits": [{...}, {...}]}           | 10:00:00
-SubmitCustomer      | completed | {"targetCustomerId": "EXT-CUSTOMER-789"}  | 10:00:05
-SubmitProduct       | completed | {"targetProductId": "EXT-PRODUCT-456"}    | 10:00:05
-SubmitBenefits      | completed | {"benefits": [{...}], "count": 2}      | 10:00:10
-                    |           | ↑ Used outputs from Customer +         |
-                    |           |   Product submits                      |
+step_value          | status         | step_output                                   | started_at
+---------------------|----------------|------------------------------------------------|------------
+ValidateCustomer     | completed      | {"customer": {...}}                             | 10:00:00
+ValidateProduct      | completed      | {"product": {...}}                              | 10:00:00
+SubmitCustomer       | waiting_for_ack| {"submittedCustomers": [{...}]}                 | 10:00:03
+ValidateOrder        | completed      | {"order": {...}}                                | 10:00:03
+SubmitOrder          | waiting_for_ack| {"submittedOrders": [{...}]}                    | 10:00:07
+                     |                | ↑ Used ValidateOrder + SubmitCustomer outputs   |
 ```
 
 ### Key Implementation Details
@@ -1566,48 +1437,29 @@ SubmitBenefits      | completed | {"benefits": [{...}], "count": 2}      | 10:00
 
 **2. Dependency Resolution**:
 
-- Orchestrator evaluates dependencies on every callback
-- Uses step configuration to know what depends on what
-- Only delegates when ALL dependencies are `completed`
+- `continueJob()` re-evaluates dependencies on every callback
+- Reads `stepDef.dependencies` from the workflow's `workflow.config.ts`
+- Only delegates once every dependency step is completed (and, if it required an ack, the ack has arrived)
 
 **3. Payload Construction**:
 
-- Orchestrator queries database for dependency outputs
-- Constructs `dependencyOutputs` object keyed by step name
-- Includes in SQS message body
+- `collectDependencyOutputs()` reads each dependency's stored `output` from the database
+- Builds `dependencyData` keyed by step name
+- `DelegationService.delegateStep()` wraps it into `LambdaStepPayload.input.dependencyData` and sends it to SQS
 
 **4. Worker Implementation**:
 
-- Workers are designed to expect `dependencyOutputs` field
-- Workers use exactly what they need from dependencies
-- Workers don't need to know where the data came from
+- Workers that need dependency data set `collectDependencyOutputs: true` in their step definition
+- Workers read exactly the keys they need from `input.dependencyData`
+- Workers don't need to know where the data came from — just which step produced it
 
 **5. Type Safety**:
 
 ```typescript
 // Workers can define interfaces for expected dependency outputs
-interface SubmitBenefitsMessage {
-  jobId: string;
-  stepId: string;
-  payload: {
-    customerId: number;
-    orderId: number;
-  };
-  dependencyOutputs: {
-    ValidateBenefits: {
-      benefits: Array<{
-        benefit_id: number;
-        benefit_type: string;
-        coverage_amount: number;
-      }>;
-    };
-    SubmitCustomer: {
-      targetCustomerId: string;
-    };
-    SubmitProduct: {
-      targetProductId: string;
-    };
-  };
+interface SubmitOrderDependencyData {
+  ValidateOrder: { order: SourceOrder };
+  SubmitCustomer: { submittedCustomers: TargetCustomer[] };
 }
 ```
 
@@ -1616,13 +1468,12 @@ interface SubmitBenefitsMessage {
 **What if a dependency has no output?**
 
 ```typescript
-// Orchestrator validation
+// Orchestrator validation (conceptual — see collectDependencyOutputs)
 if (!depStep.output || Object.keys(depStep.output).length === 0) {
   this.logger.error(`Cannot delegate ${step.step}: dependency ${depStepName} has no output`);
 
-  // Mark step as failed
   await this.stepRepository.update(step.id, {
-    status: "failed",
+    status: 'failed',
     error: `Dependency ${depStepName} produced no output`,
   });
 
@@ -1635,12 +1486,10 @@ if (!depStep.output || Object.keys(depStep.output).length === 0) {
 ```typescript
 // Dependency check includes acknowledgement status
 const isDependencyReady = (depStep: Step): boolean => {
-  // Must be completed
-  if (depStep.status !== "completed") return false;
+  if (depStep.status !== 'completed') return false;
 
-  // If requires acknowledgement, must have received it
   if (depStep.requiresAcknowledgement && !depStep.ackReceivedAt) {
-    return false; // Still waiting for ack
+    return false; // Still WAITING_FOR_ACK
   }
 
   return true; // Ready!
@@ -1656,138 +1505,116 @@ const isDependencyReady = (depStep: Step): boolean => {
 const allSteps = await this.stepRepository.findByJobId(jobId);
 
 // Then filter in memory (efficient for 10-20 steps per job)
-const depOutputs = stepDef.dependencies.map((depName) => allSteps.find((s) => s.step === depName).output);
+const depOutputs = stepDef.dependencies.map((depName) => allSteps.find((s) => s.stepValue === depName)?.output);
 ```
 
 **2. SQS Message Size**:
 
 - Maximum SQS message size: 256 KB
-- Dependency outputs typically small (IDs, references)
-- If output is large, store in S3 and pass S3 key instead:
-  ```typescript
-  if (outputSize > 200_000) {
-    const s3Key = await uploadToS3(depStep.output);
-    dependencyOutputs[depName] = {
-      __s3Ref: true,
-      bucket: "dtm-outputs",
-      key: s3Key,
-    };
-  }
-  ```
+- Dependency outputs are typically small (IDs, references, a handful of fields)
+- Line-item fan-out keeps each child's `dependencyData` scoped to just that child's chain — not the whole order's item list
 
 **3. Caching**:
 
-```typescript
-// Orchestrator can cache step outputs for the current continueJob() call
-private outputCache = new Map<string, any>();
-
-async getDependencyOutput(stepId: string): Promise<any> {
-  if (this.outputCache.has(stepId)) {
-    return this.outputCache.get(stepId);
-  }
-
-  const step = await this.stepRepository.findById(stepId);
-  this.outputCache.set(stepId, step.output);
-  return step.output;
-}
-```
+- Within a single `continueJob()` invocation, `completedSteps` is fetched once and reused across every ready step's `collectDependencyOutputs()` call — no per-step re-query
 
 ### Execution Timeline Example
 
-**Configuration**:
+**Configuration** (`testOptions` — one entry per step, matching the [TestOptions Architecture](../../CLAUDE.md#testoptions-architecture)):
 
 ```json
 {
   "customerId": 1,
+  "productId": 1001,
   "orderId": 1,
-  "externalSystemId": "full-job-demo",
   "testOptions": {
-    "ValidateCustomer": { "simDelay": 5000 },
-    "ValidateProduct": { "simDelay": 5000 },
-    "ValidateBenefits": { "simDelay": 5000 },
-    "ValidateOrder": { "simDelay": 5000 },
-    "SubmitCustomer": { "simDelay": 3000, "ackDelay": 2000 },
-    "SubmitProduct": { "simDelay": 3000, "ackDelay": 2000 },
-    "SubmitBenefits": { "simDelay": 4000, "ackDelay": 2000 },
-    "SubmitOrder": { "simDelay": 4000, "ackDelay": 2000 },
-    "ValidatePayments": { "simDelay": 3000 },
-    "SubmitPayments": { "simDelay": 3000, "ackDelay": 2000 },
-    "SubmitDMC": { "simDelay": 2000, "ackDelay": 2000 }
+    "ValidateCustomer": { "simDelay": 3000 },
+    "ValidateProduct": { "simDelay": 2000 },
+    "SubmitCustomer": { "simDelay": 2000, "ackDelay": 2000 },
+    "ValidateOrder": { "simDelay": 2000 },
+    "SubmitOrder": { "simDelay": 2000, "ackDelay": 2000 },
+    "DiscoverLineItems": { "simDelay": 1000 },
+    "ValidateLineItem": { "simDelay": 1000 },
+    "SubmitLineItem": { "simDelay": 1000, "ackDelay": 1500 },
+    "ValidatePayment": { "simDelay": 1500 },
+    "SubmitPayment": { "simDelay": 1500, "ackDelay": 2000 },
+    "ValidateShipment": { "simDelay": 1500 },
+    "SubmitShipment": { "simDelay": 1500, "ackDelay": 2000 },
+    "ArchiveProcessedOrder": { "simDelay": 500 }
   }
 }
 ```
 
 **Timeline**:
 
-| Time       | Phase    | Active Steps                                      | Notes                                 |
-| ---------- | -------- | ------------------------------------------------- | ------------------------------------- |
-| **0-5s**   | Phase 1  | All 4 validates run in parallel                    | Max 5s (all same)                     |
-| **5-8s**   | Phase 2  | SubmitCustomer (3s) + SubmitProduct (3s) | Parallel                              |
-| **8-10s**  | Ack Wait | Wait for Customer & Product acks               | 2s each                               |
-| **10-14s** | Phase 3  | SubmitBenefits (4s) + SubmitOrder (4s)     | Parallel, use Customer/Product IDs |
-| **14-16s** | Ack Wait | Wait for Benefits & Orders acks                   | 2s each                               |
-| **16-19s** | Phase 4a | ValidatePayments (3s)                              | Depends on Orders being in external system |
-| **19-22s** | Phase 4b | SubmitPayments (3s)                            | Uses Order IDs                        |
-| **22-24s** | Ack Wait | Wait for Payments ack                             | 2s                                    |
-| **24-26s** | Phase 5  | SubmitDMC (2s)                                 | Aggregates all data                   |
-| **26-28s** | Ack Wait | Wait for DMC ack                                  | 2s                                    |
-| **28s**    | Complete | Job COMPLETED ✅                                  | All 10 steps done                     |
+| Time       | Phase     | Active Steps                                                          | Notes                                          |
+| ---------- | --------- | ---------------------------------------------------------------------- | ----------------------------------------------- |
+| **0-3s**   | Phase 1   | `ValidateCustomer` (3s) + `ValidateProduct` (2s)                       | Parallel, no dependencies                       |
+| **3-5s**   | Phase 2   | `SubmitCustomer` (2s)                                                  | Depends on `ValidateCustomer`                   |
+| **5-7s**   | Ack Wait  | Wait for `SubmitCustomer` ack                                          | 2s                                               |
+| **7-9s**   | Phase 3   | `ValidateOrder` (2s)                                                   | Depends on `ValidateCustomer` (already done)     |
+| **9-11s**  | Phase 4   | `SubmitOrder` (2s)                                                     | Depends on `ValidateOrder` + `SubmitCustomer`    |
+| **11-13s** | Ack Wait  | Wait for `SubmitOrder` ack                                             | 2s                                               |
+| **13-15s** | Phase 5   | `DiscoverLineItems` (1s), `ValidatePayment` (1.5s), `ValidateShipment` (1.5s) | All three depend only on `ValidateOrder` — parallel |
+| **15-16s** | Phase 5   | `ValidateLineItem` → `SubmitLineItem` per child (1s + 1s)               | Fan-out chain, parallel to Payment/Shipment      |
+| **16-19s** | Phase 5   | `SubmitPayment` (1.5s), `SubmitShipment` (1.5s)                        | Each also needs `SubmitOrder` (already done)     |
+| **19-21s** | Ack Wait  | Wait for LineItem, Payment, Shipment acks                              | ~1.5-2s each, in parallel                        |
+| **21-22s** | Final     | `ArchiveProcessedOrder` (0.5s)                                         | Fan-in — needs all five submits, no ack of its own |
+| **22s**    | Complete  | Job COMPLETED                                                          | All 13 steps done                                |
 
-**Total Time**: ~28 seconds (with simulated delays)
+**Total Time**: ~22 seconds (with simulated delays; real-world production timing is dominated by external-system ack latency, not simulated delay)
 
 ### Key Orchestration Capabilities Demonstrated
 
 **1. Parallel Execution Within Phases**:
 
-- Phase 1: 4 validates run simultaneously
-- Phase 2: 2 submits run simultaneously
-- Phase 3: 2 submits run simultaneously
+- Phase 1: `ValidateCustomer` + `ValidateProduct` run simultaneously
+- Phase 5: `DiscoverLineItems`, `ValidatePayment`, `ValidateShipment` all fire the moment `ValidateOrder` completes
 
 **2. Cross-Step Data Dependencies**:
 
 ```typescript
-// SubmitBenefits needs data from TWO previous submits
+// SubmitOrder needs data from TWO previous steps
 dependencies: [
-  ValidateBenefits, // Raw benefits data
-  SubmitCustomer, // External system Customer ID
-  SubmitProduct, // External system Product ID
+  Step.ValidateOrder,   // Raw order row
+  Step.SubmitCustomer,  // Target-system customer name
 ];
 
-// Orchestrator provides all dependency outputs to the worker
+// Orchestrator provides both dependency outputs to the worker via input.dependencyData
 ```
 
 **3. Sequential Chain Dependencies**:
 
 ```typescript
-// Payments cannot start until Orders are acknowledged by external system
+// Payment/Shipment cannot submit until Order is submitted and acknowledged
 ValidateOrder
   → SubmitOrder
-  → [Wait for external system ACK]
-  → ValidatePayments
-  → SubmitPayments
+  → [Wait for external system ACK, ext_order_id stored]
+  → ValidatePayment / ValidateShipment (parallel, only need ValidateOrder)
+  → SubmitPayment / SubmitShipment (need SubmitOrder's ack too)
 ```
 
 **4. Fan-In Pattern**:
 
 ```typescript
-// DMC submission waits for ALL previous submits
-SubmitDMC depends on: [
+// ArchiveProcessedOrder waits for ALL five terminal cascades
+ArchiveProcessedOrder depends on: [
   SubmitCustomer,
-  SubmitProduct,
-  SubmitBenefits,
   SubmitOrder,
-  SubmitPayments,
+  DiscoverLineItems,
+  SubmitPayment,
+  SubmitShipment,
 ]
-// Orchestrator waits for all 5 to complete before delegating DMC
+// Orchestrator waits for all five before delegating the archive step
 ```
 
 **5. Acknowledgement Gating**:
 
-- Every Submit step publishes to Kafka
+- Every Submit step (except `ArchiveProcessedOrder`) publishes to Kafka
 - Step enters `WAITING_FOR_ACK` status
 - Orchestration pauses for that branch
-- Dependent steps cannot start until ack received
-- Ensures data integrity across the entire job
+- Dependent steps cannot start until the ack arrives
+- Ensures the external system has actually processed the data before dependents proceed
 
 ### Database View During Execution
 
@@ -1799,63 +1626,49 @@ SELECT
   ended_at,
   kafka_published_at,
   ack_received_at,
-  EXTRACT(EPOCH FROM (ended_at - started_at)) as execution_seconds,
-  EXTRACT(EPOCH FROM (ack_received_at - kafka_published_at)) as ack_wait_seconds
+  EXTRACT(EPOCH FROM (ended_at - started_at)) AS execution_seconds,
+  EXTRACT(EPOCH FROM (ack_received_at - kafka_published_at)) AS ack_wait_seconds
 FROM dtm_steps
 WHERE job_id = 'your-job-id'
 ORDER BY started_at;
 ```
 
-**Expected Output**:
+**Expected Output** (abridged — fan-out `ValidateLineItem`/`SubmitLineItem` rows repeat once per child):
 
 ```
-step_value           | status    | execution_s | ack_wait_s | notes
----------------------|-----------|-------------|------------|-------
-ValidateCustomer     | completed | 5.12        | null       | Phase 1
-ValidateProduct      | completed | 5.08        | null       | Phase 1
-ValidateBenefits     | completed | 5.15        | null       | Phase 1
-ValidateOrder        | completed | 5.11        | null       | Phase 1
-SubmitCustomer       | completed | 3.05        | 2.02       | Phase 2
-SubmitProduct        | completed | 3.03        | 2.01       | Phase 2
-SubmitBenefits       | completed | 4.02        | 2.03       | Phase 3
-SubmitOrder          | completed | 4.01        | 2.02       | Phase 3
-ValidatePayments     | completed | 3.04        | null       | Phase 4
-SubmitPayments       | completed | 3.02        | 2.01       | Phase 4
-SubmitDMC            | completed | 2.01        | 2.02       | Phase 5
+step_value            | status    | execution_s | ack_wait_s | notes
+-----------------------|-----------|-------------|------------|-------
+ValidateCustomer       | completed | 3.01        | null       | Phase 1
+ValidateProduct        | completed | 2.02        | null       | Phase 1
+SubmitCustomer         | completed | 2.01        | 2.02       | Phase 2
+ValidateOrder          | completed | 2.02        | null       | Phase 3
+SubmitOrder             | completed | 2.01        | 2.03       | Phase 4
+DiscoverLineItems      | completed | 1.01        | null       | Phase 5 (fan-out)
+ValidatePayment        | completed | 1.51        | null       | Phase 5
+SubmitPayment          | completed | 1.50        | 2.01       | Phase 5
+ValidateShipment       | completed | 1.52        | null       | Phase 5
+SubmitShipment         | completed | 1.51        | 2.02       | Phase 5
+ArchiveProcessedOrder  | completed | 0.50        | null       | Final (no ack)
 ```
 
 ### Real-World Considerations
 
 **Production Implementation**:
 
-1. **Step Configuration**: Stored in `workflow.config.ts` per job type
-2. **Dynamic Dependencies**: Orchestrator evaluates dependencies at runtime
-3. **Dependency Data Injection**: Orchestrator fetches outputs from dependent steps and includes in SQS payload
+1. **Step Configuration**: Stored in `workflow.config.ts` per workflow, per variant
+2. **Dynamic Dependencies**: Orchestrator evaluates dependencies at runtime via `continueJob()`
+3. **Dependency Data Injection**: Orchestrator fetches outputs from dependent steps and includes them in the SQS payload's `input.dependencyData`
 4. **Idempotency Per Step**: Each step can be retried independently without affecting others
-5. **Failure Isolation**: If SubmitBenefits fails, SubmitOrder can still succeed (independent branches)
+5. **Failure Isolation**: If `SubmitPayment` fails, `SubmitShipment` can still succeed — independent branches (see [Cascade Criticality & Outcome Rules](../../CLAUDE.md#cascade-criticality--outcome-rules); `payment` and `shipment` are `optional` cascades)
 
 **Benefits of This Approach**:
 
 - ✅ **Maximum Parallelism**: Independent work runs simultaneously
 - ✅ **Explicit Dependencies**: Clear contracts between steps
-- ✅ **Data Integrity**: Acknowledgements ensure external system has processed data before dependent steps
+- ✅ **Data Integrity**: Acknowledgements ensure the external system has processed data before dependent steps proceed
 - ✅ **Observability**: Every step tracked individually
 - ✅ **Resilience**: Failed steps can retry without affecting successful ones
 - ✅ **Flexibility**: Easy to add/remove/reorder steps by changing configuration
-
----
-
-> **📝 Implementation Status**
->
-> **Current**: The orchestrator and all infrastructure (SQS, Lambda, Kafka, acknowledgements, dependency management) are fully implemented and working with Customer, Product, and Order entities.
->
-> **Future**: When additional entities (Benefits, Orders, Payments, etc.) are required, they can be added by:
->
-> 1. Defining step configuration in `workflow.config.ts`
-> 2. Creating Lambda workers for each step
-> 3. Specifying dependencies between steps
->
-> The orchestrator will automatically handle dependency resolution, parallel execution, and data flow as demonstrated in this example.
 
 **Previous**: [← Complete End-to-End Flow](#7-complete-end-to-end-flow) | **Next**: [Production vs Development Modes →](#8-production-vs-development-modes)
 
@@ -2253,6 +2066,6 @@ Order
 
 ---
 
-**Last Updated**: 2026-02-28
-**Version**: 2.0
+**Last Updated**: 2026-07-15
+**Version**: 2.1
 **Contributors**: DTM Team
