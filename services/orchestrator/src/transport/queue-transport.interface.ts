@@ -17,10 +17,7 @@ export interface QueueStats {
  * Implementations: SqsTransport (LocalStack/AWS), CloudTasksTransport (GCP).
  */
 export abstract class QueueTransport {
-  abstract sendTask(
-    queueName: string,
-    payload: LambdaStepPayload,
-  ): Promise<TaskSendResult>;
+  abstract sendTask(queueName: string, payload: LambdaStepPayload): Promise<TaskSendResult>;
 
   abstract sendBulkTasks(
     tasks: Array<LambdaStepPayload & { queueName: string }>,

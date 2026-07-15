@@ -306,7 +306,13 @@ describe('CallbackService', () => {
 
         // Assert
         expect(result.success).toBe(true);
-        expect(jobRepository.updateStatus).toHaveBeenCalledWith('job-123', JobStatus.COMPLETED);
+        expect(stepRepository.updateFromCallback).toHaveBeenCalledWith(
+          'step-2',
+          expect.objectContaining({ status: StepStatus.COMPLETED }),
+        );
+        // Job status transitions are now owned by OrchestrationService.continueJob(),
+        // not CallbackService — verify the delegation instead of a repo call CallbackService no longer makes.
+        expect(orchestrationService.continueJob).toHaveBeenCalledWith('job-123');
         // Note: Kafka publishing is async and tested separately
       });
 
@@ -572,8 +578,13 @@ describe('CallbackService', () => {
         await service.handleStepProgress(dto);
 
         // Assert
-        // Job status SHOULD be updated (retries exhausted)
-        expect(jobRepository.updateStatus).toHaveBeenCalledWith('job-123', JobStatus.FAILED);
+        // Step is marked permanently FAILED (retries exhausted: attemptNumber 3 >= maxRetryCount 3).
+        expect(stepRepository.updateFromCallback).toHaveBeenCalledWith(
+          'step-2',
+          expect.objectContaining({ status: StepStatus.FAILED }),
+        );
+        // Job status transitions (including FAILED on exhausted retries) are now owned by
+        // OrchestrationService.continueJob() — CallbackService just delegates to it.
         // Orchestration SHOULD continue (to mark dependent steps as SKIPPED)
         expect(orchestrationService.continueJob).toHaveBeenCalledWith('job-123');
       });
@@ -668,10 +679,14 @@ describe('CallbackService', () => {
         await service.handleStepProgress(dto);
 
         // Assert
-        // Orchestration SHOULD continue (to mark dependent steps as SKIPPED)
+        // Step is marked permanently FAILED (retries exhausted: attemptNumber 3 >= maxRetryCount 3).
+        expect(stepRepository.updateFromCallback).toHaveBeenCalledWith(
+          'step-1',
+          expect.objectContaining({ status: StepStatus.FAILED }),
+        );
+        // Orchestration SHOULD continue (to mark dependent steps as SKIPPED); job status
+        // transitions to FAILED are now handled inside OrchestrationService.continueJob().
         expect(orchestrationService.continueJob).toHaveBeenCalledWith('job-123');
-        // Job status SHOULD be updated to FAILED
-        expect(jobRepository.updateStatus).toHaveBeenCalledWith('job-123', JobStatus.FAILED);
       });
     });
 
@@ -1031,7 +1046,12 @@ describe('CallbackService', () => {
 
         // Assert
         expect(result.success).toBe(true);
-        expect(jobRepository.updateStatus).toHaveBeenCalledWith('job-single', JobStatus.COMPLETED);
+        expect(stepRepository.updateFromCallback).toHaveBeenCalledWith(
+          'step-only',
+          expect.objectContaining({ status: StepStatus.COMPLETED }),
+        );
+        // Job status transitions are owned by OrchestrationService.continueJob(), not CallbackService.
+        expect(orchestrationService.continueJob).toHaveBeenCalledWith('job-single');
       });
     });
 
@@ -1309,7 +1329,10 @@ describe('CallbackService', () => {
       await service.handleStepProgress(dto);
 
       // Assert
-      expect(jobRepository.updateStatus).toHaveBeenCalledWith('job-123', JobStatus.PROCESSING);
+      expect(stepRepository.updateStatus).toHaveBeenCalledWith('step-1', StepStatus.IN_PROGRESS);
+      // Job status transitions (including PENDING -> PROCESSING) are now owned by
+      // OrchestrationService.continueJob() — verify CallbackService delegates to it.
+      expect(orchestrationService.continueJob).toHaveBeenCalledWith('job-123');
     });
 
     it('should not change job status if already correct', async () => {
@@ -1493,8 +1516,12 @@ describe('CallbackService', () => {
       await service.handleStepProgress(dto);
 
       // Assert
-      expect(jobRepository.updateStatus).toHaveBeenCalledWith('job-123', JobStatus.COMPLETED);
-      expect(orchestrationService.continueJob).toHaveBeenCalled();
+      expect(stepRepository.updateFromCallback).toHaveBeenCalledWith(
+        'step-4',
+        expect.objectContaining({ status: StepStatus.COMPLETED }),
+      );
+      // Job status transitions to COMPLETED are now owned by OrchestrationService.continueJob().
+      expect(orchestrationService.continueJob).toHaveBeenCalledWith('job-123');
     });
   });
 

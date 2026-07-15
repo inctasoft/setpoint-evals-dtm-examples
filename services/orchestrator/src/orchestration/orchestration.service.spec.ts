@@ -14,12 +14,14 @@ describe('OrchestrationService', () => {
   let jobRepository: jest.Mocked<JobRepository>;
   let stepRepository: jest.Mocked<StepRepository>;
   let delegationService: jest.Mocked<DelegationService>;
+  let workflowConfigService: jest.Mocked<WorkflowConfigService>;
 
   beforeEach(async () => {
     // Create mock implementations
     const mockJobRepository = {
       findById: jest.fn(),
       updateStatus: jest.fn(),
+      updateResults: jest.fn().mockResolvedValue(undefined),
       findAll: jest.fn(),
       create: jest.fn(),
     };
@@ -52,6 +54,13 @@ describe('OrchestrationService', () => {
 
     const mockWorkflowConfigService = {
       getStepName: jest.fn().mockImplementation((step: string) => step.toLowerCase()),
+      getWorkflow: jest.fn().mockReturnValue({
+        name: 'test-workflow',
+        dynamicSteps: false,
+        featureFlags: { defaults: {} },
+        steps: {},
+      }),
+      getWorkflowName: jest.fn().mockReturnValue('test-workflow'),
       getStepDefinitions: jest.fn().mockReturnValue([]),
       getUpfrontStepDefinitions: jest.fn().mockReturnValue([]),
       getStepDefinition: jest.fn(),
@@ -61,7 +70,15 @@ describe('OrchestrationService', () => {
       determineOutcome: jest.fn(),
       isFanOutDiscoveryStep: jest.fn().mockReturnValue(false),
       isChildStep: jest.fn().mockReturnValue(false),
-    };
+    } as unknown as jest.Mocked<WorkflowConfigService>;
+    // getStepDefinitionsForJob mirrors the real WorkflowConfigService: for non-dynamic
+    // workflows it falls through to getStepDefinitions(job.type). Wired as a separate
+    // assignment so per-test overrides of getStepDefinitions flow through automatically.
+    (mockWorkflowConfigService as any).getStepDefinitionsForJob = jest
+      .fn()
+      .mockImplementation((job: { type: string }) =>
+        mockWorkflowConfigService.getStepDefinitions(job.type),
+      );
 
     const mockWorkflowRegistryService = {
       get: jest.fn().mockReturnValue(mockWorkflowConfigService),
@@ -90,6 +107,7 @@ describe('OrchestrationService', () => {
     jobRepository = module.get(JobRepository);
     stepRepository = module.get(StepRepository);
     delegationService = module.get(DelegationService);
+    workflowConfigService = module.get(WorkflowConfigService);
   });
 
   afterEach(() => {
@@ -395,6 +413,14 @@ describe('OrchestrationService', () => {
 
         jobRepository.findById.mockResolvedValue(mockJob as any);
         stepRepository.findByJobId.mockResolvedValue(mockSteps as any);
+        workflowConfigService.getStepDefinitions.mockReturnValue([
+          { step: 'ValidateCustomer', queueName: 'q-validate-customer', dependencies: [] },
+          {
+            step: 'SubmitCustomer',
+            queueName: 'q-submit-customer',
+            dependencies: ['ValidateCustomer'],
+          },
+        ] as any);
         delegationService.delegateStep.mockResolvedValue({
           success: true,
           stepId: 'step-2',
@@ -849,6 +875,9 @@ describe('OrchestrationService', () => {
       };
 
       jobRepository.findById.mockResolvedValue(mockJob);
+      workflowConfigService.getStepDefinitions.mockReturnValue([
+        { step: 'ValidateCustomer', queueName: 'q-validate-customer', dependencies: [] },
+      ] as any);
       stepRepository.createSteps.mockRejectedValue(new Error('Database connection lost'));
 
       // Act

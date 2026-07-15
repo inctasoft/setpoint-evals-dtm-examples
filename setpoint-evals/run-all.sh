@@ -83,8 +83,6 @@ declare -A PIDS
 declare -A JOB_IDS
 declare -A CORRELATION_IDS
 declare -A NOTES
-declare -A ORDER_IDS
-declare -A CUSTOMER_IDS
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -853,13 +851,6 @@ if [ "$MODE" = "parallel" ]; then
                     CORRELATION_IDS[$eval_id]="$correlation_id"
                 fi
 
-                # Extract Membership No and Consumer No
-                mem_no=$(grep -i "Membership Number:\|Using membershipNo:" "$result_file" | head -n 1 | grep -o "[0-9]\{10\}" || true)
-                cons_no=$(grep -i "Consumer No:\|Consumer Number:" "$result_file" | head -n 1 | grep -o "[0-9]\{4\}" || true)
-
-                if [ -n "$mem_no" ]; then ORDER_IDS[$eval_id]="$mem_no"; fi
-                if [ -n "$cons_no" ]; then CUSTOMER_IDS[$eval_id]="$cons_no"; fi
-
                 # Extract Notes (last failure message or relevant info)
                 if [ "${RESULTS[$eval_id]}" != "PASS" ] && [ "${RESULTS[$eval_id]}" != "PASSED" ]; then
                     # Try to find specific error message
@@ -971,13 +962,6 @@ if [ "$MODE" = "parallel" ]; then
       if [ -n "$job_id" ]; then
           JOB_IDS[$eval_id]="$job_id"
       fi
-
-      # Extract Membership No and Consumer No
-      mem_no=$(grep -i "Membership Number:\|Using membershipNo:" "$result_file" | head -n 1 | grep -o "[0-9]\{10\}" || true)
-      cons_no=$(grep -i "Consumer No:\|Consumer Number:" "$result_file" | head -n 1 | grep -o "[0-9]\{4\}" || true)
-
-      if [ -n "$mem_no" ]; then ORDER_IDS[$eval_id]="$mem_no"; fi
-      if [ -n "$cons_no" ]; then CUSTOMER_IDS[$eval_id]="$cons_no"; fi
 
       # Extract Notes
       if [ "${RESULTS[$eval_id]}" != "PASS" ] && [ "${RESULTS[$eval_id]}" != "PASSED" ]; then

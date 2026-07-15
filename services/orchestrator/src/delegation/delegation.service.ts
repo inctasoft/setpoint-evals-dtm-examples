@@ -80,9 +80,7 @@ export class DelegationService {
         return { stepId: dto.stepId, success: false, error: result.error };
       }
 
-      this.logger.log(
-        `Successfully delegated step ${dto.stepId}. Handle: ${result.taskHandle}`,
-      );
+      this.logger.log(`Successfully delegated step ${dto.stepId}. Handle: ${result.taskHandle}`);
       await this.stepRepository.markAsDelegated(dto.stepId, result.taskHandle);
 
       return { stepId: dto.stepId, success: true, sqsMessageId: result.taskHandle };

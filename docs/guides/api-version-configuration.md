@@ -107,10 +107,7 @@ The following scripts have been updated to use the new configuration system:
 
 ### Core Testing Scripts
 
-- ✅ `scripts/test-health.sh` - Health check endpoint testing
 - ✅ `scripts/test-new-api.sh` - Event-based API testing
-- ✅ `scripts/test-poc-endpoints.sh` - Legacy POC endpoint testing
-- ✅ `scripts/test-kafka-submission.sh` - Kafka integration testing
 
 ### Monitoring Scripts
 
