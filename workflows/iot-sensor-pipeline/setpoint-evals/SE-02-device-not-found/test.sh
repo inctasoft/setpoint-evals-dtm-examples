@@ -33,7 +33,7 @@ EVAL_PURPOSE="Test failure handling when critical entity (device) does not exist
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: DEV-99999 (does NOT exist in source DB)"
+log_info "Entity ID: greenhouse-999 (the reserved not-found sentinel — does NOT exist in source DB)"
 log_info "Variant: default"
 log_info "Expected Outcome: Job FAILS (critical entity failed)"
 echo ""
@@ -47,8 +47,8 @@ log_section "STEP 1: INITIATE JOB (NON-EXISTENT DEVICE)"
 PAYLOAD='{
   "variant": "default",
   "payload": {
-    "deviceId": "DEV-99999",
-    "entityId": "DEV-99999"
+    "deviceId": "greenhouse-999",
+    "entityId": "greenhouse-999"
   },
   "testOptions": {
     "RegisterDevice":       { "simDelay": 300, "maxRetries": 0 },

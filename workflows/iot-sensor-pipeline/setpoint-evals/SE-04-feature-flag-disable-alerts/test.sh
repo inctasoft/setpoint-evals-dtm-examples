@@ -40,7 +40,7 @@ EVAL_PURPOSE="Test ENABLE_ALERT_GENERATION: false skips alert steps"
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: DEV-001"
+log_info "Entity ID: greenhouse-4 (dedicated device — has a real heat-spike alert)"
 log_info "Variant: default"
 log_info "Feature Flag: ENABLE_ALERT_GENERATION = false"
 log_info "Expected Outcome: Job COMPLETES, alert steps SKIPPED"
@@ -56,8 +56,8 @@ PAYLOAD='{
   "enableDeduplication": false,
   "variant": "default",
   "payload": {
-    "deviceId": "DEV-001",
-    "entityId": "DEV-001"
+    "deviceId": "greenhouse-4",
+    "entityId": "greenhouse-4"
   },
   "featureFlags": {
     "ENABLE_ALERT_GENERATION": false

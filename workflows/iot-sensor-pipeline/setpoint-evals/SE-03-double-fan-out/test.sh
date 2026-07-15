@@ -42,7 +42,7 @@ EVAL_PURPOSE="Test nested Discovery + Fan-Out: Device -> Sensors -> Readings"
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: DEV-001 (device with 3 sensors, each with N readings)"
+log_info "Entity ID: greenhouse-3 (dedicated device — 3 sensors, each with readings)"
 log_info "Variant: default (includes double fan-out)"
 log_info "Expected Outcome: Nested fan-out creates multi-level child steps, job COMPLETES"
 echo ""
@@ -57,8 +57,8 @@ PAYLOAD='{
   "enableDeduplication": false,
   "variant": "default",
   "payload": {
-    "deviceId": "DEV-001",
-    "entityId": "DEV-001"
+    "deviceId": "greenhouse-3",
+    "entityId": "greenhouse-3"
   },
   "testOptions": {
     "RegisterDevice":       { "simDelay": 300 },

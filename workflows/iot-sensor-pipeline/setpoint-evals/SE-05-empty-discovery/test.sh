@@ -41,7 +41,7 @@ EVAL_PURPOSE="Test empty DiscoverReadings result (sensor with 0 readings)"
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: DEV-EMPTY (device with sensor that has 0 readings)"
+log_info "Entity ID: greenhouse-offline (dedicated device — 1 sensor, 0 readings)"
 log_info "Variant: default"
 log_info "Expected Outcome: DiscoverReadings returns empty, job COMPLETES"
 echo ""
@@ -55,8 +55,8 @@ log_section "STEP 1: INITIATE JOB (EMPTY DISCOVERY SCENARIO)"
 PAYLOAD='{
   "variant": "default",
   "payload": {
-    "deviceId": "DEV-EMPTY",
-    "entityId": "DEV-EMPTY"
+    "deviceId": "greenhouse-offline",
+    "entityId": "greenhouse-offline"
   },
   "testOptions": {
     "RegisterDevice":       { "simDelay": 300 },
