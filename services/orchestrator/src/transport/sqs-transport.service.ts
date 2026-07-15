@@ -29,7 +29,14 @@ export class SqsTransport extends QueueTransport {
   async sendBulkTasks(
     tasks: Array<LambdaStepPayload & { queueName: string }>,
   ): Promise<Array<{ stepId: string } & TaskSendResult>> {
-    const results = await this.sqsService.sendBulkStepMessages(tasks);
+    // sendBulkStepMessages reads payload.queueUrl — map each task's logical
+    // queueName to its URL first (mirrors sendTask above).
+    const results = await this.sqsService.sendBulkStepMessages(
+      tasks.map(({ queueName, ...payload }) => ({
+        ...payload,
+        queueUrl: this.sqsConfig.getQueueUrlByName(queueName),
+      })),
+    );
     return results.map((r) => ({
       stepId: r.stepId,
       taskHandle: r.messageId,
