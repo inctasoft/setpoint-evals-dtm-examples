@@ -57,11 +57,11 @@ Tests the **HealthMetricsTask** maintenance task, which generates operational he
 
 ## 📊 Test Data
 
-Uses multiple memberships to create diverse job states:
+Uses multiple `quick-order` jobs to create diverse job states:
 
-- **Completed**: `1410001014`, `1410001015`, `1410001016` (Consumers: 1014-1016)
-- **Failed**: `1410001017` (Consumer: 1017)
-- **Source**: `02-data-example.sql`
+- **Completed** (3 jobs): customerId/orderId `1`, `2`, `3` — each with a unique `entityId`
+- **Failed** (1 job): customerId/orderId `1` with `SubmitOrder.failOnAttempts: [1, 2, 3]` (exhausts retries → DLQ)
+- **Source**: `workflows/order-processing/source-db/init-scripts/01-schema-and-seed.sql`
 
 ## ⏱️ Expected Duration
 
@@ -107,13 +107,13 @@ Uses multiple memberships to create diverse job states:
 │ STEP 1: Create Test Data                                    │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  3 Successful Jobs:                                    │
-│    Job 1: 1410001014 → completed ✅                   │
-│    Job 2: 1410001015 → completed ✅                   │
-│    Job 3: 1410001016 → completed ✅                   │
+│  3 Successful Jobs (quick-order):                      │
+│    Job 1: customerId=1 → completed ✅                 │
+│    Job 2: customerId=2 → completed ✅                 │
+│    Job 3: customerId=3 → completed ✅                 │
 │                                                              │
-│  1 Failed Job:                                         │
-│    Job 4: 1410001017 → failed ❌                      │
+│  1 Failed Job (quick-order):                           │
+│    Job 4: customerId=1 → failed ❌                    │
 │                  (SubmitOrder: permanent failure)    │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘

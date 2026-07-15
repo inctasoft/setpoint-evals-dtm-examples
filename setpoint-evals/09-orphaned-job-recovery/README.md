@@ -56,9 +56,9 @@ Tests the **OrphanedJobRecoveryTask** maintenance task, which recovers "zombie" 
 
 ## 📊 Test Data
 
-- **Membership**: `1410001013`
-- **Consumer**: `1013`
-- **Source**: `02-data-example.sql`
+- **Variant**: `quick-order`
+- **customerId / orderId**: `1` / `1`
+- **Source**: `workflows/order-processing/source-db/init-scripts/01-schema-and-seed.sql`
 
 ## ⏱️ Expected Duration
 

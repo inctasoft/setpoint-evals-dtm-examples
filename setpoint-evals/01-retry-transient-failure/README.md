@@ -1,4 +1,4 @@
-# E2E Eval 02: Transient Failure Recovery
+# E2E Eval 01: Transient Failure Recovery
 
 ## 📋 Overview
 
@@ -304,10 +304,8 @@ WHERE job_id = '{JOB_ID}'
 
 ## 📚 Related Documentation
 
-- [`CRITICAL-BUG-FIX-RETRY-HANDLING.md`](../../CRITICAL-BUG-FIX-RETRY-HANDLING.md) - Retry handling bug fix
-- [`docs/FEATURES.md`](../../docs/FEATURES.md#retry-aware-failure-simulation) - Retry-aware simulation
-- [`SQS-POLLER-FIXES.md`](../../SQS-POLLER-FIXES.md) - SQS retry mechanism
-- [`RETRY-TESTING-EXAMPLES.md`](../../RETRY-TESTING-EXAMPLES.md) - More retry scenarios
+- [`docs/guides/FEATURES.md`](../../docs/guides/FEATURES.md#retry-aware-failure-simulation) - Retry-aware simulation
+- [`docs/guides/race-condition-prevention.md`](../../docs/guides/race-condition-prevention.md) - Callback race condition guards
 
 ---
 
@@ -355,5 +353,5 @@ cd setpoint-evals/01-retry-transient-failure
 Retry counts verified (ValidateCustomer: 2, SubmitOrder: 2)
 ✅ Error fields cleared
 ✅ Execution history validated
-🎉 Eval 02: Transient Failure Recovery PASSED
+🎉 Eval 01: Transient Failure Recovery PASSED
 ```
