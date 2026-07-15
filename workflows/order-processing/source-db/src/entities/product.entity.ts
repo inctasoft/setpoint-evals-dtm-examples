@@ -1,6 +1,6 @@
 import { Entity, PrimaryColumn, Column } from "typeorm";
 
-@Entity({ name: "products", schema: "dbo" })
+@Entity({ name: "products", schema: "ecommerce" })
 export class Product {
   @PrimaryColumn({ name: "product_id", type: "integer" })
   productId!: number;

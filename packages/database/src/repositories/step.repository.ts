@@ -5,7 +5,7 @@ import { Step, StepStatus } from "../entities/step.entity";
 
 /**
  * DTO for creating steps
- * stepValue: The enum string value (e.g., 'Consumer', 'Memberships') representing the step
+ * stepValue: The enum string value (e.g., 'ValidateCustomer', 'SubmitOrder') representing the step
  */
 export interface CreateStepDto {
   jobId: string;

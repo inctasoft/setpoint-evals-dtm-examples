@@ -210,7 +210,7 @@ describe('KafkaProducerService', () => {
       // Arrange
       const message: JobCompletedMessage = {
         eventId: 'event-123',
-        jobId: 'deal-456',
+        jobId: 'job-456',
         transformedAt: '2025-12-10T22:00:00Z',
       };
 
@@ -234,7 +234,7 @@ describe('KafkaProducerService', () => {
       // Arrange
       const message: JobCompletedMessage = {
         eventId: 'event-789',
-        jobId: 'deal-abc',
+        jobId: 'job-abc',
         transformedAt: '2025-12-10T22:00:00Z',
       };
 
@@ -259,7 +259,7 @@ describe('KafkaProducerService', () => {
       await service.disconnect();
       const message: JobCompletedMessage = {
         eventId: 'event-123',
-        jobId: 'deal-456',
+        jobId: 'job-456',
 
         transformedAt: '2025-12-10T22:00:00Z',
       };
@@ -275,7 +275,7 @@ describe('KafkaProducerService', () => {
       mockProducer.send.mockRejectedValue(new Error('Broker unavailable'));
       const message: JobCompletedMessage = {
         eventId: 'event-123',
-        jobId: 'deal-456',
+        jobId: 'job-456',
 
         transformedAt: '2025-12-10T22:00:00Z',
       };
@@ -300,7 +300,7 @@ describe('KafkaProducerService', () => {
       // Arrange
       const message: JobFailedMessage = {
         eventId: 'event-error-123',
-        jobId: 'deal-error-456',
+        jobId: 'job-error-456',
 
         error: 'Database connection failed',
         failedAt: '2025-12-10T22:00:00Z',
@@ -326,7 +326,7 @@ describe('KafkaProducerService', () => {
       // Arrange
       const message: JobFailedMessage = {
         eventId: 'event-error-789',
-        jobId: 'deal-error-abc',
+        jobId: 'job-error-abc',
 
         error: 'Validation failed',
         failedAt: '2025-12-10T22:00:00Z',
@@ -353,7 +353,7 @@ describe('KafkaProducerService', () => {
       await service.disconnect();
       const message: JobFailedMessage = {
         eventId: 'event-error-123',
-        jobId: 'deal-error-456',
+        jobId: 'job-error-456',
 
         error: 'Error message',
         failedAt: '2025-12-10T22:00:00Z',
@@ -370,7 +370,7 @@ describe('KafkaProducerService', () => {
       mockProducer.send.mockRejectedValue(new Error('Network error'));
       const message: JobFailedMessage = {
         eventId: 'event-error-123',
-        jobId: 'deal-error-456',
+        jobId: 'job-error-456',
 
         error: 'Error message',
         failedAt: '2025-12-10T22:00:00Z',

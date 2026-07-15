@@ -95,7 +95,7 @@ export interface WorkMessage {
   /** Step name (e.g., 'ValidateCustomer') */
   stepName: string;
 
-  /** Workflow variant (e.g., 'membership', 'membership_batch') */
+  /** Workflow variant (e.g., 'default', 'quick-order') */
   workflowVariant: string;
 
   /** Input data for this step */

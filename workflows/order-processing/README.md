@@ -162,12 +162,12 @@ Only 4 steps. No discovery, no fan-out, no optional entities.
 
 | Table             | Records | Description                                  |
 |-------------------|---------|----------------------------------------------|
-| `dbo.customers`   | 5       | Customer profiles with contact info          |
-| `dbo.products`    | 10      | Product catalog with pricing                 |
-| `dbo.orders`      | 8       | Orders linked to customers                   |
-| `dbo.order_items` | 25      | Line items linking orders to products        |
-| `dbo.payments`    | 8       | Payment records (one per order)              |
-| `dbo.shipments`   | 6       | Shipment tracking (not all orders shipped)   |
+| `ecommerce.customers`   | 5       | Customer profiles with contact info          |
+| `ecommerce.products`    | 10      | Product catalog with pricing                 |
+| `ecommerce.orders`      | 8       | Orders linked to customers                   |
+| `ecommerce.order_items` | 25      | Line items linking orders to products        |
+| `ecommerce.payments`    | 8       | Payment records (one per order)              |
+| `ecommerce.shipments`   | 6       | Shipment tracking (not all orders shipped)   |
 
 ### Seed Data Summary
 

@@ -243,7 +243,7 @@ export class SimulatorService {
   /**
    * Format cascadeName for display in log messages.
    * Converts camelCase to space-separated lowercase.
-   * e.g., "paymentHistory" -> "payment history", "customer" -> "customer"
+   * e.g., "lineItem" -> "line item", "customer" -> "customer"
    */
   private formatCascadeName(cascadeName: string): string {
     return cascadeName.replace(/([A-Z])/g, " $1").toLowerCase();
@@ -290,7 +290,7 @@ export class SimulatorService {
         simulatedAckDelay: ackDelay,
         acknowledgedBy: "dev-simulator",
         customPayloadProvided: !!customPayload,
-        npdDefaultsGenerated: Object.keys(defaults),
+        ackDefaultsGenerated: Object.keys(defaults),
         customPayloadKeys: customPayload ? Object.keys(customPayload) : [],
       },
     };

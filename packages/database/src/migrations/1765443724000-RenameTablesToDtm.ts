@@ -35,13 +35,13 @@ export class RenameTablesToDtm1765443724000 implements MigrationInterface {
       `ALTER INDEX IF EXISTS "IDX_migration_jobs_status_type" RENAME TO "IDX_dtm_jobs_status_type"`,
     );
     await queryRunner.query(
-      `ALTER INDEX IF EXISTS "IDX_migration_jobs_deal_id" RENAME TO "IDX_dtm_jobs_deal_id"`,
+      `ALTER INDEX IF EXISTS "IDX_migration_jobs_order_ref_id" RENAME TO "IDX_dtm_jobs_order_ref_id"`,
     );
     await queryRunner.query(
-      `ALTER INDEX IF EXISTS "IDX_migration_jobs_membership_number" RENAME TO "IDX_dtm_jobs_membership_number"`,
+      `ALTER INDEX IF EXISTS "IDX_migration_jobs_customer_number" RENAME TO "IDX_dtm_jobs_customer_number"`,
     );
     await queryRunner.query(
-      `ALTER INDEX IF EXISTS "IDX_migration_jobs_membership_id" RENAME TO "IDX_dtm_jobs_membership_id"`,
+      `ALTER INDEX IF EXISTS "IDX_migration_jobs_customer_id" RENAME TO "IDX_dtm_jobs_customer_id"`,
     );
     await queryRunner.query(
       `ALTER INDEX IF EXISTS "IDX_migration_jobs_submitted_at" RENAME TO "IDX_dtm_jobs_submitted_at"`,
@@ -101,13 +101,13 @@ export class RenameTablesToDtm1765443724000 implements MigrationInterface {
       `ALTER INDEX IF EXISTS "IDX_dtm_jobs_status_type" RENAME TO "IDX_migration_jobs_status_type"`,
     );
     await queryRunner.query(
-      `ALTER INDEX IF EXISTS "IDX_dtm_jobs_deal_id" RENAME TO "IDX_migration_jobs_deal_id"`,
+      `ALTER INDEX IF EXISTS "IDX_dtm_jobs_order_ref_id" RENAME TO "IDX_migration_jobs_order_ref_id"`,
     );
     await queryRunner.query(
-      `ALTER INDEX IF EXISTS "IDX_dtm_jobs_membership_number" RENAME TO "IDX_migration_jobs_membership_number"`,
+      `ALTER INDEX IF EXISTS "IDX_dtm_jobs_customer_number" RENAME TO "IDX_migration_jobs_customer_number"`,
     );
     await queryRunner.query(
-      `ALTER INDEX IF EXISTS "IDX_dtm_jobs_membership_id" RENAME TO "IDX_migration_jobs_membership_id"`,
+      `ALTER INDEX IF EXISTS "IDX_dtm_jobs_customer_id" RENAME TO "IDX_migration_jobs_customer_id"`,
     );
     await queryRunner.query(
       `ALTER INDEX IF EXISTS "IDX_dtm_jobs_submitted_at" RENAME TO "IDX_migration_jobs_submitted_at"`,

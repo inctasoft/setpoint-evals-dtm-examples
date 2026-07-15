@@ -282,7 +282,8 @@ export class CallbackService {
 
             // Dependencies ARE met - inject FKs and publish
             // Use per-record FK injection to support FK map lookups for fan-out parents
-            // (e.g., PaymentHistory looks up npdPaymentMethodId from PaymentMethod's FK map)
+            // (e.g., a dependent cascade looks up its target-system FK from the parent
+            // cascade's per-record ack map — see IngestReading -> DiscoverSensors)
             if (updatedStepForPublish.output) {
               const outputDataKey = this.getOutputDataKey(cascadeName, wfConfig);
               const transformedData = updatedStepForPublish.output[outputDataKey] as

@@ -33,13 +33,13 @@ psql -v ON_ERROR_STOP=1 --username "order_user" --dbname "order_processing_db" <
 -- Schema creation, table definitions, and seed data
 -- ============================================================
 
--- Create the dbo schema
-CREATE SCHEMA IF NOT EXISTS dbo;
+-- Create the ecommerce schema
+CREATE SCHEMA IF NOT EXISTS ecommerce;
 
 -- ============================================================
--- Table: dbo.customers
+-- Table: ecommerce.customers
 -- ============================================================
-CREATE TABLE dbo.customers (
+CREATE TABLE ecommerce.customers (
     customer_id    INTEGER      PRIMARY KEY,
     first_name     VARCHAR(50)  NOT NULL,
     last_name      VARCHAR(50)  NOT NULL,
@@ -50,9 +50,9 @@ CREATE TABLE dbo.customers (
 );
 
 -- ============================================================
--- Table: dbo.products
+-- Table: ecommerce.products
 -- ============================================================
-CREATE TABLE dbo.products (
+CREATE TABLE ecommerce.products (
     product_id     INTEGER       PRIMARY KEY,
     name           VARCHAR(100)  NOT NULL,
     sku            VARCHAR(50)   NOT NULL,
@@ -63,11 +63,11 @@ CREATE TABLE dbo.products (
 );
 
 -- ============================================================
--- Table: dbo.orders
+-- Table: ecommerce.orders
 -- ============================================================
-CREATE TABLE dbo.orders (
+CREATE TABLE ecommerce.orders (
     order_id         INTEGER       PRIMARY KEY,
-    customer_id      INTEGER       NOT NULL REFERENCES dbo.customers(customer_id),
+    customer_id      INTEGER       NOT NULL REFERENCES ecommerce.customers(customer_id),
     order_date       TIMESTAMP     NOT NULL,
     status           VARCHAR(20)   NOT NULL,
     total_amount     DECIMAL(10,2) NOT NULL,
@@ -75,23 +75,23 @@ CREATE TABLE dbo.orders (
 );
 
 -- ============================================================
--- Table: dbo.order_items
+-- Table: ecommerce.order_items
 -- ============================================================
-CREATE TABLE dbo.order_items (
+CREATE TABLE ecommerce.order_items (
     order_item_id  INTEGER       PRIMARY KEY,
-    order_id       INTEGER       NOT NULL REFERENCES dbo.orders(order_id),
-    product_id     INTEGER       NOT NULL REFERENCES dbo.products(product_id),
+    order_id       INTEGER       NOT NULL REFERENCES ecommerce.orders(order_id),
+    product_id     INTEGER       NOT NULL REFERENCES ecommerce.products(product_id),
     quantity       INTEGER       NOT NULL,
     unit_price     DECIMAL(10,2) NOT NULL,
     subtotal       DECIMAL(10,2) NOT NULL
 );
 
 -- ============================================================
--- Table: dbo.payments
+-- Table: ecommerce.payments
 -- ============================================================
-CREATE TABLE dbo.payments (
+CREATE TABLE ecommerce.payments (
     payment_id      INTEGER       PRIMARY KEY,
-    order_id        INTEGER       NOT NULL REFERENCES dbo.orders(order_id),
+    order_id        INTEGER       NOT NULL REFERENCES ecommerce.orders(order_id),
     payment_method  VARCHAR(50)   NOT NULL,
     amount          DECIMAL(10,2) NOT NULL,
     payment_date    TIMESTAMP     NOT NULL,
@@ -100,11 +100,11 @@ CREATE TABLE dbo.payments (
 );
 
 -- ============================================================
--- Table: dbo.shipments
+-- Table: ecommerce.shipments
 -- ============================================================
-CREATE TABLE dbo.shipments (
+CREATE TABLE ecommerce.shipments (
     shipment_id        INTEGER     PRIMARY KEY,
-    order_id           INTEGER     NOT NULL REFERENCES dbo.orders(order_id),
+    order_id           INTEGER     NOT NULL REFERENCES ecommerce.orders(order_id),
     carrier            VARCHAR(50) NOT NULL,
     tracking_number    VARCHAR(100),
     shipped_date       TIMESTAMP,
@@ -115,7 +115,7 @@ CREATE TABLE dbo.shipments (
 -- ============================================================
 -- Seed Data: Customers (5 records)
 -- ============================================================
-INSERT INTO dbo.customers (customer_id, first_name, last_name, email, phone, address, created_at) VALUES
+INSERT INTO ecommerce.customers (customer_id, first_name, last_name, email, phone, address, created_at) VALUES
 (1, 'Sarah',   'Mitchell',  'sarah.mitchell@email.com',   '(415) 555-0142', '742 Evergreen Terrace, San Francisco, CA 94102',  '2025-01-15 09:30:00'),
 (2, 'James',   'Rodriguez', 'james.rodriguez@email.com',  '(312) 555-0198', '1200 Lake Shore Dr, Apt 4B, Chicago, IL 60610',   '2025-02-20 14:15:00'),
 (3, 'Emily',   'Chen',      'emily.chen@email.com',       '(206) 555-0173', '889 Pine Street, Suite 12, Seattle, WA 98101',    '2025-03-08 11:45:00'),
@@ -125,7 +125,7 @@ INSERT INTO dbo.customers (customer_id, first_name, last_name, email, phone, add
 -- ============================================================
 -- Seed Data: Products (10 records)
 -- ============================================================
-INSERT INTO dbo.products (product_id, name, sku, price, category, description, in_stock) VALUES
+INSERT INTO ecommerce.products (product_id, name, sku, price, category, description, in_stock) VALUES
 (1,  'Sony WH-1000XM5 Wireless Headphones',    'SONY-WH1000XM5',   349.99, 'Electronics',     'Industry-leading noise canceling overhead headphones with Auto NC Optimizer',   TRUE),
 (2,  'Apple iPad Air 11-inch (M2)',             'APPLE-IPADAIR-M2',  599.00, 'Electronics',     '11-inch Liquid Retina display, M2 chip, 128GB storage',                         TRUE),
 (3,  'Patagonia Better Sweater Fleece Jacket',  'PAT-BTSW-FLC-M',   139.00, 'Clothing',        'Fair Trade Certified sewn, 100% recycled polyester fleece',                      TRUE),
@@ -140,7 +140,7 @@ INSERT INTO dbo.products (product_id, name, sku, price, category, description, i
 -- ============================================================
 -- Seed Data: Orders (8 records)
 -- ============================================================
-INSERT INTO dbo.orders (order_id, customer_id, order_date, status, total_amount, shipping_address) VALUES
+INSERT INTO ecommerce.orders (order_id, customer_id, order_date, status, total_amount, shipping_address) VALUES
 (1, 1, '2025-06-01 10:23:00', 'delivered',  404.94, '742 Evergreen Terrace, San Francisco, CA 94102'),
 (2, 2, '2025-06-05 14:45:00', 'delivered',  827.95, '1200 Lake Shore Dr, Apt 4B, Chicago, IL 60610'),
 (3, 1, '2025-06-12 09:10:00', 'shipped',    149.85, '742 Evergreen Terrace, San Francisco, CA 94102'),
@@ -153,7 +153,7 @@ INSERT INTO dbo.orders (order_id, customer_id, order_date, status, total_amount,
 -- ============================================================
 -- Seed Data: Order Items (25 records)
 -- ============================================================
-INSERT INTO dbo.order_items (order_item_id, order_id, product_id, quantity, unit_price, subtotal) VALUES
+INSERT INTO ecommerce.order_items (order_item_id, order_id, product_id, quantity, unit_price, subtotal) VALUES
 (1,  1, 1,  1, 349.99, 349.99),
 (2,  1, 4,  1,  35.00,  35.00),
 (3,  1, 5,  1,  19.95,  19.95),
@@ -183,7 +183,7 @@ INSERT INTO dbo.order_items (order_item_id, order_id, product_id, quantity, unit
 -- ============================================================
 -- Seed Data: Payments (8 records)
 -- ============================================================
-INSERT INTO dbo.payments (payment_id, order_id, payment_method, amount, payment_date, status, transaction_ref) VALUES
+INSERT INTO ecommerce.payments (payment_id, order_id, payment_method, amount, payment_date, status, transaction_ref) VALUES
 (1, 1, 'credit_card',   404.94, '2025-06-01 10:25:00', 'completed', 'TXN-CC-20250601-0001'),
 (2, 2, 'paypal',        827.95, '2025-06-05 14:48:00', 'completed', 'TXN-PP-20250605-0002'),
 (3, 3, 'credit_card',   149.85, '2025-06-12 09:12:00', 'completed', 'TXN-CC-20250612-0003'),
@@ -196,7 +196,7 @@ INSERT INTO dbo.payments (payment_id, order_id, payment_method, amount, payment_
 -- ============================================================
 -- Seed Data: Shipments (6 records)
 -- ============================================================
-INSERT INTO dbo.shipments (shipment_id, order_id, carrier, tracking_number, shipped_date, estimated_delivery, status) VALUES
+INSERT INTO ecommerce.shipments (shipment_id, order_id, carrier, tracking_number, shipped_date, estimated_delivery, status) VALUES
 (1, 1, 'ups',   '1Z999AA10123456784',  '2025-06-02 08:00:00', '2025-06-05 18:00:00', 'delivered'),
 (2, 2, 'fedex', '794644790301',        '2025-06-06 10:30:00', '2025-06-09 18:00:00', 'delivered'),
 (3, 3, 'usps',  '9400111899223100001', '2025-06-13 07:45:00', '2025-06-17 18:00:00', 'shipped'),

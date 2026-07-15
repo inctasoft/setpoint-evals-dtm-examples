@@ -44,7 +44,7 @@ export class RemoveMigrationTypeEnum1765443719000
 
     // 2. Recreate enum type
     await queryRunner.query(
-      `CREATE TYPE "migration_type_enum" AS ENUM('membership', 'membership_batch', 'deal')`,
+      `CREATE TYPE "migration_type_enum" AS ENUM('default', 'quick-order', 'batch')`,
     );
 
     // 3. Alter column back to enum

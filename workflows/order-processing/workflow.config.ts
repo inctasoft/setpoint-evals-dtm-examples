@@ -89,7 +89,7 @@ const DEFAULT_STEPS: StepDefinition[] = [
     queueName: 'order-validate-customer',
     dependencies: [],
     payloadEnrichments: [
-      { outputField: 'consumer_no', payloadField: 'consumerNo' },
+      { outputField: 'customerId', payloadField: 'customerId' },
     ],
     metadata: {
       sourceConfig: { sourceDatabase: 'ecommerce', sourceTable: 'customers', filterKey: 'customerId' },
@@ -260,7 +260,7 @@ const QUICK_ORDER_STEPS: StepDefinition[] = [
     queueName: 'order-validate-customer',
     dependencies: [],
     payloadEnrichments: [
-      { outputField: 'consumer_no', payloadField: 'consumerNo' },
+      { outputField: 'customerId', payloadField: 'customerId' },
     ],
     metadata: {
       sourceConfig: { sourceDatabase: 'ecommerce', sourceTable: 'customers', filterKey: 'customerId' },

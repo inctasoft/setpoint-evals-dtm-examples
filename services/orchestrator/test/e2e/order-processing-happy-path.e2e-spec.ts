@@ -19,7 +19,7 @@
  *
  * Usage:
  *   cd services/orchestrator
- *   npm run test:e2e -- --testPathPattern=payment-history-happy-path
+ *   npm run test:e2e -- --testPathPattern=order-processing-happy-path
  */
 
 import { DatabaseHelper, ServiceHelper, AssertionHelper } from './test-helpers';
@@ -61,7 +61,7 @@ describe('Order Processing Happy Path E2E', () => {
 
     it('should verify test data exists in workflow source DB', async () => {
       // Verify customer exists
-      const customer = await db.getWorkflowConsumer(
+      const customer = await db.getWorkflowCustomer(
         parseInt(TEST_CUSTOMER_ID.replace('CUST-', ''), 10),
       );
       expect(customer).toBeDefined();
@@ -191,7 +191,7 @@ describe('Order Processing Happy Path E2E', () => {
       const ORDER_ID = 'ORD-1014';
 
       // Verify test data exists but has no line items
-      const customer = await db.getWorkflowConsumer(1014);
+      const customer = await db.getWorkflowCustomer(1014);
       if (!customer) {
         console.log('Skipping - customer 1014 not found');
         return;
