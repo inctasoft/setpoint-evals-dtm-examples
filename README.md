@@ -152,7 +152,7 @@ end-to-end behaviour. They run on the live Docker stack, not on mocks.
 
 A single SE:
 ```bash
-./setpoint-evals/01-retry-transient-failure/test.sh
+./setpoint-evals/SE-01-retry-transient-failure/test.sh
 ```
 
 Parallel mode is the default; sequential mode is `--in-band`.
@@ -214,7 +214,7 @@ curl http://localhost:3002/api/v1/health
 ├── setpoint-evals/                 # Core engine SEs (13)
 │   ├── run-all.sh                  # Suite runner (parallel + destructive phases)
 │   ├── analyze-results.sh          # Result compactor
-│   └── 01-retry-transient-failure/ # ... 13 individual evals
+│   └── SE-01-retry-transient-failure/ # ... 13 individual evals
 ├── setpoint-evals-playwright/      # Optional Playwright-based UI evals
 ├── docs/                           # Architecture & operations guides
 ├── scripts/                        # CLI tools

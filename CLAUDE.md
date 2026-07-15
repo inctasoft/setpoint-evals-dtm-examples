@@ -267,7 +267,11 @@ Workers look up by stepType: `testOptions[message.stepType]`
 
 ## Setpoint Evals (SE) System
 
-Two-tier hierarchy:
+Two-tier hierarchy. Every SE dir is `SE-<NN>-<kebab-name>/` (zero-padded), filesystem-
+autodiscovered — no hand-maintained eval lists. Core SEs carry per-SE README metadata
+(`**Timeout**`, `**Isolation**: parallel-safe|destructive`, `**Category**`); a missing
+README (the pre-v2 legacy workflow-SE estate) degrades to defaults rather than erroring.
+Full contract: `server-config/docs/setpoint-eval-conventions.md`.
 
 ### Core SEs (`setpoint-evals/`) -- 13 tests
 Test generic engine capabilities (retry, DLQ, deduplication, concurrency, maintenance tasks).
@@ -277,7 +281,10 @@ Test generic engine capabilities (retry, DLQ, deduplication, concurrency, mainte
 ```
 
 ### Workflow SEs (`workflows/<name>/setpoint-evals/`) -- per-workflow tests
-Test workflow-specific functionality (entity extraction, FK cascade, fan-out).
+Test workflow-specific functionality (entity extraction, FK cascade, fan-out). Each suite's
+`run-all.sh` is a 3-line delegator to the SAME core runner (`--dir` pointed at itself) —
+no forked runner logic. Defaults to `--in-band` (sequential): these SEs share the core
+`dtm_jobs`/`dtm_steps` tables with every other suite and were never verified concurrently.
 ```bash
 ./workflows/order-processing/setpoint-evals/run-all.sh        # order-processing SEs (5 tests)
 ./workflows/iot-sensor-pipeline/setpoint-evals/run-all.sh     # iot-sensor-pipeline SEs (5 tests)
@@ -286,20 +293,29 @@ Test workflow-specific functionality (entity extraction, FK cascade, fan-out).
 
 ### Helper Architecture (Two-Layer Chain)
 ```
-setpoint-evals/shared/helpers.sh                              # Generic layer (initiate_job, poll_job)
+setpoint-evals/shared/helpers.sh                              # Generic layer (initiate_job, poll_job, se_skip, qdelay)
 workflows/<name>/setpoint-evals/shared/helpers.sh             # Workflow layer (adds workflow-specific helpers)
 ```
 
 ### Common Options
 ```bash
-./setpoint-evals/run-all.sh --parallel          # Default: parallel safe, sequential destructive
+./setpoint-evals/run-all.sh --parallel          # Default: parallel-safe evals parallel, destructive sequential
 ./setpoint-evals/run-all.sh --in-band           # Sequential execution
 ./setpoint-evals/run-all.sh --max-parallel=8    # Limit concurrent tests (default: 6)
 ./setpoint-evals/run-all.sh --skip-purge        # Skip initial purge
 ./setpoint-evals/run-all.sh --skip-checks       # Skip preflight checks
-./setpoint-evals/run-all.sh --category maintenance  # Run specific category
+./setpoint-evals/run-all.sh --category maintenance  # Run only SEs whose README declares this Category
 ./setpoint-evals/run-all.sh --all-workflows     # Include all workflow SEs
+./setpoint-evals/run-all.sh --eval 01           # Run one SE (id or name substring); repeatable; --se is an alias
+./setpoint-evals/run-all.sh --dir <path>        # Discover/run SEs under another directory (workflow delegation)
+./setpoint-evals/run-all.sh --list              # Print discovered execution order, run nothing
+./setpoint-evals/run-all.sh --quick             # Exports SE_QUICK=1 for SEs that opt in via README `**Quick**: yes`
 ```
+
+Per-eval verdict (last line of each log, `VERDICT:<durationSeconds>`): `PASS` · `FAIL` ·
+`TIMEOUT` · `SKIP` (test.sh exited 77 via `se_skip`) · `XFAIL`/`UPASS` (only for an SE
+anchored `**Expected outcome:** EXPECTED-FAIL` in its README — failing as expected is
+green `XFAIL`, unexpectedly passing is a red `UPASS` and fails the run).
 
 ### Parallel Tuning
 ```bash
