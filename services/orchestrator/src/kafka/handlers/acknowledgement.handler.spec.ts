@@ -13,6 +13,15 @@ describe('AcknowledgementHandler', () => {
   let handler: AcknowledgementHandler;
   let stepRepository: jest.Mocked<StepRepository>;
   let orchestrationService: jest.Mocked<OrchestrationService>;
+  // Chainable QueryBuilder mock — handler uses .createQueryBuilder().update().set().where().execute(),
+  // NOT repo.save(). Exposed at describe scope so tests can assert on .set()/.execute() calls.
+  let mockQueryBuilder: {
+    update: jest.Mock;
+    set: jest.Mock;
+    where: jest.Mock;
+    andWhere: jest.Mock;
+    execute: jest.Mock;
+  };
 
   // Sample test data
   const mockJobId = '550e8400-e29b-41d4-a716-446655440000';
@@ -20,8 +29,7 @@ describe('AcknowledgementHandler', () => {
 
   beforeEach(async () => {
     // Create mocks
-    // Chainable QueryBuilder mock — handler uses .createQueryBuilder().update().set().where().execute()
-    const mockQueryBuilder = {
+    mockQueryBuilder = {
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
@@ -63,7 +71,15 @@ describe('AcknowledgementHandler', () => {
     const mockWorkflowRegistryService = {
       get: jest.fn(),
       has: jest.fn().mockReturnValue(true),
-      getByAckTopic: jest.fn().mockReturnValue({ config: {}, cascadeName: 'customer' }),
+      // Topic-aware: mirrors the real registry, which looks up the topic and returns
+      // undefined for anything unregistered (used by the "unknown topic" test below).
+      getByAckTopic: jest
+        .fn()
+        .mockImplementation((topic: string) =>
+          topic === 'order-processing.customer.ack'
+            ? { config: {}, cascadeName: 'customer' }
+            : undefined,
+        ),
     };
 
     const mockEventsGateway = {
@@ -165,7 +181,9 @@ describe('AcknowledgementHandler', () => {
       // Assert
       expect(stepRepository.findById).toHaveBeenCalledWith(mockStepId);
       expect(stepRepository.updateStatus).toHaveBeenCalledWith(mockStepId, StepStatus.COMPLETED);
-      expect(stepRepository.repo.save).toHaveBeenCalled();
+      // ACK metadata is written via a targeted UPDATE query builder (not repo.save()) so
+      // it doesn't clobber the output field if it's being written concurrently.
+      expect(mockQueryBuilder.execute).toHaveBeenCalled();
       expect(orchestrationService.continueJob).toHaveBeenCalledWith(mockJobId);
     });
 
@@ -434,9 +452,10 @@ describe('AcknowledgementHandler', () => {
 
       // Assert
       expect(stepRepository.updateStatus).toHaveBeenCalledWith(mockStepId, StepStatus.COMPLETED);
-      expect(stepRepository.repo.save).toHaveBeenCalled();
-      // Verify ackReceivedAt was set (should be a recent date)
-      const savedStep = stepRepository.repo.save.mock.calls[0][0];
+      // ACK metadata is written via .createQueryBuilder().update().set({...}) — verify the
+      // values passed to .set() rather than a repo.save() payload (handler no longer calls save()).
+      expect(mockQueryBuilder.set).toHaveBeenCalled();
+      const savedStep = mockQueryBuilder.set.mock.calls[0][0];
       expect(savedStep.ackReceivedAt).toBeInstanceOf(Date);
       expect(savedStep.ackMetadata).toEqual({
         ext_id: '12345',
@@ -561,8 +580,9 @@ describe('AcknowledgementHandler', () => {
       await handler.handleMessage(payload);
 
       // Assert
-      expect(stepRepository.repo.save).toHaveBeenCalled();
-      const savedStep = stepRepository.repo.save.mock.calls[0][0];
+      // ACK metadata is written via .createQueryBuilder().update().set({...}), not repo.save().
+      expect(mockQueryBuilder.set).toHaveBeenCalled();
+      const savedStep = mockQueryBuilder.set.mock.calls[0][0];
       expect(savedStep.ackMetadata).toEqual({
         existing: 'data',
         customField1: 'value1',

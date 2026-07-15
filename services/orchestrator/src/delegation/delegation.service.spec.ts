@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Test, TestingModule } from '@nestjs/testing';
 import { DelegationService } from './delegation.service';
-import { SqsService } from '../aws/sqs.service';
-import { SqsConfig } from '../aws/sqs.config';
+import { QueueTransport } from '../transport/queue-transport.interface';
 import { StepRepository, StepStatus, JobType } from '@dtm/database';
 import { StepDelegationDto } from './dto/step-delegation.dto';
 import { CorrelationService } from '../common/correlation/correlation.service';
@@ -11,19 +10,17 @@ import { WorkflowRegistryService } from '../workflow-loader/workflow-registry.se
 
 describe('DelegationService', () => {
   let service: DelegationService;
-  let sqsService: jest.Mocked<SqsService>;
-  let sqsConfig: jest.Mocked<SqsConfig>;
+  let transport: jest.Mocked<QueueTransport>;
   let stepRepository: jest.Mocked<StepRepository>;
 
   beforeEach(async () => {
     // Create mock implementations
-    const mockSqsService = {
-      sendStepMessage: jest.fn(),
-    };
-
-    const mockSqsConfig = {
-      getCallbackUrl: jest.fn(),
-      getQueueUrlByName: jest.fn(),
+    const mockTransport = {
+      sendTask: jest.fn(),
+      sendBulkTasks: jest.fn(),
+      getQueueStats: jest.fn(),
+      getWorkerEndpointUrl: jest.fn(),
+      healthCheck: jest.fn(),
     };
 
     const mockStepRepository = {
@@ -46,6 +43,12 @@ describe('DelegationService', () => {
           queueName: 'test-queue',
           dependencies: [],
         },
+        {
+          // retryDelegation tests build steps with stepValue: 'ValidateCustomer'
+          step: 'ValidateCustomer',
+          queueName: 'test-queue',
+          dependencies: [],
+        },
       ]),
     };
 
@@ -57,8 +60,7 @@ describe('DelegationService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DelegationService,
-        { provide: SqsService, useValue: mockSqsService },
-        { provide: SqsConfig, useValue: mockSqsConfig },
+        { provide: QueueTransport, useValue: mockTransport },
         { provide: StepRepository, useValue: mockStepRepository },
         { provide: CorrelationService, useValue: mockCorrelationService },
         { provide: WorkflowConfigService, useValue: mockWorkflowConfigService },
@@ -67,8 +69,7 @@ describe('DelegationService', () => {
     }).compile();
 
     service = module.get<DelegationService>(DelegationService);
-    sqsService = module.get(SqsService);
-    sqsConfig = module.get(SqsConfig);
+    transport = module.get(QueueTransport);
     stepRepository = module.get(StepRepository);
   });
 
@@ -90,13 +91,10 @@ describe('DelegationService', () => {
           input: { customerId: 'CUST-123', orderId: 'ORD-123' },
         };
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue(
-          'http://localhost:4566/000000000000/order-validate-customer',
-        );
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-abc-123',
+          taskHandle: 'msg-abc-123',
         });
         stepRepository.markAsDelegated.mockResolvedValue(undefined);
 
@@ -122,31 +120,27 @@ describe('DelegationService', () => {
           input: { customerId: 'CUST-123' },
         };
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://localhost:4566/queue-url');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
 
         // Act
         await service.delegateStep(dto);
 
         // Assert
-        expect(sqsService.sendStepMessage).toHaveBeenCalledWith(
-          {
-            jobId: 'job-123',
-            stepId: 'step-1',
-            stepValue: '1',
-            jobType: JobType.DEFAULT,
-            input: { customerId: 'CUST-123' },
-            callbackUrl: 'http://orchestrator:3000/api/v1/callback/step-progress',
-            correlationId: 'test-correlation-id',
-            sourceConfig: undefined,
-            processingConfig: undefined,
-          },
-          'http://localhost:4566/queue-url',
-        );
+        expect(transport.sendTask).toHaveBeenCalledWith('order-validate-customer', {
+          jobId: 'job-123',
+          stepId: 'step-1',
+          stepValue: '1',
+          jobType: JobType.DEFAULT,
+          input: { customerId: 'CUST-123' },
+          callbackUrl: 'http://orchestrator:3000/api/v1/callback/step-progress',
+          correlationId: 'test-correlation-id',
+          sourceConfig: undefined,
+          processingConfig: undefined,
+        });
       });
 
       it('should include callback URL in SQS payload', async () => {
@@ -161,18 +155,17 @@ describe('DelegationService', () => {
           input: {},
         };
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://my-orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://my-orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
 
         // Act
         await service.delegateStep(dto);
 
         // Assert
-        const sentPayload = sqsService.sendStepMessage.mock.calls[0][0];
+        const sentPayload = transport.sendTask.mock.calls[0][1];
         expect(sentPayload.callbackUrl).toBe(
           'http://my-orchestrator:3000/api/v1/callback/step-progress',
         );
@@ -190,11 +183,10 @@ describe('DelegationService', () => {
           input: {}, // Empty input
         };
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
 
         // Act
@@ -228,11 +220,10 @@ describe('DelegationService', () => {
           input: complexInput,
         };
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
 
         // Act
@@ -240,7 +231,7 @@ describe('DelegationService', () => {
 
         // Assert
         expect(result.success).toBe(true);
-        const sentPayload = sqsService.sendStepMessage.mock.calls[0][0];
+        const sentPayload = transport.sendTask.mock.calls[0][1];
         expect(sentPayload.input).toEqual(complexInput);
       });
     });
@@ -258,10 +249,10 @@ describe('DelegationService', () => {
           input: {},
         };
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: false,
+          taskHandle: '',
           error: 'SQS connection timeout',
         });
 
@@ -274,7 +265,7 @@ describe('DelegationService', () => {
         expect(stepRepository.updateStatus).toHaveBeenCalledWith(
           'step-1',
           StepStatus.FAILED,
-          'Failed to delegate to Lambda: SQS connection timeout',
+          'Failed to delegate: SQS connection timeout',
         );
       });
 
@@ -290,10 +281,10 @@ describe('DelegationService', () => {
           input: {},
         };
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: false,
+          taskHandle: '',
           error: 'Queue not found',
         });
 
@@ -317,10 +308,10 @@ describe('DelegationService', () => {
           input: { largeData: 'x'.repeat(300000) }, // Very large payload
         };
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: false,
+          taskHandle: '',
           error: 'Message size exceeds limit',
         });
 
@@ -346,8 +337,7 @@ describe('DelegationService', () => {
           input: {},
         };
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockImplementation(() => {
+        transport.getWorkerEndpointUrl.mockImplementation(() => {
           throw new Error('Config error');
         });
 
@@ -376,11 +366,10 @@ describe('DelegationService', () => {
           input: {},
         };
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
         stepRepository.markAsDelegated.mockRejectedValue(new Error('Database connection lost'));
 
@@ -404,8 +393,7 @@ describe('DelegationService', () => {
           input: {},
         };
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockImplementation(() => {
+        transport.getWorkerEndpointUrl.mockImplementation(() => {
           // eslint-disable-next-line @typescript-eslint/only-throw-error
           throw 'String error'; // Intentionally throwing non-Error to test error handling
         });
@@ -454,11 +442,10 @@ describe('DelegationService', () => {
           },
         ];
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
 
         // Act
@@ -484,11 +471,10 @@ describe('DelegationService', () => {
           input: {},
         }));
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
 
         // Act
@@ -537,14 +523,13 @@ describe('DelegationService', () => {
           },
         ];
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
 
         // Mock: first succeeds, second fails, third succeeds
-        sqsService.sendStepMessage
-          .mockResolvedValueOnce({ success: true, messageId: 'msg-1' })
-          .mockResolvedValueOnce({ success: false, error: 'SQS error' })
-          .mockResolvedValueOnce({ success: true, messageId: 'msg-3' });
+        transport.sendTask
+          .mockResolvedValueOnce({ success: true, taskHandle: 'msg-1' })
+          .mockResolvedValueOnce({ success: false, taskHandle: '', error: 'SQS error' })
+          .mockResolvedValueOnce({ success: true, taskHandle: 'msg-3' });
 
         // Act
         const result = await service.delegateSteps(dtos);
@@ -570,16 +555,15 @@ describe('DelegationService', () => {
           input: {},
         }));
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
 
         // Mock: alternating success/failure
-        sqsService.sendStepMessage
-          .mockResolvedValueOnce({ success: true, messageId: 'msg-1' })
-          .mockResolvedValueOnce({ success: false, error: 'Fail 1' })
-          .mockResolvedValueOnce({ success: true, messageId: 'msg-3' })
-          .mockResolvedValueOnce({ success: false, error: 'Fail 2' })
-          .mockResolvedValueOnce({ success: true, messageId: 'msg-5' });
+        transport.sendTask
+          .mockResolvedValueOnce({ success: true, taskHandle: 'msg-1' })
+          .mockResolvedValueOnce({ success: false, taskHandle: '', error: 'Fail 1' })
+          .mockResolvedValueOnce({ success: true, taskHandle: 'msg-3' })
+          .mockResolvedValueOnce({ success: false, taskHandle: '', error: 'Fail 2' })
+          .mockResolvedValueOnce({ success: true, taskHandle: 'msg-5' });
 
         // Act
         const result = await service.delegateSteps(dtos);
@@ -613,10 +597,10 @@ describe('DelegationService', () => {
           },
         ];
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: false,
+          taskHandle: '',
           error: 'SQS unavailable',
         });
 
@@ -660,11 +644,10 @@ describe('DelegationService', () => {
           },
         ];
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
 
         // Act
@@ -688,11 +671,10 @@ describe('DelegationService', () => {
           input: {},
         }));
 
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
 
         // Act
@@ -722,11 +704,10 @@ describe('DelegationService', () => {
         };
 
         stepRepository.findById.mockResolvedValue(mockStep as any);
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-retry-123',
+          taskHandle: 'msg-retry-123',
         });
         stepRepository.markAsDelegated.mockResolvedValue(undefined);
 
@@ -754,11 +735,10 @@ describe('DelegationService', () => {
         };
 
         stepRepository.findById.mockResolvedValue(mockStep as any);
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
         stepRepository.markAsDelegated.mockResolvedValue(undefined);
 
@@ -766,7 +746,7 @@ describe('DelegationService', () => {
         await service.retryDelegation(stepId);
 
         // Assert
-        const sentPayload = sqsService.sendStepMessage.mock.calls[0][0];
+        const sentPayload = transport.sendTask.mock.calls[0][1];
         expect(sentPayload.input).toEqual(originalInput);
       });
 
@@ -784,11 +764,10 @@ describe('DelegationService', () => {
         };
 
         stepRepository.findById.mockResolvedValue(mockStep as any);
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
         stepRepository.markAsDelegated.mockResolvedValue(undefined);
 
@@ -797,7 +776,7 @@ describe('DelegationService', () => {
 
         // Assert
         expect(result.success).toBe(true);
-        const sentPayload = sqsService.sendStepMessage.mock.calls[0][0];
+        const sentPayload = transport.sendTask.mock.calls[0][1];
         expect(sentPayload.input).toEqual({});
       });
     });
@@ -814,7 +793,7 @@ describe('DelegationService', () => {
         // Assert
         expect(result.success).toBe(false);
         expect(result.error).toBe('Step not found');
-        expect(sqsService.sendStepMessage).not.toHaveBeenCalled();
+        expect(transport.sendTask).not.toHaveBeenCalled();
       });
 
       it('should return error when step definition not found', async () => {
@@ -854,10 +833,10 @@ describe('DelegationService', () => {
         };
 
         stepRepository.findById.mockResolvedValue(mockStep as any);
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: false,
+          taskHandle: '',
           error: 'SQS still unavailable',
         });
 
@@ -894,11 +873,10 @@ describe('DelegationService', () => {
         };
 
         stepRepository.findById.mockResolvedValue(mockStep as any);
-        sqsConfig.getCallbackUrl.mockReturnValue('http://orchestrator:3000');
-        sqsConfig.getQueueUrlByName.mockReturnValue('http://queue');
-        sqsService.sendStepMessage.mockResolvedValue({
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
           success: true,
-          messageId: 'msg-123',
+          taskHandle: 'msg-123',
         });
         stepRepository.markAsDelegated.mockResolvedValue(undefined);
 
@@ -907,7 +885,7 @@ describe('DelegationService', () => {
 
         // Assert
         expect(result.success).toBe(true);
-        const sentPayload = sqsService.sendStepMessage.mock.calls[0][0];
+        const sentPayload = transport.sendTask.mock.calls[0][1];
         expect(sentPayload.jobType).toBe(JobType.DEFAULT);
       });
     });
