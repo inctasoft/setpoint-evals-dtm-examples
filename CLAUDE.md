@@ -275,10 +275,12 @@ autodiscovered — no hand-maintained eval lists. Core SEs carry per-SE README m
 README (the pre-v2 legacy workflow-SE estate) degrades to defaults rather than erroring.
 Full contract: `server-config/docs/setpoint-eval-conventions.md`.
 
-### Core SEs (`setpoint-evals/`) -- 13 tests
-Test generic engine capabilities (retry, DLQ, deduplication, concurrency, maintenance tasks).
+### Core SEs (`setpoint-evals/`) -- 19 tests
+Test generic engine capabilities (retry, DLQ, deduplication, concurrency, maintenance tasks,
+Setpoint Evals discovery/run API). Count was already stale at 13 pre-Phase-4a (actual was 15,
+SE-14/SE-15); this PR adds SE-16..19 (evals-module coverage), landing at 19.
 ```bash
-./setpoint-evals/run-all.sh                        # Run all 13 core SEs
+./setpoint-evals/run-all.sh                        # Run all 19 core SEs
 ./setpoint-evals/run-all.sh --all-workflows        # Run core + all workflow SEs
 ```
 
