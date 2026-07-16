@@ -105,7 +105,7 @@ INSERT INTO dbo.devices (device_id, name, type, location, firmware_version, stat
 ('greenhouse-5',       'Greenhouse 5 — Citrus',    'multi-sensor', 'South Field - Bay 3',  'v3.1.0', 'active', '2025-08-01 08:00:00', '2025-08-01 09:15:00');
 
 -- ============================================================
--- Seed Data: Sensors (11 records — 2 per device, 3 for greenhouse-3)
+-- Seed Data: Sensors (12 records — 2 per device, 3 for greenhouse-3)
 -- ============================================================
 INSERT INTO dbo.sensors (sensor_id, device_id, type, unit, min_threshold, max_threshold, calibrated_at, status) VALUES
 -- greenhouse-1 (SE-01 happy-path): temp + humidity, calm readings

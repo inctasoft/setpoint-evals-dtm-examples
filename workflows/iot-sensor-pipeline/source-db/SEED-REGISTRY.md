@@ -62,7 +62,7 @@ sensor triggered it — so alerts are owned per-device, not per-sensor.
 | Table | Count |
 |---|---|
 | devices | 6 |
-| sensors | 11 |
+| sensors | 12 |
 | readings | 60 |
 | alerts | 1 |
 | aggregates | 9 |

@@ -48,7 +48,7 @@ echo "── iot-sensor-pipeline seed validation (container=$CONTAINER db=$DB) �
 
 # ── table row counts ────────────────────────────────────────────────────────
 check_eq "devices count"    "SELECT count(*) FROM dbo.devices"    "6"
-check_eq "sensors count"    "SELECT count(*) FROM dbo.sensors"    "11"
+check_eq "sensors count"    "SELECT count(*) FROM dbo.sensors"    "12"
 check_eq "readings count"   "SELECT count(*) FROM dbo.readings"   "60"
 check_eq "alerts count"     "SELECT count(*) FROM dbo.alerts"     "1"
 check_eq "aggregates count" "SELECT count(*) FROM dbo.aggregates" "9"
