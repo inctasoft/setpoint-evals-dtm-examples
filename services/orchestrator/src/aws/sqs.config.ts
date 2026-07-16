@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as os from 'os';
-import { WorkflowConfigService } from '../workflow-loader';
+import { WorkflowRegistryService } from '../workflow-loader';
 import { detectRuntime } from '../config/runtime.config';
 
 /**
@@ -40,7 +40,13 @@ function getDockerBridgeIp(): string | null {
 export class SqsConfig {
   constructor(
     private readonly configService: ConfigService,
-    private readonly workflowConfig: WorkflowConfigService,
+    // DI-singleton sweep: `getAllQueueUrls()` below is documented as spanning
+    // "all workflow types" — that requires the REGISTRY's aggregate
+    // getAllQueueNames() (which unions every registered workflow's queues),
+    // not a single default-bound WorkflowConfigService (which only knows its
+    // own workflow's queues and would silently under-report health checks for
+    // every other registered workflow).
+    private readonly workflowRegistry: WorkflowRegistryService,
   ) {}
 
   /**
@@ -153,7 +159,7 @@ export class SqsConfig {
    * Returns all step-specific queue URLs across all workflow types
    */
   getAllQueueUrls(): string[] {
-    const queueNames = this.workflowConfig.getAllQueueNames();
+    const queueNames = this.workflowRegistry.getAllQueueNames();
     return queueNames.map((queueName) => this.getQueueUrlByName(queueName));
   }
 

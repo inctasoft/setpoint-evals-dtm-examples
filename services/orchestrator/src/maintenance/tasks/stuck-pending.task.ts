@@ -41,9 +41,9 @@ export class StuckPendingTask extends BaseMaintenanceTask {
     private readonly configService: ConfigService,
     private readonly taskRegistry: MaintenanceTaskRegistry,
     private readonly orchestrationService: OrchestrationService,
-    private readonly advisoryLock: AdvisoryLockService,
+    advisoryLock: AdvisoryLockService, // passed to super() only — not stored (avoids TS2415: 'private advisoryLock' can't be redeclared over the base class's)
   ) {
-    super('StuckPendingTask');
+    super('StuckPendingTask', advisoryLock);
 
     this.pendingTimeoutMinutes = parseInt(
       this.configService.get<string>('MAINTENANCE_PENDING_TIMEOUT_MINUTES', '5'),
@@ -63,18 +63,13 @@ export class StuckPendingTask extends BaseMaintenanceTask {
       category: 'recovery',
       timeoutMs: 120000,
       enabled: true,
+      lockId: LockId.STUCK_PENDING,
     };
   }
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async scheduledRun() {
-    const acquired = await this.advisoryLock.tryAcquire(LockId.STUCK_PENDING);
-    if (!acquired) return;
-    try {
-      await this.execute();
-    } finally {
-      await this.advisoryLock.release(LockId.STUCK_PENDING);
-    }
+    await this.execute();
   }
 
   protected async doExecute(options?: Record<string, any>): Promise<TaskResult> {

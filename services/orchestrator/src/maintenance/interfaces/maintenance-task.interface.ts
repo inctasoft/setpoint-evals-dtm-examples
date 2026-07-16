@@ -32,6 +32,14 @@ export interface TaskMetadata {
 
   /** Optional: Dependencies on other tasks (must complete successfully first) */
   dependencies?: string[];
+
+  /**
+   * Optional: Postgres advisory-lock ID (LEADER-1) — when set, `BaseMaintenanceTask.execute()`
+   * wraps the run in `AdvisoryLockService.runExclusive(lockId, ...)` so only one execution
+   * (scheduled OR manually-triggered) runs at a time across all replicas/concurrent callers.
+   * Omit only for tasks that intentionally have no leader-election requirement.
+   */
+  lockId?: number;
 }
 
 /**

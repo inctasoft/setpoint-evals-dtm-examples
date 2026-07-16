@@ -44,9 +44,9 @@ export class OrphanedJobRecoveryTask extends BaseMaintenanceTask {
     private readonly configService: ConfigService,
     private readonly taskRegistry: MaintenanceTaskRegistry,
     private readonly orchestrationService: OrchestrationService,
-    private readonly advisoryLock: AdvisoryLockService,
+    advisoryLock: AdvisoryLockService, // passed to super() only — not stored (avoids TS2415: 'private advisoryLock' can't be redeclared over the base class's)
   ) {
-    super('OrphanedJobRecoveryTask');
+    super('OrphanedJobRecoveryTask', advisoryLock);
     this.taskRegistry.register(this);
   }
 
@@ -59,18 +59,13 @@ export class OrphanedJobRecoveryTask extends BaseMaintenanceTask {
       category: 'recovery',
       timeoutMs: 120000, // 2 minutes
       enabled: true,
+      lockId: LockId.ORPHANED_JOB_RECOVERY,
     };
   }
 
   @Cron('*/30 * * * * *') // Every 30 seconds for development
   async scheduledRun() {
-    const acquired = await this.advisoryLock.tryAcquire(LockId.ORPHANED_JOB_RECOVERY);
-    if (!acquired) return;
-    try {
-      await this.execute();
-    } finally {
-      await this.advisoryLock.release(LockId.ORPHANED_JOB_RECOVERY);
-    }
+    await this.execute();
   }
 
   protected async doExecute(): Promise<TaskResult> {

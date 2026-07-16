@@ -1,7 +1,7 @@
 import { Controller, Get, Param, NotFoundException, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { JobRepository, StepRepository, StepStatus } from '@dtm/database';
-import { WorkflowConfigService } from '../workflow-loader';
+import { WorkflowConfigService, WorkflowRegistryService } from '../workflow-loader';
 import {
   EventStatusResponseDto,
   EventProgressResponseDto,
@@ -27,7 +27,22 @@ export class JobsController {
     private readonly jobRepo: JobRepository,
     private readonly stepRepo: StepRepository,
     private readonly workflowConfig: WorkflowConfigService,
+    private readonly workflowRegistry: WorkflowRegistryService,
   ) {}
+
+  /**
+   * Resolve the correct WorkflowConfigService for a job (DI-singleton sweep).
+   * `this.workflowConfig` is bound to the default workflow at boot; jobs on any
+   * other registered workflow must resolve against their OWN config or step
+   * names/definitions silently come back wrong/undefined (same anti-pattern
+   * class as T1/T2 — see stuck-in-progress.task.ts and callback.service.ts).
+   */
+  private getWorkflowConfig(job: { workflowName?: string }): WorkflowConfigService {
+    if (job.workflowName && this.workflowRegistry.has(job.workflowName)) {
+      return this.workflowRegistry.get(job.workflowName);
+    }
+    return this.workflowConfig;
+  }
 
   /**
    * Get job event status
@@ -80,7 +95,7 @@ export class JobsController {
       startedAt: job.startedAt?.toISOString() || job.submittedAt.toISOString(),
       completedAt: job.completedAt?.toISOString() || null,
       currentStep: inProgressStep
-        ? this.workflowConfig.getStepName(inProgressStep.stepValue)
+        ? this.getWorkflowConfig(job).getStepName(inProgressStep.stepValue)
         : undefined,
     };
   }
@@ -146,7 +161,7 @@ export class JobsController {
       completedAt: job.completedAt?.toISOString() || null,
       trackingUrl: `/jobs/${job.id}/status`,
       currentStep: inProgressStep
-        ? this.workflowConfig.getStepName(inProgressStep.stepValue)
+        ? this.getWorkflowConfig(job).getStepName(inProgressStep.stepValue)
         : undefined,
     };
   }
@@ -232,6 +247,7 @@ export class JobsController {
 
     // Fetch steps separately to have more control
     const steps = await this.stepRepo.findByJobId(jobId);
+    const wfConfig = this.getWorkflowConfig(job);
 
     // Build response
     return {
@@ -251,7 +267,7 @@ export class JobsController {
         id: step.id,
         stepNumber: step.stepValue, // Return stepValue as stepNumber for API compatibility
 
-        stepName: this.workflowConfig.getStepName(step.stepValue), // Derive stepName from stepValue
+        stepName: wfConfig.getStepName(step.stepValue), // Derive stepName from stepValue (per-job workflow, DI-singleton sweep)
         description: step.description,
         status: step.status,
         lambdaFunctionName: step.lambdaFunctionName,

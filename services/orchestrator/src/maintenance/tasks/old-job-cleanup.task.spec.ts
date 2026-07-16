@@ -31,8 +31,11 @@ describe('OldJobCleanupTask', () => {
   };
 
   const mockAdvisoryLockService = {
-    tryAcquire: jest.fn().mockResolvedValue(true),
-    release: jest.fn().mockResolvedValue(undefined),
+    // LEADER-1: runExclusive pins acquire->fn->release on one connection; the
+    // unit-test double just runs fn() through (lock behavior is proven by the SE).
+    runExclusive: jest
+      .fn()
+      .mockImplementation((_lockId: number, fn: () => Promise<unknown>) => fn()),
   };
 
   beforeEach(async () => {

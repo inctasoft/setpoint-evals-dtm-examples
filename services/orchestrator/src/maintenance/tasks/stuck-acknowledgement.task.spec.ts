@@ -7,7 +7,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { MaintenanceTaskRegistry } from '../registry/maintenance-task-registry';
 import { OrchestrationService } from '../../orchestration/orchestration.service';
-import { AdvisoryLockService } from '../advisory-lock.service';
+import { AdvisoryLockService, LockId } from '../advisory-lock.service';
 
 describe('StuckAcknowledgementTask', () => {
   let module: TestingModule;
@@ -38,8 +38,11 @@ describe('StuckAcknowledgementTask', () => {
   };
 
   const mockAdvisoryLockService = {
-    tryAcquire: jest.fn().mockResolvedValue(true),
-    release: jest.fn().mockResolvedValue(undefined),
+    // LEADER-1: runExclusive pins acquire->fn->release on one connection; the
+    // unit-test double just runs fn() through (lock behavior is proven by the SE).
+    runExclusive: jest
+      .fn()
+      .mockImplementation((_lockId: number, fn: () => Promise<unknown>) => fn()),
   };
 
   beforeEach(async () => {
@@ -88,6 +91,7 @@ describe('StuckAcknowledgementTask', () => {
         category: 'health-check',
         timeoutMs: 60000,
         enabled: true,
+        lockId: LockId.STUCK_ACKNOWLEDGEMENT, // LEADER-1
       });
     });
   });
@@ -200,12 +204,18 @@ describe('StuckAcknowledgementTask', () => {
       // Act
       const result = await task['execute']();
 
-      // Assert - Verify step was updated to FAILED
-      expect(stepRepository.update).toHaveBeenCalledWith('step-789', {
-        status: StepStatus.FAILED,
-        error: expect.stringContaining('Acknowledgement timeout'),
-        completedAt: expect.any(Date),
-      });
+      // Assert - Verify step was updated to FAILED via a conditional UPDATE
+      // (LEADER-2) guarded on WHERE status = WAITING_FOR_ACK — not a bare id
+      // update — so a real ACK racing in between read and write can't be
+      // clobbered.
+      expect(stepRepository.update).toHaveBeenCalledWith(
+        { id: 'step-789', status: StepStatus.WAITING_FOR_ACK },
+        {
+          status: StepStatus.FAILED,
+          error: expect.stringContaining('Acknowledgement timeout'),
+          completedAt: expect.any(Date),
+        },
+      );
 
       // Verify auto-fix metrics
       expect(result.metrics.autoFixed).toBe(1);
@@ -303,6 +313,62 @@ describe('StuckAcknowledgementTask', () => {
       // Assert - Should detect as stuck with custom threshold
       expect(result.metrics.stuckStepsFound).toBe(1);
       expect(result.findings[0].context.thresholdMinutes).toBe(10);
+    });
+  });
+
+  describe('LEADER-2: conditional UPDATE guards a racing real ACK', () => {
+    it('does not clobber a step that a real ACK already moved out of WAITING_FOR_ACK', async () => {
+      // Arrange: the reaper's SELECT saw the step as stuck WAITING_FOR_ACK, but
+      // by the time the reaper's UPDATE runs, a real (late) ACK has already
+      // landed and moved the row to COMPLETED. Simulate that race directly at
+      // the point that matters: the conditional UPDATE's WHERE clause no
+      // longer matches the row's *current* status, so Postgres would affect 0
+      // rows. A plausible-but-wrong fix (checking `affected === 0` on a bare
+      // `update(id, {...})`) would NOT reproduce this — an id-only update
+      // always matches the row and always returns affected: 1. This test
+      // fails against that plausible-but-wrong fix and only passes when the
+      // UPDATE's criteria genuinely includes `status: WAITING_FOR_ACK`.
+      const stuckTimestamp = new Date(Date.now() - 35 * 60 * 1000);
+      const stuckStep: Partial<Step> = {
+        id: 'step-race',
+        stepValue: 'SubmitOrder',
+        status: StepStatus.WAITING_FOR_ACK, // as read by the reaper's SELECT
+        kafkaPublishedAt: stuckTimestamp,
+        job: { id: 'job-race' } as any,
+      };
+
+      stepRepository.find.mockResolvedValue([stuckStep]);
+      // The real ACK won the race: Postgres finds 0 rows still matching
+      // WHERE status = WAITING_FOR_ACK, so `affected` is 0.
+      stepRepository.update.mockImplementation((criteria: any) => {
+        if (
+          criteria &&
+          typeof criteria === 'object' &&
+          criteria.status === StepStatus.WAITING_FOR_ACK
+        ) {
+          return Promise.resolve({ affected: 0 } as any);
+        }
+        // A bare id (or any criteria not pinning the status) always "finds"
+        // the row — this branch is what a plausible-but-wrong fix would hit.
+        return Promise.resolve({ affected: 1 } as any);
+      });
+      orchestrationService.continueJob.mockResolvedValue(undefined);
+
+      // Act
+      const result = await task['execute']();
+
+      // Assert: the UPDATE was conditioned on the WAITING_FOR_ACK status …
+      expect(stepRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'step-race', status: StepStatus.WAITING_FOR_ACK }),
+        expect.objectContaining({ status: StepStatus.FAILED }),
+      );
+      // … lost the race (affected: 0) …
+      expect(await stepRepository.update.mock.results[0].value).toEqual({ affected: 0 });
+      // … and therefore must NOT re-trigger orchestration for a step that a
+      // real ACK already moved forward — that would race the ACK's own
+      // continueJob call and could double-cascade.
+      expect(orchestrationService.continueJob).not.toHaveBeenCalled();
+      expect(result.success).toBe(true);
     });
   });
 

@@ -3,6 +3,7 @@ import { JobsController } from './jobs.controller';
 import { JobRepository, StepRepository, StepStatus } from '@dtm/database';
 import { NotFoundException } from '@nestjs/common';
 import { WorkflowConfigService } from '../workflow-loader/workflow-config.service';
+import { WorkflowRegistryService } from '../workflow-loader/workflow-registry.service';
 
 describe('JobsController', () => {
   let controller: JobsController;
@@ -16,9 +17,25 @@ describe('JobsController', () => {
     findByJobId: jest.fn(),
   };
 
+  // The default-bound singleton (as if it were injected as the app's default workflow).
   const mockWorkflowConfigService = {
     getStepName: jest.fn().mockImplementation((step: string) => step.toLowerCase()),
     getStepDefinitions: jest.fn().mockReturnValue([]),
+  };
+
+  // A DIFFERENT workflow's config — distinguishable output proves the controller
+  // actually resolved against it instead of falling back to the default singleton.
+  const mockIotWorkflowConfigService = {
+    getStepName: jest.fn().mockImplementation((step: string) => `IOT::${step}`),
+    getStepDefinitions: jest.fn().mockReturnValue([]),
+  };
+
+  const mockWorkflowRegistry = {
+    has: jest.fn().mockImplementation((name: string) => name === 'iot-sensor-pipeline'),
+    get: jest.fn().mockImplementation((name: string) => {
+      if (name === 'iot-sensor-pipeline') return mockIotWorkflowConfigService;
+      throw new Error(`unexpected workflow lookup in test: ${name}`);
+    }),
   };
 
   beforeEach(async () => {
@@ -28,6 +45,7 @@ describe('JobsController', () => {
         { provide: JobRepository, useValue: mockJobRepo },
         { provide: StepRepository, useValue: mockStepRepo },
         { provide: WorkflowConfigService, useValue: mockWorkflowConfigService },
+        { provide: WorkflowRegistryService, useValue: mockWorkflowRegistry },
       ],
     }).compile();
 
@@ -71,6 +89,35 @@ describe('JobsController', () => {
     it('should throw NotFoundException if job not found', async () => {
       mockJobRepo.findById.mockResolvedValue(null);
       await expect(controller.getEventStatus('123')).rejects.toThrow(NotFoundException);
+    });
+
+    it('DI-singleton sweep: resolves currentStep against the JOB workflow, not the default singleton', async () => {
+      // A job on a non-default workflow (iot-sensor-pipeline) must have its
+      // currentStep derived from ITS OWN WorkflowConfigService, not the
+      // default-bound singleton injected at boot.
+      const jobId = 'iot-job-1';
+      const mockJob = {
+        id: jobId,
+        workflowName: 'iot-sensor-pipeline',
+        status: 'processing',
+        payload: {},
+        submittedAt: new Date(),
+      };
+      const mockSteps = [{ status: StepStatus.IN_PROGRESS, stepValue: 'IngestReading' }];
+
+      mockJobRepo.findById.mockResolvedValue(mockJob);
+      mockStepRepo.findByJobId.mockResolvedValue(mockSteps);
+
+      const result = await controller.getEventStatus(jobId);
+
+      // The IOT:: prefix only appears if the iot-sensor-pipeline config was used.
+      expect(result.currentStep).toBe('IOT::IngestReading');
+      expect(mockWorkflowRegistry.has).toHaveBeenCalledWith('iot-sensor-pipeline');
+      expect(mockIotWorkflowConfigService.getStepName).toHaveBeenCalledWith('IngestReading');
+      // A plausible-but-wrong "fix" that still calls the default singleton would
+      // return 'ingestreading' (lowercased) here instead — this assertion fails
+      // against that fix.
+      expect(mockWorkflowConfigService.getStepName).not.toHaveBeenCalled();
     });
   });
 
@@ -126,6 +173,28 @@ describe('JobsController', () => {
       expect(result.id).toBe(jobId);
       expect(result.result).toBeDefined();
       expect(result.result.totalRecords).toBe(10);
+    });
+
+    it('DI-singleton sweep: resolves each step.stepName against the JOB workflow', async () => {
+      const jobId = 'iot-job-2';
+      const mockJob = {
+        id: jobId,
+        workflowName: 'iot-sensor-pipeline',
+        status: 'processing',
+        payload: {},
+        submittedAt: new Date(),
+        retryCount: 0,
+        maxRetries: 3,
+      };
+      const mockSteps = [{ id: 's1', stepValue: 'IngestReading', status: StepStatus.COMPLETED }];
+
+      mockJobRepo.findById.mockResolvedValue(mockJob);
+      mockStepRepo.findByJobId.mockResolvedValue(mockSteps);
+
+      const result = await controller.getJobDetails(jobId);
+
+      expect(result.steps[0].stepName).toBe('IOT::IngestReading');
+      expect(mockWorkflowConfigService.getStepName).not.toHaveBeenCalled();
     });
   });
 

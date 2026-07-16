@@ -41,9 +41,9 @@ export class StuckAcknowledgementTask extends BaseMaintenanceTask {
     private readonly configService: ConfigService,
     private readonly taskRegistry: MaintenanceTaskRegistry,
     private readonly orchestrationService: OrchestrationService,
-    private readonly advisoryLock: AdvisoryLockService,
+    advisoryLock: AdvisoryLockService, // passed to super() only — not stored (avoids TS2415: 'private advisoryLock' can't be redeclared over the base class's)
   ) {
-    super('StuckAcknowledgementTask');
+    super('StuckAcknowledgementTask', advisoryLock);
 
     // Configuration
     this.ackTimeoutMinutes = parseInt(
@@ -67,6 +67,7 @@ export class StuckAcknowledgementTask extends BaseMaintenanceTask {
       category: 'health-check',
       timeoutMs: 60000, // 1 minute
       enabled: true,
+      lockId: LockId.STUCK_ACKNOWLEDGEMENT,
     };
   }
 
@@ -75,13 +76,7 @@ export class StuckAcknowledgementTask extends BaseMaintenanceTask {
    */
   @Cron(CronExpression.EVERY_5_MINUTES)
   async scheduledRun() {
-    const acquired = await this.advisoryLock.tryAcquire(LockId.STUCK_ACKNOWLEDGEMENT);
-    if (!acquired) return;
-    try {
-      await this.execute();
-    } finally {
-      await this.advisoryLock.release(LockId.STUCK_ACKNOWLEDGEMENT);
-    }
+    await this.execute();
   }
 
   protected async doExecute(options?: Record<string, any>): Promise<TaskResult> {
@@ -210,11 +205,31 @@ export class StuckAcknowledgementTask extends BaseMaintenanceTask {
       `🔴 Auto-failing step ${step.id} (${step.stepValue}) due to acknowledgement timeout (${effectiveTimeoutMinutes}min)`,
     );
 
-    await this.stepRepository.update(step.id, {
-      status: StepStatus.FAILED,
-      error: `Acknowledgement timeout - external system did not respond within ${effectiveTimeoutMinutes} minutes. This could indicate: 1) External system is down, 2) Kafka connectivity issues, 3) DevAckSimulator failure (development only)`,
-      completedAt: new Date(),
-    });
+    // LEADER-2: conditional UPDATE — only transition WAITING_FOR_ACK → FAILED.
+    // The reaper's SELECT (in doExecute) and this UPDATE are two separate
+    // round-trips; a real ACK can land on the step in between them (e.g. a
+    // slow-but-alive external system finally responds). An id-only update
+    // would blindly overwrite that legitimate progress back to FAILED. Gating
+    // the UPDATE's WHERE clause on the status the SELECT actually observed
+    // makes the race resolve safely: if the row is no longer WAITING_FOR_ACK,
+    // `affected` comes back 0 and we skip — the real ACK's own orchestration
+    // trigger (already in flight) is left to finish the job, instead of us
+    // double-triggering continueJob for a step we didn't actually fail.
+    const updateResult = await this.stepRepository.update(
+      { id: step.id, status: StepStatus.WAITING_FOR_ACK },
+      {
+        status: StepStatus.FAILED,
+        error: `Acknowledgement timeout - external system did not respond within ${effectiveTimeoutMinutes} minutes. This could indicate: 1) External system is down, 2) Kafka connectivity issues, 3) DevAckSimulator failure (development only)`,
+        completedAt: new Date(),
+      },
+    );
+
+    if (updateResult.affected === 0) {
+      this.logger.log(
+        `↩️  Step ${step.id} no longer in WAITING_FOR_ACK — a real ACK (or another reaper) already moved it; skipping continueJob`,
+      );
+      return;
+    }
 
     // Trigger orchestration to handle the failure
     // This will mark dependent steps as skipped/aborted and potentially fail the job
