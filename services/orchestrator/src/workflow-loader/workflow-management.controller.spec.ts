@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { WorkflowManagementController } from './workflow-management.controller';
 import { WorkflowRegistryService } from './workflow-registry.service';
+import { FeatureFlagService } from './feature-flag.service';
 
 describe('WorkflowManagementController', () => {
   let controller: WorkflowManagementController;
@@ -99,7 +100,12 @@ describe('WorkflowManagementController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [WorkflowManagementController],
-      providers: [{ provide: WorkflowRegistryService, useValue: mockWorkflowRegistry }],
+      // FeatureFlagService is real (stateless, pure resolveFlags logic) — no reason to mock it,
+      // and mocking it would defeat the point of testing getWorkflowFlags() below.
+      providers: [
+        { provide: WorkflowRegistryService, useValue: mockWorkflowRegistry },
+        FeatureFlagService,
+      ],
     }).compile();
 
     controller = module.get<WorkflowManagementController>(WorkflowManagementController);
@@ -213,6 +219,41 @@ describe('WorkflowManagementController', () => {
 
       // Act & Assert
       expect(() => controller.getWorkflowDetails('unknown')).toThrow(NotFoundException);
+    });
+  });
+
+  describe('getWorkflowFlags', () => {
+    const mockConfigWithFlags = {
+      getWorkflow: jest.fn().mockReturnValue({
+        name: 'order-processing',
+        featureFlags: {
+          defaults: { ENABLE_DEDUPLICATION: true, ENABLE_SHIPMENT_TRACKING: false },
+          clientOverridable: ['ENABLE_DEDUPLICATION'],
+        },
+      }),
+    };
+
+    it('should resolve layer-1 defaults for a known workflow', () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      workflowRegistry.get.mockReturnValue(mockConfigWithFlags as any);
+
+      // Act
+      const result = controller.getWorkflowFlags('order-processing');
+
+      // Assert
+      expect(result.workflow).toBe('order-processing');
+      expect(result.flags).toEqual({ ENABLE_DEDUPLICATION: true, ENABLE_SHIPMENT_TRACKING: false });
+      expect(result.clientOverridable).toEqual(['ENABLE_DEDUPLICATION']);
+      expect(result.requestOverridesEnabled).toBe(false);
+    });
+
+    it('should throw NotFoundException for unknown workflow', () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(false);
+
+      // Act & Assert
+      expect(() => controller.getWorkflowFlags('unknown')).toThrow(NotFoundException);
     });
   });
 
