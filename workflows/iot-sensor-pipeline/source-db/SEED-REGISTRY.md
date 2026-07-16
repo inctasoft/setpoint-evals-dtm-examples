@@ -16,6 +16,7 @@ two in sync when you touch the seed.
 | devices | `greenhouse-3` | SE-03-double-fan-out | 3 sensors (temp/humidity/soil) — wider fan-out breadth |
 | devices | `greenhouse-4` | SE-04-feature-flag-disable-alerts | 2 sensors; `SENS-GH4-TEMP` genuinely spikes past its `max_threshold`, producing 1 real alert row — the SE disables `ENABLE_ALERT_GENERATION` and asserts EvaluateAlert/DispatchAlert are SKIPPED despite the alert being real |
 | devices | `greenhouse-offline` | SE-05-empty-discovery | 1 sensor (`SENS-GHOFF-TEMP`), **0 readings** — exercises the *nested* fan-out's empty case (`DiscoverReadings` returns 0 for a real sensor), not the outer device->sensor one. See "Worker behavior notes" below for why this must stay a sensor-with-zero-readings, not a device-with-zero-sensors. |
+| devices | `greenhouse-5` | SE-09-inner-empty-discovery | 2 sensors — `SENS-GH5-TEMP` has 6 real readings, `SENS-GH5-SOIL` has **0**. Unlike `greenhouse-offline` (SE-05, its ONLY sensor is empty), this is the MIXED case: one sensor in a multi-sensor fan-out set is empty while its sibling has real data — a distinct code path (partial empty within a fan-out set). |
 
 `EvaluateAlert`/`DispatchAlert` filter the `alerts` table by `device_id`
 directly (`workers/src/handlers/evaluate-alert.ts`), independent of which
@@ -47,7 +48,7 @@ sensor triggered it — so alerts are owned per-device, not per-sensor.
 
 | Table | Range | |
 |---|---|---|
-| devices | `greenhouse-5` .. `greenhouse-9` | reserved |
+| devices | `greenhouse-6` .. `greenhouse-9` | reserved (5 consumed by SE-09, Phase 3b) |
 | sensors / readings / alerts / aggregates | no fixed range — child rows scoped to a reserved device | reserved |
 
 ## Not-found sentinel (guaranteed ABSENT — used for negative-path SEs)
@@ -60,9 +61,9 @@ sensor triggered it — so alerts are owned per-device, not per-sensor.
 
 | Table | Count |
 |---|---|
-| devices | 5 |
-| sensors | 10 |
-| readings | 54 |
+| devices | 6 |
+| sensors | 11 |
+| readings | 60 |
 | alerts | 1 |
 | aggregates | 9 |
 

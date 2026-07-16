@@ -92,8 +92,8 @@ CREATE INDEX idx_aggregates_period ON dbo.aggregates(period_start, period_end);
 -- ============================================================
 
 -- ============================================================
--- Seed Data: Devices (5 records)
--- greenhouse-1..4 assigned; greenhouse-offline assigned; greenhouse-5..9
+-- Seed Data: Devices (6 records)
+-- greenhouse-1..5 assigned; greenhouse-offline assigned; greenhouse-6..9
 -- RESERVED for future SEs; greenhouse-999 = not-found sentinel
 -- ============================================================
 INSERT INTO dbo.devices (device_id, name, type, location, firmware_version, status, registered_at, last_seen_at) VALUES
@@ -101,10 +101,11 @@ INSERT INTO dbo.devices (device_id, name, type, location, firmware_version, stat
 ('greenhouse-2',       'Greenhouse 2 — Peppers',   'multi-sensor', 'North Field - Bay 2',  'v2.4.1', 'active', '2025-02-01 08:00:00', '2025-06-20 09:15:00'),
 ('greenhouse-3',       'Greenhouse 3 — Herbs',     'multi-sensor', 'South Field - Bay 1',  'v3.1.0', 'active', '2025-02-10 08:00:00', '2025-06-20 09:15:00'),
 ('greenhouse-4',       'Greenhouse 4 — Orchids',   'multi-sensor', 'South Field - Bay 2',  'v3.1.0', 'active', '2025-02-15 08:00:00', '2025-06-20 09:15:00'),
-('greenhouse-offline', 'Greenhouse Offline — Spare Bay', 'multi-sensor', 'Storage Yard - Unwired', 'v1.0.0', 'active', '2025-03-01 00:00:00', NULL);
+('greenhouse-offline', 'Greenhouse Offline — Spare Bay', 'multi-sensor', 'Storage Yard - Unwired', 'v1.0.0', 'active', '2025-03-01 00:00:00', NULL),
+('greenhouse-5',       'Greenhouse 5 — Citrus',    'multi-sensor', 'South Field - Bay 3',  'v3.1.0', 'active', '2025-08-01 08:00:00', '2025-08-01 09:15:00');
 
 -- ============================================================
--- Seed Data: Sensors (9 records — 2 per device, 3 for greenhouse-3)
+-- Seed Data: Sensors (11 records — 2 per device, 3 for greenhouse-3)
 -- ============================================================
 INSERT INTO dbo.sensors (sensor_id, device_id, type, unit, min_threshold, max_threshold, calibrated_at, status) VALUES
 -- greenhouse-1 (SE-01 happy-path): temp + humidity, calm readings
@@ -123,10 +124,16 @@ INSERT INTO dbo.sensors (sensor_id, device_id, type, unit, min_threshold, max_th
 -- greenhouse-offline (SE-05 empty-discovery): ONE sensor, deliberately ZERO
 -- readings — this exercises the NESTED fan-out's empty case (DiscoverReadings
 -- returns 0 for an otherwise-real sensor), not the outer device->sensor one.
-('SENS-GHOFF-TEMP', 'greenhouse-offline', 'temperature', 'celsius', 15.00, 35.00, NULL, 'active');
+('SENS-GHOFF-TEMP', 'greenhouse-offline', 'temperature', 'celsius', 15.00, 35.00, NULL, 'active'),
+-- greenhouse-5 (SE-09 inner-empty-discovery): 2 sensors — TEMP has real
+-- readings, SOIL is deliberately ZERO. Unlike greenhouse-offline (SE-05,
+-- ITS ONLY sensor is empty), this proves the MIXED case: one sensor in a
+-- multi-sensor fan-out set is empty while its SIBLING has real data.
+('SENS-GH5-TEMP', 'greenhouse-5', 'temperature',   'celsius', 15.00, 32.00, '2025-08-01 09:00:00', 'active'),
+('SENS-GH5-SOIL', 'greenhouse-5', 'soil_moisture', 'percent', 20.00, 80.00, '2025-08-01 09:15:00', 'active');
 
 -- ============================================================
--- Seed Data: Readings (54 records — 6 per sensor)
+-- Seed Data: Readings (60 records — 6 per sensor; SENS-GH5-SOIL has ZERO)
 -- ============================================================
 
 -- SENS-GH1-TEMP: calm, well inside 15-35 threshold
@@ -209,6 +216,16 @@ INSERT INTO dbo.readings (sensor_id, value, timestamp, quality, raw_value) VALUE
 ('SENS-GH4-HUM', 58.10, '2025-06-20 08:45:00', 'good', 58.08),
 ('SENS-GH4-HUM', 58.90, '2025-06-20 09:00:00', 'good', 58.93),
 ('SENS-GH4-HUM', 59.60, '2025-06-20 09:15:00', 'good', 59.58);
+
+-- SENS-GH5-TEMP (SE-09 inner-empty-discovery — the sibling WITH data)
+INSERT INTO dbo.readings (sensor_id, value, timestamp, quality, raw_value) VALUES
+('SENS-GH5-TEMP', 21.00, '2025-08-01 08:00:00', 'good', 21.02),
+('SENS-GH5-TEMP', 21.50, '2025-08-01 08:15:00', 'good', 21.48),
+('SENS-GH5-TEMP', 22.00, '2025-08-01 08:30:00', 'good', 22.03),
+('SENS-GH5-TEMP', 22.40, '2025-08-01 08:45:00', 'good', 22.38),
+('SENS-GH5-TEMP', 22.90, '2025-08-01 09:00:00', 'good', 22.92),
+('SENS-GH5-TEMP', 23.30, '2025-08-01 09:15:00', 'good', 23.27);
+-- SENS-GH5-SOIL: deliberately ZERO readings — the inner-empty-discovery case.
 
 -- ============================================================
 -- Seed Data: Alerts (1 record — the greenhouse-4 heat spike)

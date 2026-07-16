@@ -47,9 +47,9 @@ fi
 echo "── iot-sensor-pipeline seed validation (container=$CONTAINER db=$DB) ──"
 
 # ── table row counts ────────────────────────────────────────────────────────
-check_eq "devices count"    "SELECT count(*) FROM dbo.devices"    "5"
-check_eq "sensors count"    "SELECT count(*) FROM dbo.sensors"    "10"
-check_eq "readings count"   "SELECT count(*) FROM dbo.readings"   "54"
+check_eq "devices count"    "SELECT count(*) FROM dbo.devices"    "6"
+check_eq "sensors count"    "SELECT count(*) FROM dbo.sensors"    "11"
+check_eq "readings count"   "SELECT count(*) FROM dbo.readings"   "60"
 check_eq "alerts count"     "SELECT count(*) FROM dbo.alerts"     "1"
 check_eq "aggregates count" "SELECT count(*) FROM dbo.aggregates" "9"
 
@@ -70,6 +70,14 @@ check_eq "SE-05 greenhouse-offline has exactly 1 sensor" \
   "SELECT count(*) FROM dbo.sensors WHERE device_id='greenhouse-offline'" "1"
 check_eq "SE-05 that sensor has ZERO readings (the story)" \
   "SELECT count(*) FROM dbo.readings WHERE sensor_id='SENS-GHOFF-TEMP'" "0"
+check_eq "SE-09 device greenhouse-5 present" \
+  "SELECT count(*) FROM dbo.devices WHERE device_id='greenhouse-5'" "1"
+check_eq "SE-09 greenhouse-5 has exactly 2 sensors" \
+  "SELECT count(*) FROM dbo.sensors WHERE device_id='greenhouse-5'" "2"
+check_eq "SE-09 SENS-GH5-TEMP has 6 real readings (the sibling WITH data)" \
+  "SELECT count(*) FROM dbo.readings WHERE sensor_id='SENS-GH5-TEMP'" "6"
+check_eq "SE-09 SENS-GH5-SOIL has ZERO readings (the mixed inner-empty case)" \
+  "SELECT count(*) FROM dbo.readings WHERE sensor_id='SENS-GH5-SOIL'" "0"
 
 # ── not-found sentinel ABSENT ───────────────────────────────────────────────
 check_eq "sentinel device greenhouse-999 ABSENT" \
