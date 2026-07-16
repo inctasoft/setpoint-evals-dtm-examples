@@ -50,5 +50,8 @@ export type { AwsConfig } from './aws.config';
 export { appConfig } from './app.config';
 export type { AppConfig } from './app.config';
 
+export { evalsConfig } from './evals.config';
+export type { EvalsConfig } from './evals.config';
+
 // Validation
 export { configValidationSchema, configValidationOptions } from './config.validation';
