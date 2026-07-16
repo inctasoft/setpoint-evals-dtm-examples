@@ -99,9 +99,13 @@ Content-Type: application/json
 the seed's `kafka_published_at` is 1 hour old, so this SE also passes under the
 default 30-minute production threshold if overrides are disabled.)
 
-### Expected output (GREEN)
+### Expected output (GREEN) — actual captured run
 ```
+ℹ️  Seeding 15 synthetic WAITING_FOR_ACK steps (own synthetic jobs)...
 ✓ seeded exactly 15 synthetic WAITING_FOR_ACK steps
+ℹ️  Firing two concurrent manual triggers of 'stuck-acknowledgement'...
+ℹ️  Response 1: HTTP 200 — {"success":true,"message":"Found 15 stuck acknowledgements, auto-fixed 15, raised 0 alerts","metrics":{"stuckStepsFound":15,"autoFixed":15,"alertsRaised":0}}
+ℹ️  Response 2: HTTP 200 — {"success":true,"message":"Skipped — leader lock held by another replica or in-flight execution","metrics":null}
 ✓ request 1 returned HTTP 200
 ✓ request 2 returned HTTP 200
 ✓ exactly one concurrent manual trigger was skipped by the leader lock
@@ -109,23 +113,33 @@ default 30-minute production threshold if overrides are disabled.)
 ── assertions: 5 pass, 0 fail
 ```
 
-### Negative-control proof (RED) — pre-LEADER-1 code
-Ran this SE unmodified against `services/orchestrator/src/maintenance/base/base-maintenance-task.ts`
-+ the 8 task files reverted to their pre-fix form (advisory lock only inside
-`scheduledRun()`, manual-trigger path unguarded):
+### Negative-control proof (RED) — pre-LEADER-1 code, ACTUAL captured run
+`advisory-lock.service.ts` + `base-maintenance-task.ts` + `maintenance-task.interface.ts`
++ all 8 task files were reverted to `origin/master` (advisory lock only
+inside each task's own `scheduledRun()`, manual-trigger path unguarded), the
+orchestrator image was rebuilt, and this SE was run unmodified:
 ```
+ℹ️  Seeding 15 synthetic WAITING_FOR_ACK steps (own synthetic jobs)...
 ✓ seeded exactly 15 synthetic WAITING_FOR_ACK steps
+ℹ️  Firing two concurrent manual triggers of 'stuck-acknowledgement'...
+ℹ️  Response 1: HTTP 200 — {"success":true,"message":"Found 15 stuck acknowledgements, auto-fixed 15, raised 0 alerts","metrics":{"stuckStepsFound":15,"autoFixed":15,"alertsRaised":0}}
+ℹ️  Response 2: HTTP 200 — {"success":true,"message":"Found 14 stuck acknowledgements, auto-fixed 14, raised 0 alerts","metrics":{"stuckStepsFound":14,"autoFixed":14,"alertsRaised":0}}
 ✓ request 1 returned HTTP 200
 ✓ request 2 returned HTTP 200
 ✗ exactly one concurrent manual trigger was skipped by the leader lock  (actual='0' expected='1')
 ✓ the winner actually detected the seeded stuck steps (stuckStepsFound >= 15)
 ── assertions: 4 pass, 1 fail
 ```
-Both concurrent requests ran `doExecute()` in full — neither response message
-contained "leader lock held" (that string doesn't exist pre-fix), and both
-reported real `stuckStepsFound`/`autoFixed` counts against the same 15 rows.
-Exit code: `1`. See the PR body for the exact commands used to capture this
-transcript (temporary revert, rebuild, run, restore, rebuild, re-run for GREEN).
+This is the double-execution race caught live, not simulated: both requests
+ran `doExecute()` fully unguarded and concurrently — response 1 found and
+auto-fixed all 15 seeded rows; response 2, racing microseconds behind, found
+only 14 (one row had already flipped out of `WAITING_FOR_ACK` under it) and
+auto-fixed those 14 too. Neither response's message contains "leader lock
+held" (that string doesn't exist pre-fix). Exit code: `1`.
+After capturing this transcript: the 10 reverted files were restored via
+`git checkout --`, the orchestrator image was rebuilt, and this SE was
+re-run — GREEN (see above), confirmed as part of the full `run-all.sh
+--all-workflows` pass in the PR body.
 
 ## Assertions
 <!-- one checkbox per ck/ck_eq call in test.sh — keep 1:1 -->
