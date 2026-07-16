@@ -235,6 +235,11 @@ fi
 RESULTS_DIR="$EVAL_DIR/.results/$MODE/$TIMESTAMP"
 mkdir -p "$RESULTS_DIR"
 
+# Self-gitignoring .results dir (SE Conventions v2 — mirrors scripts/se-run-suite.sh).
+# Written only if absent so a hand-authored richer .gitignore (comment + negation, see
+# workflows/*/setpoint-evals/.results/.gitignore) is never clobbered on every run.
+[ -f "$EVAL_DIR/.results/.gitignore" ] || printf '*\n' > "$EVAL_DIR/.results/.gitignore"
+
 # Redirect all output to a log file in addition to stdout
 exec > >(tee -a "$RESULTS_DIR/run.log") 2>&1
 
