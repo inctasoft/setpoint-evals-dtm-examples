@@ -7,17 +7,43 @@ import {
 import { ThirdPartyPreBuiltUI } from 'supertokens-auth-react/recipe/thirdparty/prebuiltui';
 import { AuthPage } from './auth/AuthPage';
 import { useWebSocket } from './hooks/use-websocket';
+import { useWorkflows } from './hooks/use-workflows';
 import { Header } from './components/header';
+import { WorkflowSelector } from './components/workflow-selector';
 import { JobList } from './components/job-list';
 import { JobDetail } from './components/job-detail';
 import { SqsPanel } from './components/sqs-panel';
 import { EventLog } from './components/event-log';
+import { KafkaPanel } from './components/kafka-panel';
+import { PayloadsPanel } from './components/payloads-panel';
+import { ThroughputPanel } from './components/throughput-panel';
+import { FlagsPanel } from './components/flags-panel';
+import { TabbedPanel } from './components/tabbed-panel';
+import { WorkflowDag } from './components/workflow-dag';
 import { ConnectionStatus } from './components/connection-status';
 import { ScenariosView } from './components/scenarios/scenarios-view';
 
 const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/events`;
+const SELECTED_WORKFLOW_KEY = 'dtm-monitor:selectedWorkflow';
 
 type View = 'dashboard' | 'scenarios';
+
+function loadPersistedWorkflow(): string | null {
+  try {
+    return localStorage.getItem(SELECTED_WORKFLOW_KEY) || null;
+  } catch {
+    return null; // localStorage unavailable (private mode, etc.) — degrade to "All"
+  }
+}
+
+function persistWorkflow(workflow: string | null) {
+  try {
+    if (workflow) localStorage.setItem(SELECTED_WORKFLOW_KEY, workflow);
+    else localStorage.removeItem(SELECTED_WORKFLOW_KEY);
+  } catch {
+    // best-effort — selection still works for the current session via state
+  }
+}
 
 export function App() {
   const [loading, setLoading] = useState(true);
@@ -25,7 +51,9 @@ export function App() {
   const [view, setView] = useState<View>('dashboard');
 
   const state = useWebSocket(WS_URL);
+  const { workflows } = useWorkflows();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(loadPersistedWorkflow);
 
   useEffect(() => {
     // Dev-only escape hatch, mirrors the backend's DISABLE_AUTH (auth.guard.ts) —
@@ -71,11 +99,20 @@ export function App() {
 
   if (!authenticated) return null;
 
-  const jobs = Array.from(state.jobs.values()).sort((a, b) =>
+  const allJobs = Array.from(state.jobs.values()).sort((a, b) =>
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
+  const jobs = selectedWorkflow ? allJobs.filter((j) => j.workflow === selectedWorkflow) : allJobs;
 
-  const selectedJob = selectedJobId ? state.jobs.get(selectedJobId) ?? null : jobs[0] ?? null;
+  // Selection can point at a job that Just got filtered out by a workflow change —
+  // fall back to the first visible job rather than showing a stale/invisible one.
+  const selectedJob =
+    (selectedJobId && jobs.find((j) => j.id === selectedJobId)) || jobs[0] || null;
+
+  const handleSelectWorkflow = (workflow: string | null) => {
+    setSelectedWorkflow(workflow);
+    persistWorkflow(workflow);
+  };
 
   // A Scenarios "Run" success switches to the Dashboard with the new job selected
   // (improvement over the donor pattern, which left the operator to find it manually).
@@ -88,8 +125,8 @@ export function App() {
     <div class="dashboard">
       <Header connected={state.connected} />
 
-      {/* Deliberately BELOW the header's own ~64px band — a later phase reserves that
-          band for a subtitle; this toggle lives in its own slim bar underneath. */}
+      {/* Deliberately BELOW the header's own ~64px band — this toggle + the workflow selector
+          share the slim bar underneath. */}
       <div class="view-tabs">
         <button
           class={`view-tab ${view === 'dashboard' ? 'active' : ''}`}
@@ -103,40 +140,83 @@ export function App() {
         >
           Scenarios
         </button>
+        <WorkflowSelector
+          workflows={workflows}
+          selected={selectedWorkflow}
+          onSelect={handleSelectWorkflow}
+        />
       </div>
 
       {view === 'scenarios' ? (
-        <ScenariosView onJobCreated={handleJobCreatedFromScenario} />
+        <ScenariosView onJobCreated={handleJobCreatedFromScenario} presetWorkflow={selectedWorkflow} />
       ) : (
-        <div class="panels">
-          <div class="panel panel-left">
-            <div class="panel-header">Active Jobs</div>
-            <div class="panel-body">
-              <JobList
-                jobs={jobs}
-                selectedId={selectedJob?.id ?? null}
-                onSelect={setSelectedJobId}
+        <>
+          {selectedWorkflow && (
+            <div class="dag-section">
+              <div class="panel-header">
+                {selectedWorkflow} — step graph
+                {selectedJob?.workflow === selectedWorkflow && (
+                  <span class="dag-legend">
+                    <span class="dag-legend-item dag-legend-done">done</span>
+                    <span class="dag-legend-item dag-legend-active">active</span>
+                    <span class="dag-legend-item dag-legend-failed">failed</span>
+                    <span class="dag-legend-item dag-legend-pending">pending</span>
+                  </span>
+                )}
+              </div>
+              <WorkflowDag workflowName={selectedWorkflow} selectedJob={selectedJob} />
+            </div>
+          )}
+
+          <div class="panels">
+            <div class="panel panel-left">
+              <div class="panel-header">
+                {selectedWorkflow ? `${selectedWorkflow} Jobs` : 'All Jobs'} ({jobs.length})
+              </div>
+              <div class="panel-body">
+                <JobList
+                  jobs={jobs}
+                  selectedId={selectedJob?.id ?? null}
+                  onSelect={setSelectedJobId}
+                />
+              </div>
+            </div>
+
+            <div class="panel panel-center">
+              <div class="panel-header">Job Detail</div>
+              <div class="panel-body">
+                <JobDetail job={selectedJob} />
+              </div>
+            </div>
+
+            <div class="panel panel-right">
+              <TabbedPanel
+                storageKey="right-panel"
+                tabs={[
+                  { id: 'sqs', label: 'SQS', content: <SqsPanel queues={state.queues} /> },
+                  { id: 'kafka', label: 'Kafka', content: <KafkaPanel /> },
+                  {
+                    id: 'events',
+                    label: 'Events',
+                    content: <EventLog entries={state.eventLog} hideHeader maxHeight="none" />,
+                  },
+                  {
+                    id: 'payloads',
+                    label: 'Payloads',
+                    content: <PayloadsPanel selectedJobId={selectedJob?.id ?? null} />,
+                  },
+                  {
+                    id: 'throughput',
+                    label: 'Throughput',
+                    content: <ThroughputPanel workflow={selectedWorkflow} />,
+                  },
+                  { id: 'flags', label: 'Flags', content: <FlagsPanel workflow={selectedWorkflow} /> },
+                ]}
               />
             </div>
           </div>
-
-          <div class="panel panel-center">
-            <div class="panel-header">Job Detail</div>
-            <div class="panel-body">
-              <JobDetail job={selectedJob} />
-            </div>
-          </div>
-
-          <div class="panel panel-right">
-            <div class="panel-header">SQS Queues</div>
-            <div class="panel-body">
-              <SqsPanel queues={state.queues} />
-            </div>
-          </div>
-        </div>
+        </>
       )}
-
-      <EventLog entries={state.eventLog} />
 
       <div class="bottom-bar">
         <ConnectionStatus connected={state.connected} reconnecting={state.reconnecting} />

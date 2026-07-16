@@ -2,18 +2,24 @@ import type { EventLogEntry } from '../types/events';
 
 interface EventLogProps {
   entries: EventLogEntry[];
+  /** Bottom-bar placement (default) shows its own header + is height-capped. The
+      "Events" tab (TabbedPanel) sets hideHeader + fills the tab body instead. */
+  hideHeader?: boolean;
+  maxHeight?: string;
 }
 
-export function EventLog({ entries }: EventLogProps) {
+export function EventLog({ entries, hideHeader = false, maxHeight = '180px' }: EventLogProps) {
   return (
     <div class="event-log">
-      <div class="panel-header">
-        Event Log
-        <span style="float: right; font-weight: normal; text-transform: none; letter-spacing: 0">
-          {entries.length > 0 ? `${entries.length} events` : 'waiting...'}
-        </span>
-      </div>
-      <div class="panel-body" style="max-height: 180px">
+      {!hideHeader && (
+        <div class="panel-header">
+          Event Log
+          <span style="float: right; font-weight: normal; text-transform: none; letter-spacing: 0">
+            {entries.length > 0 ? `${entries.length} events` : 'waiting...'}
+          </span>
+        </div>
+      )}
+      <div class="panel-body" style={{ maxHeight }}>
         {entries.length === 0 ? (
           <div class="empty-state" style="padding: 12px">
             Events will appear here as workflows execute

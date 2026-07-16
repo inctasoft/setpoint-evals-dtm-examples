@@ -568,3 +568,207 @@ html, body, #app {
   text-align: left;
 }
 .readme-body th { color: var(--text-dim); }
+
+/* ═══ Phase 4b: multi-workflow dashboard ═══ */
+
+/* Workflow selector — persistent header pills, shares the view-tabs slim bar. */
+.view-tabs { flex-wrap: wrap; row-gap: 4px; }
+.workflow-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+  align-items: center;
+}
+.workflow-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+  border-radius: 10px;
+}
+.workflow-pill:hover { color: var(--text); }
+.workflow-pill.active { color: var(--bg); font-weight: bold; }
+.workflow-pill.disabled { opacity: 0.5; }
+.workflow-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.workflow-pill-disabled-badge {
+  font-size: 9px;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+/* Job table (dashboard columns upgrade) — replaces the flat job-item cards. */
+.panel-left { flex: 0 0 460px; }
+.job-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.job-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.job-row { cursor: pointer; border-bottom: 1px solid var(--border); }
+.job-row:hover { background: var(--bg-hover); }
+.job-row.selected { background: var(--bg-hover); box-shadow: inset 3px 0 0 var(--cyan); }
+.job-row td { padding: 6px 8px; white-space: nowrap; }
+.job-table-workflow { display: flex; align-items: center; gap: 6px; }
+.job-table-workflow-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.job-table-variant { color: var(--text-dim); max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+.job-table-steps { font-family: inherit; }
+.step-count-done { color: var(--green); }
+.step-count-failed { color: var(--red); }
+.step-count-aborted { color: var(--yellow); }
+.step-count-total { color: var(--text-dim); }
+.job-table-duration { color: var(--cyan); text-align: right; }
+.outcome-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+}
+
+/* Per-workflow DAG mini-viz */
+.dag-section {
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.dag-section .panel-header { display: flex; align-items: center; justify-content: space-between; }
+.dag-legend { display: flex; gap: 10px; font-weight: normal; text-transform: none; letter-spacing: 0; font-size: 10px; }
+.dag-legend-item { display: flex; align-items: center; gap: 4px; }
+.dag-legend-item::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.dag-legend-done::before { background: var(--green); }
+.dag-legend-active::before { background: var(--blue); }
+.dag-legend-failed::before { background: var(--red); }
+.dag-legend-pending::before { background: var(--border); }
+.dag-container {
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px 16px;
+  text-align: center;
+}
+.dag-container pre.mermaid { background: var(--bg); display: inline-block; }
+.dag-empty {
+  padding: 16px;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Tabbed side-panel (SQS / Kafka / Events / Payloads / Throughput / Flags) */
+.tabbed-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.tab-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px 8px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+.tab-body { flex: 1; overflow-y: auto; }
+
+/* Payloads tab */
+.payloads-list { font-size: 11px; }
+.payload-card { border-bottom: 1px solid var(--border); }
+.payload-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.payload-card-header:hover { background: var(--bg-hover); }
+.payload-toggle { color: var(--text-dim); width: 10px; flex-shrink: 0; }
+.payload-topic { flex: 1; color: var(--text); }
+.payload-ack { font-size: 10px; font-weight: bold; padding: 1px 5px; border-radius: 3px; }
+.payload-ack--ok { color: var(--green); border: 1px solid var(--green); }
+.payload-ack--fail { color: var(--red); border: 1px solid var(--red); }
+.payload-card-body { padding: 4px 12px 10px; }
+.payload-section-label {
+  color: var(--text-dim);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 6px 0 2px;
+}
+.payload-preview {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 8px;
+  overflow-x: auto;
+  font-size: 10px;
+  white-space: pre;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* Throughput tab — hand-rolled CSS bar mini-chart */
+.throughput-panel { padding: 10px 12px; }
+.throughput-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  margin-bottom: 10px;
+}
+.throughput-stat .status { font-size: 13px; }
+.throughput-window { color: var(--text-dim); margin-left: auto; }
+.throughput-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 100px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+}
+.throughput-bar-col { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 4px; }
+.throughput-bar {
+  width: 100%;
+  background: var(--green);
+  border-radius: 2px 2px 0 0;
+  position: relative;
+  display: flex;
+  flex-direction: column-reverse;
+}
+.throughput-bar-failed { width: 100%; background: var(--red); border-radius: 2px 2px 0 0; }
