@@ -91,6 +91,7 @@ so the assertions below use `select(...) | length >= 1`, not an exact count.)
 <!-- one checkbox per verify/if call in test.sh — keep 1:1 -->
 - [ ] Job status is COMPLETED
 - [ ] DiscoverReadings for SENS-GH5-SOIL (empty sensor) is COMPLETED, not failed
+- [ ] DiscoverReadings for SENS-GH5-SOIL reports childCount=null (the actual "0 readings" invariant)
 - [ ] DiscoverReadings for SENS-GH5-TEMP (sibling WITH data) reports childCount=6
 - [ ] At least one IngestReading child exists (from the TEMP sibling)
 - [ ] DiscoverSensors is COMPLETED

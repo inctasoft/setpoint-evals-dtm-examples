@@ -90,6 +90,21 @@ else
   FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 
+# SENS-GH5-SOIL's DiscoverReadings must report childCount=null (the empty-fan-out
+# branch in fan-out.service.ts's handleDiscoveryComplete() never calls
+# createChildSteps(), so the DB child_count column is never set — it stays at its
+# default, serialized as `childCount: null` by jobs.controller.ts). This is the
+# actual "0 readings" invariant from SEED-REGISTRY.md; the COMPLETED check above
+# alone doesn't pin it (a sensor with real readings would ALSO complete).
+SOIL_DISCOVER_CHILDCOUNT_NULL=$(echo "$SOIL_DISCOVER" | jq '[.[] | select(.childCount == null)] | length')
+if [ "$SOIL_DISCOVER_CHILDCOUNT_NULL" -ge 1 ]; then
+  log_success "DiscoverReadings for SENS-GH5-SOIL reports childCount=null (the empty-fan-out branch, confirming 0 readings)"
+  PASS_COUNT=$((PASS_COUNT + 1))
+else
+  log_error "Expected DiscoverReadings for SENS-GH5-SOIL to report childCount=null (empty fan-out)"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
 TEMP_DISCOVER_WITH_CHILDREN=$(echo "$JOB_DETAILS" | jq '[.steps[] | select(.stepNumber == "DiscoverReadings" and .childItemId == "SENS-GH5-TEMP" and .childCount == 6)] | length')
 if [ "$TEMP_DISCOVER_WITH_CHILDREN" -ge 1 ]; then
   log_success "DiscoverReadings for SENS-GH5-TEMP (sibling WITH data) reports childCount=6"
