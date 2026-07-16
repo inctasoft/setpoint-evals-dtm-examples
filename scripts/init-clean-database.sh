@@ -1,132 +1,84 @@
 #!/bin/bash
 # Initialize Clean Database
-# Drops all tables and recreates ONLY dtm_jobs and dtm_steps, matching the
-# live post-migration schema (i.e. the schema you'd get after running every
-# migration in packages/database/src/migrations/ in order). Use this after
-# clean:all to ensure a clean state without paying the cost of running the
-# full migration chain.
 #
-# If you add/change a migration, update this script to match — it is a
-# shortcut for the schema, not a replacement for the migration chain.
+# Wipes the dtm-db schema and rebuilds it by running the REAL TypeORM
+# migration chain (packages/database/src/migrations/) — the single schema
+# source of truth (Phase 2a, decision D1). There is no longer any
+# hand-written CREATE TABLE SQL here: this script is a fast, LOCAL way to
+# invoke the exact same migrations the `init-typeorm` Docker service runs
+# (see docker-compose.yml + services/orchestrator/Dockerfile.db-init), just
+# without paying the cost of an image build/copy on every reset. Same
+# migration files, same TypeORM engine, same DataSource (services/orchestrator
+# dataSource.ts, which re-exports @dtm/database's built config) — only the
+# execution environment (host vs container) differs. One schema-producing
+# code path, applied two ways.
+#
+# Use this after `./scripts/local-env.sh clean` (or any full DB wipe) to
+# restore a clean, fully-migrated schema.
+#
+# Prerequisites: dtm-db is running and reachable on the host (the default
+# `./scripts/local-env.sh start --standalone` published port). This script
+# always rebuilds `@dtm/database` (fast — `tsc` on ~5 files, ~2s) before
+# running migrations: `services/orchestrator/dataSource.ts` resolves the
+# migration list from @dtm/database's COMPILED dist/, so a stale dist would
+# otherwise let this script silently apply an outdated migration set while
+# still reporting success — exactly the kind of drift D1 exists to close.
 
-set -e
+set -euo pipefail
 
-echo "🗑️  Dropping all tables and recreating clean schema..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_FILE="$PROJECT_ROOT/.env"
 
-docker exec dtm-db psql -U dtm_user -d dtm -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO dtm_user; GRANT ALL ON SCHEMA public TO public; CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" > /dev/null
+DB_CONTAINER="${COMPOSE_PROJECT_NAME:-dtm}-db"
+
+# Load DTM_DB_* from .env (same vars docker-compose / typeorm.config.ts read),
+# then override host/port for a HOST-side connection to dtm-db's PUBLISHED
+# port — the container's own env always resolves DTM_DB_HOST=dtm-db:5432
+# (Docker-internal), which isn't reachable from outside the network.
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090,SC1091
+  source <(grep -vE '^\s*#' "$ENV_FILE" | grep -vE '^\s*$')
+  set +a
+fi
+
+export DTM_DB_HOST=localhost
+export DTM_DB_PORT_HOST="${DTM_DB_PORT_HOST:-5448}"
+unset DTM_DB_PORT
+export DTM_DB_USER="${DTM_DB_USER:-dtm_user}"
+export DTM_DB_PASSWORD="${DTM_DB_PASSWORD:-dtm}"
+export DTM_DB_NAME="${DTM_DB_NAME:-dtm}"
+
+if ! docker exec "$DB_CONTAINER" true >/dev/null 2>&1; then
+  echo "❌ $DB_CONTAINER is not running. Start it first:" >&2
+  echo "   ./scripts/local-env.sh start --standalone" >&2
+  exit 1
+fi
+
+echo "🗑️  Dropping schema '$DTM_DB_NAME' on $DB_CONTAINER and recreating empty..."
+
+docker exec "$DB_CONTAINER" psql -U "$DTM_DB_USER" -d "$DTM_DB_NAME" -c \
+  "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO $DTM_DB_USER; GRANT ALL ON SCHEMA public TO public;" \
+  >/dev/null
 
 echo "✅ Schema reset complete"
 echo ""
-echo "📁 Creating clean tables..."
 
-docker exec -i dtm-db psql -U dtm_user -d dtm <<'EOF'
-BEGIN;
+echo "📦 Building @dtm/database (ensures dist/migrations reflects current source)..."
+( cd "$PROJECT_ROOT" && pnpm --filter @dtm/database run build )
+echo ""
 
--- Create enum types
-CREATE TYPE "job_status_enum" AS ENUM('pending', 'processing', 'completed', 'failed', 'cancelled', 'partial_success');
-CREATE TYPE "step_status_enum" AS ENUM('pending', 'delegated', 'in_progress', 'in_progress_retrying', 'completed', 'waiting_for_ack', 'failed', 'skipped', 'partial_success', 'waiting_for_children');
+echo "📦 Applying migrations (single schema source of truth: packages/database/src/migrations/)..."
+echo ""
 
--- Create dtm_jobs table
-CREATE TABLE "dtm_jobs" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "workflow_name" character varying(255) NOT NULL DEFAULT 'order-processing',
-  "type" character varying(255) NOT NULL,
-  "status" job_status_enum NOT NULL DEFAULT 'pending',
-  "payload" jsonb NOT NULL,
-  "results" jsonb,
-  "submitted_by" character varying(255),
-  "submitted_at" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "started_at" timestamp,
-  "completed_at" timestamp,
-  "updated_at" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "error" text,
-  "retry_count" integer NOT NULL DEFAULT 0,
-  "max_retries" integer NOT NULL DEFAULT 3
-);
+( cd "$PROJECT_ROOT/services/orchestrator" && npx typeorm-ts-node-commonjs migration:run -d dataSource.ts )
 
--- Create indexes for dtm_jobs
-CREATE INDEX "IDX_dtm_jobs_status" ON "dtm_jobs" ("status");
-CREATE INDEX "IDX_dtm_jobs_type" ON "dtm_jobs" ("type");
-CREATE INDEX "IDX_dtm_jobs_status_type" ON "dtm_jobs" ("status", "type");
-CREATE INDEX "IDX_dtm_jobs_submitted_at" ON "dtm_jobs" ("submitted_at");
-CREATE INDEX "IDX_dtm_jobs_workflow_name" ON "dtm_jobs" ("workflow_name");
-CREATE INDEX "IDX_dtm_jobs_workflow_name_status" ON "dtm_jobs" ("workflow_name", "status");
-
--- Create dtm_steps table
-CREATE TABLE "dtm_steps" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  "job_id" uuid NOT NULL,
-  "step_value" character varying(50) NOT NULL,
-  "description" text,
-  "status" step_status_enum NOT NULL DEFAULT 'pending',
-  "input" jsonb,
-  "output" jsonb,
-  "started_at" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "completed_at" timestamp,
-  "duration_ms" integer,
-  "error" text,
-  "records_processed" integer NOT NULL DEFAULT 0,
-  "records_failed" integer NOT NULL DEFAULT 0,
-  "retry_count" integer NOT NULL DEFAULT 0,
-  "max_retry_count" integer NOT NULL DEFAULT 3,
-  "execution_history" jsonb DEFAULT '[]'::jsonb,
-  "first_attempt_at" timestamp,
-  "last_attempt_at" timestamp,
-  "lambda_function_name" character varying(255),
-  "sqs_message_id" character varying(255),
-  "kafka_published_at" timestamp,
-  "ack_received_at" timestamp,
-  "ack_metadata" jsonb,
-  "parent_step_id" uuid,
-  "child_index" integer,
-  "child_item_id" character varying(255),
-  "child_count" integer,
-  CONSTRAINT "FK_c75ac2f0cbc178fef0b101a1cd5" FOREIGN KEY ("job_id")
-    REFERENCES "dtm_jobs"("id") ON DELETE CASCADE,
-  CONSTRAINT "FK_migration_steps_parent" FOREIGN KEY ("parent_step_id")
-    REFERENCES "dtm_steps"("id") ON DELETE CASCADE
-);
-
--- Create indexes for dtm_steps
-CREATE INDEX "IDX_dtm_steps_job_id" ON "dtm_steps" ("job_id");
-CREATE INDEX "IDX_dtm_steps_status" ON "dtm_steps" ("status");
-CREATE INDEX "IDX_dtm_steps_job_step_value" ON "dtm_steps" ("job_id", "step_value");
-CREATE INDEX "idx_dtm_steps_retry_count" ON "dtm_steps" ("retry_count");
-CREATE INDEX "idx_dtm_steps_last_attempt_at" ON "dtm_steps" ("last_attempt_at");
-CREATE INDEX "IDX_dtm_steps_parent_step_id" ON "dtm_steps" ("parent_step_id");
-CREATE INDEX "IDX_dtm_steps_parent_status" ON "dtm_steps" ("parent_step_id", "status");
-
--- Create migrations table (TypeORM migration history)
-CREATE TABLE "migrations" (
-  "id" SERIAL PRIMARY KEY,
-  "timestamp" bigint NOT NULL,
-  "name" character varying NOT NULL
-);
-
--- Record every migration as already applied (this script recreates their
--- combined end-state directly, so `migration:run` should treat the chain
--- as fully up to date rather than re-running it against a schema that
--- already has the final shape).
-INSERT INTO "migrations" ("timestamp", "name") VALUES
-  (1765443716000, 'InitialMigrationSchema1765443716000'),
-  (1765443717000, 'AddFanOutColumns1765443717000'),
-  (1765443718000, 'AddQuickOrderType1765443718000'),
-  (1765443719000, 'RemoveMigrationTypeEnum1765443719000'),
-  (1765443720000, 'AddPartialSuccessStatus1765443720000'),
-  (1765443721000, 'AddWaitingForChildrenStatus1765443721000'),
-  (1765443722000, 'AddWorkflowNameColumn1765443722000'),
-  (1765443723000, 'AddPartialSuccessJobStatus1765443723000'),
-  (1765443724000, 'RenameTablesToDtm1765443724000'),
-  (1765443725000, 'DropLegacyWorkflowColumns1765443725000'),
-  (1765443726000, 'RenameChildEntityIdToChildItemId1765443726000');
-
-COMMIT;
-EOF
-
+echo ""
 echo "✅ Clean database created successfully!"
 echo ""
 echo "Tables:"
-docker exec dtm-db psql -U dtm_user -d dtm -c "\dt"
+docker exec "$DB_CONTAINER" psql -U "$DTM_DB_USER" -d "$DTM_DB_NAME" -c "\dt"
 echo ""
 echo "Migration History:"
-docker exec dtm-db psql -U dtm_user -d dtm -c "SELECT timestamp, name FROM migrations;"
+docker exec "$DB_CONTAINER" psql -U "$DTM_DB_USER" -d "$DTM_DB_NAME" -c "SELECT timestamp, name FROM migrations;"

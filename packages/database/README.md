@@ -32,12 +32,24 @@ pnpm --filter @dtm/database run build
 
 ## Database Migrations
 
-### Current State (POC Mode)
+### Current State (Single Schema Source of Truth — Phase 2a, D1)
 
 We maintain **ONE clean migration** that creates the entire schema:
-- `1765443716000-InitialMigrationSchema.ts` - Creates dtm_jobs and dtm_steps tables
+- `1784147958000-InitialSchema.ts` - Creates dtm_jobs and dtm_steps (tables, indexes, FKs, both enums)
 
-**All legacy migrations have been permanently removed.**
+**All legacy migrations (the 11-migration chain that built this incrementally,
+including the now-dropped `migration_jobs`/`migration_type_enum` vocabulary)
+have been permanently squashed into this single migration.** This is safe
+because it's an example/POC repo with no external production database whose
+migration history needs preserving — see the migration file's own header
+comment for the full rationale and the empirically-verified diff against the
+old chain.
+
+There is exactly **one** schema-producing code path now: this migration file.
+Every way of getting a clean `dtm` database — the `init-typeorm` Docker
+service, `./scripts/init-clean-database.sh`, or running `migration:run`
+directly — executes it, so there is no parallel hand-written SQL that can
+drift out of sync with the entities/migrations again.
 
 ### After clean:all
 
@@ -48,10 +60,17 @@ If you run `./scripts/local-env.sh clean` and the database is wiped, restore the
 ```
 
 This script:
-1. Drops all tables and recreates the schema
-2. Creates ONLY dtm_jobs and dtm_steps tables
-3. Adds the migration history record
-4. Verifies the clean state
+1. Drops the `public` schema and recreates it empty
+2. Runs the real TypeORM migration chain (`migration:run`, same DataSource the
+   `init-typeorm` Docker service uses) to rebuild dtm_jobs/dtm_steps
+3. TypeORM itself records the applied migration in the `migrations` table
+4. Prints the resulting tables + migration history for confirmation
+
+A regression guard — `setpoint-evals/SE-14-schema-single-source/` — asserts
+that a database bootstrapped this way is schema-identical (information_schema
+tables/columns/indexes/enums) to one built by `migration:run` against an
+empty database, so a future hand-written SQL shortcut re-appearing here would
+fail CI.
 
 ### Prerequisites
 

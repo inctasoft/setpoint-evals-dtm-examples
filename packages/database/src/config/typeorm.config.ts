@@ -2,9 +2,25 @@ import { DataSource } from "typeorm";
 import * as path from "path";
 import { Job, Step } from "../entities";
 
-// Resolve migrations path relative to the database package
-// Clean single-migration approach: Only dtm_jobs and dtm_steps tables
-const migrationsPath = path.join(__dirname, "..", "migrations", "*.js");
+// Resolve migrations path relative to the database package.
+// Clean single-migration approach: Only dtm_jobs and dtm_steps tables.
+// Match the CURRENT module's own extension: when this config is loaded from
+// the built dist/ (the path services/orchestrator/dataSource.ts and the
+// init-typeorm Docker container use), __dirname is dist/config and sibling
+// migrations are compiled *.js. When it's loaded directly via
+// `typeorm-ts-node-commonjs -d src/config/typeorm.config.ts` (this
+// package's own migration:run/show/generate scripts), __dirname is
+// src/config and the migrations are still *.ts source — a hardcoded "*.js"
+// glob would silently match zero files there (no error, just an empty
+// migration list), which is exactly the kind of divergent-truth this
+// package exists to prevent.
+const migrationsExt = __filename.endsWith(".ts") ? "ts" : "js";
+const migrationsPath = path.join(
+  __dirname,
+  "..",
+  "migrations",
+  `*.${migrationsExt}`,
+);
 
 export default new DataSource({
   type: "postgres",
