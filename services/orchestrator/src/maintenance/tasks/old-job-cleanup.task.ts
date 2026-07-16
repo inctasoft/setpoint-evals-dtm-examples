@@ -45,9 +45,9 @@ export class OldJobCleanupTask extends BaseMaintenanceTask {
     private readonly jobRepository: Repository<Job>,
     private readonly configService: ConfigService,
     private readonly taskRegistry: MaintenanceTaskRegistry,
-    private readonly advisoryLock: AdvisoryLockService,
+    advisoryLock: AdvisoryLockService, // passed to super() only — not stored (avoids TS2415: 'private advisoryLock' can't be redeclared over the base class's)
   ) {
-    super('OldJobCleanupTask');
+    super('OldJobCleanupTask', advisoryLock);
 
     this.retentionDays = parseInt(
       this.configService.get<string>('MAINTENANCE_JOB_RETENTION_DAYS', '30'),
@@ -71,18 +71,13 @@ export class OldJobCleanupTask extends BaseMaintenanceTask {
       category: 'cleanup',
       timeoutMs: 300000, // 5 minutes
       enabled: true,
+      lockId: LockId.OLD_JOB_CLEANUP,
     };
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
   async scheduledRun() {
-    const acquired = await this.advisoryLock.tryAcquire(LockId.OLD_JOB_CLEANUP);
-    if (!acquired) return;
-    try {
-      await this.execute();
-    } finally {
-      await this.advisoryLock.release(LockId.OLD_JOB_CLEANUP);
-    }
+    await this.execute();
   }
 
   protected async doExecute(): Promise<TaskResult> {

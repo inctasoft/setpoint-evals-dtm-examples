@@ -49,9 +49,9 @@ export class StuckWaitingForChildrenTask extends BaseMaintenanceTask {
     private readonly taskRegistry: MaintenanceTaskRegistry,
     private readonly fanOutService: FanOutService,
     private readonly customStepRepository: StepRepository,
-    private readonly advisoryLock: AdvisoryLockService,
+    advisoryLock: AdvisoryLockService, // passed to super() only — not stored (avoids TS2415: 'private advisoryLock' can't be redeclared over the base class's)
   ) {
-    super('StuckWaitingForChildrenTask');
+    super('StuckWaitingForChildrenTask', advisoryLock);
 
     this.timeoutMinutes = parseInt(
       this.configService.get<string>('MAINTENANCE_WAITING_FOR_CHILDREN_TIMEOUT_MINUTES', '15'),
@@ -71,18 +71,13 @@ export class StuckWaitingForChildrenTask extends BaseMaintenanceTask {
       category: 'recovery',
       timeoutMs: 120000,
       enabled: true,
+      lockId: LockId.STUCK_WAITING_FOR_CHILDREN,
     };
   }
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async scheduledRun() {
-    const acquired = await this.advisoryLock.tryAcquire(LockId.STUCK_WAITING_FOR_CHILDREN);
-    if (!acquired) return;
-    try {
-      await this.execute();
-    } finally {
-      await this.advisoryLock.release(LockId.STUCK_WAITING_FOR_CHILDREN);
-    }
+    await this.execute();
   }
 
   protected async doExecute(options?: Record<string, any>): Promise<TaskResult> {

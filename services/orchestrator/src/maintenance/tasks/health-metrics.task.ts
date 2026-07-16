@@ -43,9 +43,9 @@ export class HealthMetricsTask extends BaseMaintenanceTask {
     private readonly stepRepository: Repository<Step>,
     private readonly configService: ConfigService,
     private readonly taskRegistry: MaintenanceTaskRegistry,
-    private readonly advisoryLock: AdvisoryLockService,
+    advisoryLock: AdvisoryLockService, // passed to super() only — not stored (avoids TS2415: 'private advisoryLock' can't be redeclared over the base class's)
   ) {
-    super('HealthMetricsTask');
+    super('HealthMetricsTask', advisoryLock);
     this.taskRegistry.register(this);
   }
 
@@ -58,18 +58,13 @@ export class HealthMetricsTask extends BaseMaintenanceTask {
       category: 'metrics',
       timeoutMs: 30000, // 30 seconds
       enabled: true,
+      lockId: LockId.HEALTH_METRICS,
     };
   }
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async scheduledRun() {
-    const acquired = await this.advisoryLock.tryAcquire(LockId.HEALTH_METRICS);
-    if (!acquired) return;
-    try {
-      await this.execute();
-    } finally {
-      await this.advisoryLock.release(LockId.HEALTH_METRICS);
-    }
+    await this.execute();
   }
 
   protected async doExecute(): Promise<TaskResult> {

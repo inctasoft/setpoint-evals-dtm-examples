@@ -4,6 +4,7 @@ import {
   TaskMetadata,
   TaskResult,
 } from '../interfaces/maintenance-task.interface';
+import { AdvisoryLockService } from '../advisory-lock.service';
 
 /**
  * Base Maintenance Task
@@ -15,11 +16,22 @@ import {
  * - Timeout protection
  * - Error handling
  * - Cleanup hooks
+ * - **Postgres advisory-lock leader election (LEADER-1)** — when the subclass's
+ *   `getMetadata().lockId` is set, `execute()` runs the timed body inside
+ *   `AdvisoryLockService.runExclusive(lockId, ...)`. This guards BOTH the
+ *   `@Cron`-scheduled path AND the manual-trigger API path (both call
+ *   `execute()`), so two concurrent executions of the same task — whether
+ *   two replicas' cron ticks or two overlapping manual API calls — never
+ *   run their bodies at the same time. The loser returns a distinguishable
+ *   "skipped — leader lock held" result instead of racing the winner.
  */
 export abstract class BaseMaintenanceTask implements IMaintenanceTask {
   protected readonly logger: Logger;
 
-  constructor(loggerContext: string) {
+  constructor(
+    loggerContext: string,
+    private readonly advisoryLock?: AdvisoryLockService,
+  ) {
     this.logger = new Logger(loggerContext);
   }
 
@@ -71,8 +83,19 @@ export abstract class BaseMaintenanceTask implements IMaintenanceTask {
         };
       }
 
-      // Execute the task with timeout protection
-      const result = await this.executeWithTimeout(metadata.timeoutMs, options);
+      // Execute the task with timeout protection, gated by the advisory lock
+      // (LEADER-1) when this task opts in via metadata.lockId.
+      const result = await this.executeGuarded(metadata, options);
+      if (result === null) {
+        // Another replica/concurrent caller holds the leader lock — no-op.
+        const message = 'Skipped — leader lock held by another replica or in-flight execution';
+        this.logger.log(`🪪 ${metadata.name}: ${message}`);
+        return {
+          success: true,
+          message,
+          executionTimeMs: Date.now() - startTime,
+        };
+      }
 
       // Add execution time to result
       result.executionTimeMs = Date.now() - startTime;
@@ -113,6 +136,26 @@ export abstract class BaseMaintenanceTask implements IMaintenanceTask {
         }
       }
     }
+  }
+
+  /**
+   * Run `executeWithTimeout` gated by the advisory lock (LEADER-1) when
+   * `metadata.lockId` is set and an `AdvisoryLockService` was injected.
+   * Returns `null` when the lock was held elsewhere (caller treats that as skip).
+   * Falls back to running unguarded when no lock is configured — this keeps
+   * unit tests that construct a `BaseMaintenanceTask` subclass without an
+   * `AdvisoryLockService` working unchanged.
+   */
+  private async executeGuarded(
+    metadata: TaskMetadata,
+    options?: Record<string, any>,
+  ): Promise<TaskResult | null> {
+    if (this.advisoryLock && metadata.lockId !== undefined) {
+      return this.advisoryLock.runExclusive(metadata.lockId, () =>
+        this.executeWithTimeout(metadata.timeoutMs, options),
+      );
+    }
+    return this.executeWithTimeout(metadata.timeoutMs, options);
   }
 
   /**

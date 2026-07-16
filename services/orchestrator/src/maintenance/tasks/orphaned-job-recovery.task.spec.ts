@@ -6,7 +6,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { MaintenanceTaskRegistry } from '../registry/maintenance-task-registry';
 import { OrchestrationService } from '../../orchestration/orchestration.service';
-import { AdvisoryLockService } from '../advisory-lock.service';
+import { AdvisoryLockService, LockId } from '../advisory-lock.service';
 
 describe('OrphanedJobRecoveryTask', () => {
   let module: TestingModule;
@@ -37,8 +37,11 @@ describe('OrphanedJobRecoveryTask', () => {
   };
 
   const mockAdvisoryLockService = {
-    tryAcquire: jest.fn().mockResolvedValue(true),
-    release: jest.fn().mockResolvedValue(undefined),
+    // LEADER-1: runExclusive pins acquire->fn->release on one connection; the
+    // unit-test double just runs fn() through (lock behavior is proven by the SE).
+    runExclusive: jest
+      .fn()
+      .mockImplementation((_lockId: number, fn: () => Promise<unknown>) => fn()),
   };
 
   beforeEach(async () => {
@@ -92,6 +95,7 @@ describe('OrphanedJobRecoveryTask', () => {
         category: 'recovery',
         timeoutMs: 120000,
         enabled: true,
+        lockId: LockId.ORPHANED_JOB_RECOVERY, // LEADER-1
       });
     });
   });

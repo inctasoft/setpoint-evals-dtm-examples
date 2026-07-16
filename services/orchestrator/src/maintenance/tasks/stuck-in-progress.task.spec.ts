@@ -8,7 +8,8 @@ import { ConfigService } from '@nestjs/config';
 import { MaintenanceTaskRegistry } from '../registry/maintenance-task-registry';
 import { OrchestrationService } from '../../orchestration/orchestration.service';
 import { WorkflowConfigService } from '../../workflow-loader/workflow-config.service';
-import { AdvisoryLockService } from '../advisory-lock.service';
+import { WorkflowRegistryService } from '../../workflow-loader/workflow-registry.service';
+import { AdvisoryLockService, LockId } from '../advisory-lock.service';
 
 describe('StuckInProgressTask', () => {
   let module: TestingModule;
@@ -37,11 +38,30 @@ describe('StuckInProgressTask', () => {
 
   const mockWorkflowConfigService = {
     getStepName: jest.fn().mockImplementation((step: string) => step.toLowerCase()),
+    getStepDefinition: jest.fn().mockReturnValue(undefined),
+  };
+
+  // A DIFFERENT workflow's config — distinguishable return value proves the
+  // task actually resolved against it instead of falling back to the default.
+  const mockIotWorkflowConfigService = {
+    getStepName: jest.fn(),
+    getStepDefinition: jest.fn().mockReturnValue({ step: 'IngestReading', timeoutMs: 5000 }),
+  };
+
+  const mockWorkflowRegistry = {
+    has: jest.fn().mockImplementation((name: string) => name === 'iot-sensor-pipeline'),
+    get: jest.fn().mockImplementation((name: string) => {
+      if (name === 'iot-sensor-pipeline') return mockIotWorkflowConfigService;
+      throw new Error(`unexpected workflow lookup in test: ${name}`);
+    }),
   };
 
   const mockAdvisoryLockService = {
-    tryAcquire: jest.fn().mockResolvedValue(true),
-    release: jest.fn().mockResolvedValue(undefined),
+    // LEADER-1: runExclusive pins acquire->fn->release on one connection; the
+    // unit-test double just runs fn() through (lock behavior is proven by the SE).
+    runExclusive: jest
+      .fn()
+      .mockImplementation((_lockId: number, fn: () => Promise<unknown>) => fn()),
   };
 
   beforeEach(async () => {
@@ -56,6 +76,7 @@ describe('StuckInProgressTask', () => {
         { provide: MaintenanceTaskRegistry, useValue: mockTaskRegistry },
         { provide: OrchestrationService, useValue: mockOrchestrationService },
         { provide: WorkflowConfigService, useValue: mockWorkflowConfigService },
+        { provide: WorkflowRegistryService, useValue: mockWorkflowRegistry },
         { provide: AdvisoryLockService, useValue: mockAdvisoryLockService },
       ],
     }).compile();
@@ -91,6 +112,7 @@ describe('StuckInProgressTask', () => {
         category: 'recovery',
         timeoutMs: 120000,
         enabled: true,
+        lockId: LockId.STUCK_IN_PROGRESS, // LEADER-1
       });
     });
   });
@@ -247,6 +269,45 @@ describe('StuckInProgressTask', () => {
       expect(result.success).toBe(true);
       expect(result.message).toBe('No stuck in-progress steps found - all processing normally');
       expect(result.metrics.stuckStepsFound).toBe(0);
+    });
+  });
+
+  describe('DI-singleton sweep: per-step timeout lookup resolves against the JOB workflow', () => {
+    it('resolves StepDefinition against the job workflow, not the default singleton', async () => {
+      // A step belonging to a job on a non-default workflow (iot-sensor-pipeline)
+      // must have its per-step timeout looked up via THAT workflow's
+      // WorkflowConfigService. Before the fix, `this.workflowConfig` (the
+      // default-bound singleton) was queried directly with the iot job's
+      // `type`, which doesn't exist in the default workflow's step map —
+      // getStepDefinition would silently return undefined and the task would
+      // fall back to DEFAULT_TIMEOUT_MS (30min) regardless of the real
+      // per-step configured timeout.
+      const stuckStep: Partial<Step> = {
+        id: 'step-iot',
+        stepValue: 'IngestReading',
+        status: StepStatus.IN_PROGRESS,
+        startedAt: new Date(Date.now() - 35 * 60 * 1000),
+        retryCount: 0,
+        job: { id: 'job-iot', type: 'sensor-batch', workflowName: 'iot-sensor-pipeline' } as any,
+      };
+
+      stepRepository.find.mockResolvedValue([stuckStep]);
+
+      const result = await task['execute']();
+
+      // The iot config's getStepDefinition was consulted with the job's own type …
+      expect(mockWorkflowRegistry.has).toHaveBeenCalledWith('iot-sensor-pipeline');
+      expect(mockIotWorkflowConfigService.getStepDefinition).toHaveBeenCalledWith(
+        'sensor-batch',
+        'IngestReading',
+      );
+      // … and the default singleton's getStepDefinition was NEVER consulted —
+      // a plausible-but-wrong fix that still calls the default singleton (just
+      // wrapped in a no-op resolver) would fail this assertion.
+      expect(mockWorkflowConfigService.getStepDefinition).not.toHaveBeenCalled();
+      // The resolved StepDefinition's timeoutMs (5000ms) is used, so the step —
+      // stuck for 35min, way past a 5s per-step timeout — is reported.
+      expect(result.findings[0].context.stepTimeoutMs).toBe(5000);
     });
   });
 

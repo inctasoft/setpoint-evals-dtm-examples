@@ -14,11 +14,22 @@ import { DataSource } from 'typeorm';
  * - Non-blocking: failed acquisitions return immediately (no queuing)
  * - Zero infrastructure: uses the existing dtm PostgreSQL connection
  *
- * Usage (in a @Cron task):
- *   const acquired = await this.advisoryLock.tryAcquire(LockId.STUCK_ACK);
- *   if (!acquired) return;
- *   try { await this.run(); }
- *   finally { await this.advisoryLock.release(LockId.STUCK_ACK); }
+ * ⚠️ Session-pinning is mandatory (LEADER-1).
+ * `pg_try_advisory_lock` is scoped to the *connection* that acquired it, and is
+ * re-entrant on that same connection. A pool-backed `DataSource.query()` call
+ * borrows a connection, runs one statement, and returns it to the pool — the
+ * acquire and a later release are NOT guaranteed to run on the same physical
+ * connection, and neither is a concurrent competitor's acquire. That makes a
+ * naive "acquire via query(), release via query()" pair pool-nondeterministic:
+ * a second caller can be handed the very connection the first caller just
+ * returned to the pool (still holding the lock) and re-enter for free —
+ * "exactly one execution" becomes a coin flip that depends on pool scheduling.
+ * `runExclusive` avoids this by pinning a single `QueryRunner` (one physical
+ * connection) for the whole acquire → fn → release span.
+ *
+ * Usage:
+ *   const result = await this.advisoryLock.runExclusive(LockId.STUCK_ACKNOWLEDGEMENT, () => this.run());
+ *   if (result === null) { // leader lock held elsewhere — skipped this tick }
  */
 @Injectable()
 export class AdvisoryLockService {
@@ -27,26 +38,41 @@ export class AdvisoryLockService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   /**
-   * Attempt to acquire a session-scoped advisory lock.
-   * Returns true if the lock was acquired, false if another session holds it.
+   * Run `fn` while holding a session-scoped Postgres advisory lock keyed on `lockId`.
+   *
+   * Pins one `QueryRunner` (one physical connection) for the whole
+   * acquire → fn → release span, so the lock can never be released from — or
+   * re-entered via — a different connection than the one that acquired it.
+   *
+   * Returns `fn`'s result, or `null` if another session already holds the lock
+   * (the caller should treat `null` as "skipped — leader elsewhere").
    */
-  async tryAcquire(lockId: number): Promise<boolean> {
-    const result = await this.dataSource.query<[{ pg_try_advisory_lock: boolean }]>(
-      'SELECT pg_try_advisory_lock($1)',
-      [lockId],
-    );
-    const acquired = result[0]?.pg_try_advisory_lock === true;
-    if (!acquired) {
-      this.logger.debug(`Advisory lock ${lockId} not acquired — another instance holds it`);
+  async runExclusive<T>(lockId: number, fn: () => Promise<T>): Promise<T | null> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    try {
+      const acquireResult: Array<{ got: boolean }> = await queryRunner.query(
+        'SELECT pg_try_advisory_lock($1) AS got',
+        [lockId],
+      );
+      const acquired = acquireResult[0]?.got === true;
+      if (!acquired) {
+        this.logger.debug(`Advisory lock ${lockId} not acquired — another instance holds it`);
+        return null;
+      }
+      try {
+        return await fn();
+      } finally {
+        try {
+          await queryRunner.query('SELECT pg_advisory_unlock($1)', [lockId]);
+        } catch (releaseError) {
+          const msg = releaseError instanceof Error ? releaseError.message : String(releaseError);
+          this.logger.warn(`Failed to release advisory lock ${lockId}: ${msg}`);
+        }
+      }
+    } finally {
+      await queryRunner.release();
     }
-    return acquired;
-  }
-
-  /**
-   * Release a previously acquired session-scoped advisory lock.
-   */
-  async release(lockId: number): Promise<void> {
-    await this.dataSource.query('SELECT pg_advisory_unlock($1)', [lockId]);
   }
 }
 

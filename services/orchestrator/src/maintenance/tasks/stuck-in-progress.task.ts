@@ -14,7 +14,7 @@ import {
 } from '../interfaces/maintenance-task.interface';
 import { MaintenanceTaskRegistry } from '../registry/maintenance-task-registry';
 import { OrchestrationService } from '../../orchestration/orchestration.service';
-import { WorkflowConfigService } from '../../workflow-loader';
+import { WorkflowConfigService, WorkflowRegistryService } from '../../workflow-loader';
 
 const DEFAULT_TIMEOUT_MS = 1_800_000; // 30 minutes
 
@@ -55,9 +55,10 @@ export class StuckInProgressTask extends BaseMaintenanceTask {
     private readonly taskRegistry: MaintenanceTaskRegistry,
     private readonly orchestrationService: OrchestrationService,
     private readonly workflowConfig: WorkflowConfigService,
-    private readonly advisoryLock: AdvisoryLockService,
+    private readonly workflowRegistry: WorkflowRegistryService,
+    advisoryLock: AdvisoryLockService, // passed to super() only — not stored (avoids TS2415: 'private advisoryLock' can't be redeclared over the base class's)
   ) {
-    super('StuckInProgressTask');
+    super('StuckInProgressTask', advisoryLock);
 
     this.stuckTimeoutMinutes = parseInt(
       this.configService.get<string>('MAINTENANCE_STUCK_IN_PROGRESS_TIMEOUT_MINUTES', '30'),
@@ -81,18 +82,29 @@ export class StuckInProgressTask extends BaseMaintenanceTask {
       category: 'recovery',
       timeoutMs: 120000,
       enabled: true,
+      lockId: LockId.STUCK_IN_PROGRESS,
     };
   }
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async scheduledRun() {
-    const acquired = await this.advisoryLock.tryAcquire(LockId.STUCK_IN_PROGRESS);
-    if (!acquired) return;
-    try {
-      await this.execute();
-    } finally {
-      await this.advisoryLock.release(LockId.STUCK_IN_PROGRESS);
+    await this.execute();
+  }
+
+  /**
+   * Resolve the correct WorkflowConfigService for a job (DI-singleton sweep).
+   * `this.workflowConfig` is bound to the default workflow at boot; a step
+   * belonging to a job on any OTHER registered workflow (e.g. iot-sensor-pipeline,
+   * infra-provisioning) has a `type`/variant that doesn't exist in the default
+   * workflow's step map, so `getStepDefinition` would silently return `undefined`
+   * and every such step would fall back to DEFAULT_TIMEOUT_MS instead of its real
+   * configured per-step timeout.
+   */
+  private getWorkflowConfig(job: { workflowName?: string }): WorkflowConfigService {
+    if (job.workflowName && this.workflowRegistry.has(job.workflowName)) {
+      return this.workflowRegistry.get(job.workflowName);
     }
+    return this.workflowConfig;
   }
 
   protected async doExecute(options?: Record<string, any>): Promise<TaskResult> {
@@ -182,9 +194,10 @@ export class StuckInProgressTask extends BaseMaintenanceTask {
         likelyCause = 'SQS visibility timeout issue or Lambda not invoking';
       }
 
-      // Look up per-step timeout from workflow definition
+      // Look up per-step timeout from the JOB'S OWN workflow definition
+      // (DI-singleton sweep — see getWorkflowConfig() above).
       const stepDef = step.job?.type
-        ? this.workflowConfig.getStepDefinition(step.job.type, step.stepValue)
+        ? this.getWorkflowConfig(step.job).getStepDefinition(step.job.type, step.stepValue)
         : undefined;
       const stepTimeoutMs = stepDef?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
