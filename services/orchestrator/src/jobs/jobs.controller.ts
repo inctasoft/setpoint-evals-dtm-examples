@@ -207,6 +207,8 @@ export class JobsController {
               stepName: { type: 'string', example: 'ValidateCustomer' },
               description: { type: 'string' },
               status: { type: 'string', example: 'completed' },
+              input: { type: 'object', nullable: true },
+              output: { type: 'object', nullable: true },
               lambdaFunctionName: { type: 'string' },
               sqsMessageId: { type: 'string', nullable: true },
               startedAt: { type: 'string', format: 'date-time', nullable: true },
@@ -270,6 +272,10 @@ export class JobsController {
         stepName: wfConfig.getStepName(step.stepValue), // Derive stepName from stepValue (per-job workflow, DI-singleton sweep)
         description: step.description,
         status: step.status,
+        // input/output: the monitor's "Payloads" tab (Phase 4b) JSON-viewer needs these — they
+        // were captured on Step all along (jsonb columns) but never left this controller before.
+        input: step.input ?? null,
+        output: step.output ?? null,
         lambdaFunctionName: step.lambdaFunctionName,
         sqsMessageId: step.sqsMessageId,
         startedAt: step.startedAt,

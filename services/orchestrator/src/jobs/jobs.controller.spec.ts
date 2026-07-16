@@ -196,6 +196,33 @@ describe('JobsController', () => {
       expect(result.steps[0].stepName).toBe('IOT::IngestReading');
       expect(mockWorkflowConfigService.getStepName).not.toHaveBeenCalled();
     });
+
+    it('should pass through step input/output for the monitor Payloads tab', async () => {
+      const jobId = 'job-with-payloads';
+      const mockJob = { id: jobId, status: 'completed' };
+      const mockSteps = [
+        {
+          id: 's1',
+          stepValue: 'ValidateCustomer',
+          status: StepStatus.COMPLETED,
+          input: { customerId: 42 },
+          output: { valid: true },
+        },
+        // A step with no captured payload must come back as null, not undefined
+        // (undefined would silently drop the key from the JSON response).
+        { id: 's2', stepValue: 'SubmitCustomer', status: StepStatus.PENDING },
+      ];
+
+      mockJobRepo.findById.mockResolvedValue(mockJob);
+      mockStepRepo.findByJobId.mockResolvedValue(mockSteps);
+
+      const result = await controller.getJobDetails(jobId);
+
+      expect(result.steps[0].input).toEqual({ customerId: 42 });
+      expect(result.steps[0].output).toEqual({ valid: true });
+      expect(result.steps[1].input).toBeNull();
+      expect(result.steps[1].output).toBeNull();
+    });
   });
 
   describe('listJobs', () => {

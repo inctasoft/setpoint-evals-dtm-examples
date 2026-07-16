@@ -6,10 +6,14 @@ interface EvalSidebarProps {
   evals: EvalSummary[];
   selected: EvalSummary | null;
   onSelect: (evalItem: EvalSummary) => void;
+  /** Preselected suite tab (Phase 4b: driven by the header's workflow selector — see
+      scenarios-view.tsx, which remounts this component via `key` when it changes, so this
+      only fires ONCE per workflow-selection change, never fighting an in-screen suite click). */
+  initialSuite?: EvalSuite | 'all';
 }
 
-export function EvalSidebar({ evals, selected, onSelect }: EvalSidebarProps) {
-  const [suite, setSuite] = useState<EvalSuite | 'all'>('all');
+export function EvalSidebar({ evals, selected, onSelect, initialSuite = 'all' }: EvalSidebarProps) {
+  const [suite, setSuite] = useState<EvalSuite | 'all'>(initialSuite);
   const [category, setCategory] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
 
