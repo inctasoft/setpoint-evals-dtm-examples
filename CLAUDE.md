@@ -74,7 +74,7 @@ Each workflow defines its own source database:
 
 ### Other Services
 - **Orchestrator**: port 3002 (host) → 3000 (container). API base: `http://localhost:3002/api/v1`
-- **Monitor Dashboard**: port 5173 (Vite dev server). Source: `apps/monitor/` (Preact + Vite terminal-themed UI). Start: `cd apps/monitor && pnpm dev`. Connects via WebSocket (`ws://localhost:3002/ws/events`) with REST polling fallback.
+- **Monitor Dashboard**: port 5173 (Vite dev server). Source: `apps/monitor/` (Preact + Vite terminal-themed UI). Start: `cd apps/monitor && pnpm dev`. Connects via WebSocket (`ws://localhost:3002/ws/events`) with REST polling fallback. **Phase 4b (multi-workflow):** persistent header `WorkflowSelector` (GET `/api/v1/workflows`, localStorage-persisted) filters the job table and preselects the Scenarios suite tab; per-workflow step DAG (client-built mermaid from GET `/api/v1/workflows/:name`'s `stepsByVariant` deps, SE-23); right-side `TabbedPanel` = SQS / Kafka Topics (GET `/api/v1/kafka/topics`, admin-client read-only, SE-20) / Events / Payloads (GET `/api/v1/jobs/:id`, now includes step `input`/`output`) / Throughput (GET `/api/v1/metrics/throughput?windowMinutes=&workflow=`, SE-21) / Flags (GET `/api/v1/workflows/:name/flags`, SE-22).
 - **LocalStack**: port 4567 (SQS endpoint: `http://localhost:4567`)
 - **Kafka**: port 9093 (host) → 29092 (internal broker)
 - **Dev ACK Simulator**: port 3003 (host) → 3001 (container)
