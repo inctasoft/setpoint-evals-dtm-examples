@@ -7,6 +7,7 @@ import { CorrelationService } from '../common/correlation/correlation.service';
 import { KafkaService } from '../kafka/kafka.service';
 import { WorkflowConfigService } from '../workflow-loader/workflow-config.service';
 import { WorkflowRegistryService } from '../workflow-loader/workflow-registry.service';
+import { FeatureFlagService } from '../workflow-loader/feature-flag.service';
 import { EventsGateway } from '../websocket/events.gateway';
 
 describe('OrchestrationService', () => {
@@ -100,6 +101,8 @@ describe('OrchestrationService', () => {
         { provide: WorkflowConfigService, useValue: mockWorkflowConfigService },
         { provide: WorkflowRegistryService, useValue: mockWorkflowRegistryService },
         { provide: EventsGateway, useValue: mockEventsGateway },
+        // Real (not mocked): stateless, has its own dedicated spec file (feature-flag.service.spec.ts).
+        FeatureFlagService,
       ],
     }).compile();
 

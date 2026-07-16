@@ -94,6 +94,13 @@ export const configValidationSchema = Joi.object({
     .default('true')
     .description('Enable job deduplication'),
 
+  ENABLE_REQUEST_FEATURE_FLAGS: Joi.string()
+    .valid('true', 'false')
+    .default('false')
+    .description(
+      'Master switch for Layer 3 (per-request) feature flag overrides — see FeatureFlagService',
+    ),
+
   // ============================================
   // Logging
   // ============================================
