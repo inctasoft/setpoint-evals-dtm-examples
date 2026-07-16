@@ -1,15 +1,7 @@
-# SE-07: feature flag three-layer resolution [XFAIL]
+# SE-07: feature flag three-layer resolution
 
 ## Setpoint Eval Metadata
-**Category**: feature-flags · **Duration**: ~90-150s (2 orchestrator recreates + 3 jobs) · **Timeout**: 700s · **Isolation**: destructive
-**Expected outcome:** EXPECTED-FAIL
-
-**Why XFAIL, not descoped:** `CLAUDE.md` § "Feature Flags" documents a
-3-layer resolution contract (default < env var < per-request, gated by
-`clientOverridable`). The live step-gating code only implements 2 of the 3
-layers — see Artifacts below. This SE drives the FULL documented contract
-so the gap stays visible (a red anchor a future fix flips to green) instead
-of quietly testing only what already works.
+**Category**: feature-flags · **Duration**: ~120-180s (2 orchestrator recreates + 4 jobs) · **Timeout**: 700s · **Isolation**: destructive
 
 **DESTRUCTIVE**: this SE recreates the shared `dtm-orchestrator` container
 twice (to set/clear a real env var — no runtime override endpoint exists)
@@ -30,39 +22,42 @@ Feature: iot-sensor-pipeline feature flags — 3-layer resolution
 
     When FEATURE_FLAG_ENABLE_ALERT_GENERATION=false is set on the
       orchestrator (Layer 2) and no per-request override is sent
-    Then the env var SHOULD override the default
-    And EvaluateAlert/DispatchAlert SHOULD be SKIPPED
-    But they are NOT — the live gating path never reads this env var
-      (this is the failing assertion that anchors the XFAIL)
+    Then the env var overrides the default
+    And EvaluateAlert/DispatchAlert are SKIPPED
 
     When the SAME env var is still false, but the request carries
-      featureFlags.ENABLE_ALERT_GENERATION=true (Layer 3)
-    Then the per-request override is applied (unguarded — no
-      clientOverridable/ENABLE_REQUEST_FEATURE_FLAGS enforcement exists in
-      the live path either)
+      featureFlags.ENABLE_ALERT_GENERATION=true (Layer 3, allowlisted)
+    Then the per-request override is applied
     And EvaluateAlert/DispatchAlert RUN
+
+  Scenario: non-allowlisted per-request flag has no effect
+    Given greenhouse-1
+    When the request carries featureFlags.ENABLE_CASCADE_FK_INJECTION=false
+      (a real default flag, but NOT in clientOverridable)
+    Then the job still completes normally
+    And the orchestrator logs that the override was rejected as
+      non-client-overridable
 ```
 
 ## Architecture
 ```mermaid
 flowchart TD
-    L1["Layer 1: workflow.config.ts default<br/>ENABLE_ALERT_GENERATION true"] --> Merge["orchestration.service.ts<br/>inline merge:<br/>{...defaultFlags, ...jobFlags}"]
-    EnvVar["FEATURE_FLAG_ENABLE_ALERT_GENERATION<br/>env var"] -.->|"never read by the<br/>live gating path"| Merge
-    JobFlags["per-request featureFlags<br/>(payload.featureFlags)"] --> Merge
-    Merge --> ResultRun1["alerts RUN<br/>(Layer 1 or unguarded<br/>per-request override)"]
-
-    Dead["FeatureFlagService.resolveFlags()<br/>correctly implements all 3 layers<br/>+ clientOverridable gate"] -.->|"zero callers<br/>in the request path<br/>(dead code)"| Nowhere["never invoked"]
+    L1["Layer 1: workflow.config.ts default<br/>ENABLE_ALERT_GENERATION true"] --> Resolve["FeatureFlagService.resolveFlags(wfDef, jobFlags)<br/>single source of the 3-layer merge"]
+    EnvVar["FEATURE_FLAG_ENABLE_ALERT_GENERATION<br/>env var"] --> Resolve
+    JobFlags["per-request featureFlags<br/>(payload.featureFlags)"] -->|"gated by ENABLE_REQUEST_FEATURE_FLAGS<br/>+ clientOverridable allowlist"| Resolve
+    Resolve --> Gate["orchestration.service.ts<br/>'1b. Feature gate' block"]
+    Gate --> Result["step SKIPPED if<br/>resolvedFlags[featureGate] === false"]
 
     classDef ok fill:#1b5e20,stroke:#2e7d32,color:#fff
-    classDef gap fill:#6b1a1a,stroke:#8a2424,color:#fff,stroke-dasharray: 4 3
-    class ResultRun1 ok
-    class EnvVar,Dead,Nowhere gap
+    class Resolve,Gate,Result ok
 ```
 
 ## Test Data
 Reuses `greenhouse-4` (SE-04's dedicated device — its `SENS-GH4-TEMP`
 sensor genuinely spikes past `max_threshold`, producing a real alert row),
-read-only, distinguished by its own `entityId`s.
+read-only, distinguished by its own `entityId`s. The GATE sub-test uses
+`greenhouse-1` (any healthy device works — it doesn't need an alert to
+fire, only to complete normally).
 
 ## Payload
 Layer 1/2 (no per-request override):
@@ -70,51 +65,57 @@ Layer 1/2 (no per-request override):
 { "variant": "default", "enableDeduplication": false, "payload": { "deviceId": "greenhouse-4", "entityId": "..." } }
 ```
 
-Layer 3 (per-request override):
+Layer 3 (per-request override, allowlisted key):
 ```json
 { "variant": "default", "enableDeduplication": false, "payload": { "deviceId": "greenhouse-4", "entityId": "..." }, "featureFlags": { "ENABLE_ALERT_GENERATION": true } }
 ```
 
+GATE (per-request override, NON-allowlisted key):
+```json
+{ "variant": "default", "enableDeduplication": false, "payload": { "deviceId": "greenhouse-1", "entityId": "..." }, "featureFlags": { "ENABLE_CASCADE_FK_INJECTION": false } }
+```
+
 ## Artifacts
-Two findings surfaced while building this SE, both left as **documentation,
-not silent production fixes** — this is a public example repo and the
-correct fix is a genuine feature implementation, not a one-liner:
+Fixed as part of `DIFFICULTIES-LOG.md`'s T1 finding (feature-flag 3-layer
+contract vs. 2-layer/unguarded live code):
 
-1. **`feature-flag.service.ts`'s `toScreamingSnake()` had a real bug**
-   (mangled already-SCREAMING_SNAKE_CASE keys like `ENABLE_ALERT_GENERATION`
-   into `_E_N_A_B_L_E_..._`). It was fixed and unit-tested, then **reverted**
-   once a repo-wide grep for `resolveFlags`/`getFlag`/`getBooleanFlag` showed
-   `FeatureFlagService` has zero callers outside its own file and DI
-   registration — it is never invoked in the request/orchestration path, so
-   the fix changed no observable behavior. See the revert commit for detail.
-2. **The actual step-gating logic** (`orchestration.service.ts`, "1b.
-   Feature gate" block, ~line 690) does its own inline
-   `{ ...defaultFlags, ...jobFlags }` merge: Layer 1 (workflow defaults) and
-   Layer 3 (per-request), but **no Layer 2** (never reads
-   `process.env.FEATURE_FLAG_*`) and **no `clientOverridable` /
-   `ENABLE_REQUEST_FEATURE_FLAGS` enforcement** (that logic exists only
-   inside the dead `FeatureFlagService`) — any per-request flag key is
-   applied unconditionally, allowlisted or not.
+1. `orchestration.service.ts`'s "1b. Feature gate" block now calls
+   `FeatureFlagService.resolveFlags(wfDef, jobFlags)` instead of its own
+   inline `{ ...defaultFlags, ...jobFlags }` merge — the service (already
+   correctly implementing all three layers + the allowlist gate) is now
+   the single source of the merge, with zero duplicated logic.
+2. `toScreamingSnake()`'s SCREAMING_SNAKE_CASE-key bug (previously found
+   and reverted as a fix to dead code — see git history) is re-applied:
+   idempotent for keys already in SCREAMING_SNAKE_CASE (all three shipped
+   workflows' `featureFlags.defaults` keys are), so `FEATURE_FLAG_*` env
+   vars now actually match.
+3. `ENABLE_REQUEST_FEATURE_FLAGS=true` was added to `.env.example` — it was
+   already documented in `CLAUDE.md` as the dev default but missing from
+   the template, which would have silently closed the Layer 3 gate the
+   moment it went live.
 
-Net: the documented 3-layer, allowlist-gated contract is actually a
-2-layer, unguarded one in the live code path. Tracked in
-`DIFFICULTIES-LOG.md`; decision needed on whether to implement the missing
-layer/gate for real (wiring `orchestration.service.ts` to call
-`FeatureFlagService.resolveFlags()`) or fix the docs to describe the
-2-layer reality — out of scope for this SE lane.
+Net: the documented 3-layer, allowlist-gated contract now matches the live
+code path. Unit tests for the layering/allowlist logic live in
+`services/orchestrator/src/workflow-loader/feature-flag.service.spec.ts`.
+
+The GATE sub-test's non-allowlisted key (`ENABLE_CASCADE_FK_INJECTION`)
+isn't any step's `featureGate` in this workflow, so there's no step-skip
+side effect to observe from the override being rejected — "job still
+completes" alone would be vacuous (true regardless of enforcement). What
+IS enforcement-specific: the orchestrator log line the allowlist check
+emits only when it rejects a key, asserted directly via `docker logs`.
 
 ## Assertions
 <!-- one checkbox per verify/if call in test.sh — keep 1:1 -->
 - [ ] Layer 1 (default, no overrides): alerts RUN
-- [ ] Layer 2 (env var false, no per-request): alerts SKIPPED — **currently fails; this is the XFAIL anchor**
-- [ ] Layer 3 (env var false, per-request true): alerts RUN
+- [ ] Layer 2 (env var false, no per-request): alerts SKIPPED
+- [ ] Layer 3 (env var false, per-request true, allowlisted): alerts RUN
+- [ ] GATE (non-allowlisted per-request override): job still COMPLETES normally
+- [ ] GATE: orchestrator log confirms the allowlist check rejected the override
 
 ## Run
 ```bash
 bash workflows/iot-sensor-pipeline/setpoint-evals/run-all.sh --se 07
 ```
 
-Expected verdict: `XFAIL` (2/3 sub-assertions pass, Layer 2 fails as
-anchored). A verdict of `UPASS` means Layer 2 started working — flip this
-README's `**Expected outcome:**` line and remove the XFAIL framing when
-that happens.
+Expected verdict: `PASS` (5/5 sub-assertions).
