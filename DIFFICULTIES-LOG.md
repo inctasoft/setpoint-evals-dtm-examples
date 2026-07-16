@@ -5,32 +5,17 @@
 
 ---
 
-## 1. Orchestrator Unit Tests — 4 Suites / 22 Tests Failing
-
-**Severity: MEDIUM (test quality)**
-
-4 test suites have behavioral assertion failures. The DI/mock issues were fixed (2026-03-01), but the test expectations still reflect pre-engine-generalization behavior.
-
-**Failing suites:**
-- `acknowledgement.handler.spec.ts` — expects old `repo.save` pattern for ACK metadata
-- `orchestration.service.spec.ts` — test flow expectations don't match post-generalization orchestration
-- `delegation.service.spec.ts` — behavioral assertions need updating for `claimForDelegation` flow
-- `callback.service.spec.ts` — multiple assertions don't match post-generalization behavior
-
-**To fix:** Update test assertions to match current service behavior — not a DI problem, purely test data and expectations.
-
-```bash
-# To verify current state:
-pnpm test  # 17 PASS, 4 FAIL, 251/301 tests passing
-```
-
----
-
-## Summary
-
-| Issue | Severity | Status |
-|-------|----------|--------|
-| Orchestrator unit test failures (4 suites) | MEDIUM | OPEN — need behavioral assertion updates |
+### Orchestrator Unit Tests — 4 Suites / 22 Tests Failing (STALE — already resolved upstream)
+**Severity:** Medium (test quality)
+**Status:** Fixed (confirmed 2026-07-16, resolved by an earlier unrelated PR that never updated this entry)
+Previously logged: `acknowledgement.handler.spec.ts` / `orchestration.service.spec.ts` /
+`delegation.service.spec.ts` / `callback.service.spec.ts` behavioral assertions out of sync with
+post-engine-generalization behavior (17 PASS, 4 FAIL, 251/301). Re-verified on `master` @ #19
+(2026-07-16): `pnpm test` → **21/21 suites PASS, 272 passed + 28 skipped = 300/300, 0 FAIL**. The
+fix landed silently in one of the intervening merged PRs (#16 se-tooling-v2 / #17 story-seeds / #18
+schema-single-source) without this entry being deleted per this file's own "resolved items are
+deleted" rule. Deleting now — see git history (PRs #16–#18) for the actual behavioral-assertion
+changes if reconstructing what fixed it.
 
 ### system-architecture.md describes steps that do not exist (stale ETL-era section)
 **Severity:** Low
