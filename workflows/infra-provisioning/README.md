@@ -274,6 +274,7 @@ genuinely per-SE isolated (addressed by explicit payload IDs).
 | 03 | Compute Fan-Out              | DiscoverCompute spawns N PlanCompute/ApplyCompute child pairs in parallel        | COMPLETED         |
 | 04 | Cascade Failure Propagation  | DNS fails -> Certificate SKIPPED, but Storage succeeds -> PARTIAL_SUCCESS       | PARTIAL_SUCCESS   |
 | 05 | Long ACK Wait                | ApplyCompute enters WAITING_FOR_ACK, ACK arrives after 5s delay                 | COMPLETED         |
+| 06 | Seed Data Integrity          | `validate-seed-data.sh` passes against the real seed and catches a deleted row  | PASS (validator)  |
 
 ### Running SEs
 
@@ -282,11 +283,11 @@ genuinely per-SE isolated (addressed by explicit payload IDs).
 ./workflows/infra-provisioning/setpoint-evals/run-all.sh
 
 # Run a specific SE
-bash ./workflows/infra-provisioning/setpoint-evals/01-happy-path/test.sh
-bash ./workflows/infra-provisioning/setpoint-evals/02-environment-not-found/test.sh
-bash ./workflows/infra-provisioning/setpoint-evals/03-compute-fan-out/test.sh
-bash ./workflows/infra-provisioning/setpoint-evals/04-cascade-failure-propagation/test.sh
-bash ./workflows/infra-provisioning/setpoint-evals/05-long-ack-wait/test.sh
+./workflows/infra-provisioning/setpoint-evals/run-all.sh --se 01
+./workflows/infra-provisioning/setpoint-evals/run-all.sh --se 02
+./workflows/infra-provisioning/setpoint-evals/run-all.sh --se 03
+./workflows/infra-provisioning/setpoint-evals/run-all.sh --se 04
+./workflows/infra-provisioning/setpoint-evals/run-all.sh --se 05
 ```
 
 ## Running Locally
@@ -329,7 +330,7 @@ psql -h localhost -p 5451 -U infra_user -d infra_provisioning_db
 ### Run SEs
 
 ```bash
-# Run all 5 infra-provisioning SEs
+# Run all 6 infra-provisioning SEs
 ./workflows/infra-provisioning/setpoint-evals/run-all.sh
 ```
 
