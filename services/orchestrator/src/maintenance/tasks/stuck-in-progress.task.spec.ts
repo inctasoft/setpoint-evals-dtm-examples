@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Test, TestingModule } from '@nestjs/testing';
 import { StuckInProgressTask } from './stuck-in-progress.task';
-import { Step, StepStatus } from '@dtm/database';
+import { Step, StepStatus, JobStatus } from '@dtm/database';
 import { Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -19,6 +19,7 @@ describe('StuckInProgressTask', () => {
   // Shared mocks
   const mockStepRepository = {
     find: jest.fn(),
+    update: jest.fn(),
   };
 
   const mockConfigService = {
@@ -308,6 +309,93 @@ describe('StuckInProgressTask', () => {
       // The resolved StepDefinition's timeoutMs (5000ms) is used, so the step —
       // stuck for 35min, way past a 5s per-step timeout — is reported.
       expect(result.findings[0].context.stepTimeoutMs).toBe(5000);
+    });
+  });
+
+  describe('LEADER-2-style conditional UPDATE guards a racing callback (auto-fail path)', () => {
+    it('auto-fails via a conditional UPDATE pinned on the observed status, not a bare id', async () => {
+      // Arrange: job is PROCESSING and the step has been stuck for 40 minutes,
+      // well past the DEFAULT_TIMEOUT_MS (30min) fallback used when no
+      // per-step StepDefinition is resolved, so the auto-fail branch runs.
+      const stuckStep: Partial<Step> = {
+        id: 'step-autofail',
+        stepValue: 'ValidateCustomer',
+        status: StepStatus.IN_PROGRESS,
+        startedAt: new Date(Date.now() - 40 * 60 * 1000),
+        retryCount: 0,
+        job: { id: 'job-autofail', status: JobStatus.PROCESSING } as any,
+      };
+
+      stepRepository.find.mockResolvedValue([stuckStep]);
+      stepRepository.update.mockResolvedValue({ affected: 1 } as any);
+
+      // Act
+      const result = await task['execute']();
+
+      // Assert — the UPDATE's criteria is `{ id, status }`, not a bare id. A
+      // plausible-but-wrong fix (`update(step.id, {...})`) would call update
+      // with a bare string id as the first arg, which does not match this
+      // object-shaped expectation.
+      expect(stepRepository.update).toHaveBeenCalledWith(
+        { id: 'step-autofail', status: StepStatus.IN_PROGRESS },
+        expect.objectContaining({ status: StepStatus.FAILED }),
+      );
+      expect(mockOrchestrationService.continueJob).toHaveBeenCalledWith('job-autofail');
+      expect(result.metrics.autoFailed).toBe(1);
+    });
+
+    it('does not clobber a step a real callback already moved out of the observed status', async () => {
+      // Arrange: the reaper's SELECT saw the step as stuck IN_PROGRESS, but by
+      // the time the reaper's UPDATE runs, a real (late) Lambda callback has
+      // already landed and moved the row to COMPLETED. Simulate that race
+      // directly at the point that matters: the conditional UPDATE's WHERE
+      // clause no longer matches the row's *current* status, so Postgres
+      // would affect 0 rows. A plausible-but-wrong fix (checking
+      // `affected === 0` on a bare `update(id, {...})`) would NOT reproduce
+      // this — an id-only update always matches the row and always returns
+      // affected: 1. This test fails against that plausible-but-wrong fix and
+      // only passes when the UPDATE's criteria genuinely includes
+      // `status: step.status`.
+      const stuckStep: Partial<Step> = {
+        id: 'step-race',
+        stepValue: 'SubmitOrder',
+        status: StepStatus.IN_PROGRESS, // as read by the reaper's SELECT
+        startedAt: new Date(Date.now() - 40 * 60 * 1000),
+        retryCount: 0,
+        job: { id: 'job-race', status: JobStatus.PROCESSING } as any,
+      };
+
+      stepRepository.find.mockResolvedValue([stuckStep]);
+      // The real callback won the race: Postgres finds 0 rows still matching
+      // WHERE status = IN_PROGRESS, so `affected` is 0.
+      stepRepository.update.mockImplementation((criteria: any) => {
+        if (
+          criteria &&
+          typeof criteria === 'object' &&
+          criteria.status === StepStatus.IN_PROGRESS
+        ) {
+          return Promise.resolve({ affected: 0 } as any);
+        }
+        // A bare id (or any criteria not pinning the status) always "finds"
+        // the row — this branch is what a plausible-but-wrong fix would hit.
+        return Promise.resolve({ affected: 1 } as any);
+      });
+
+      // Act
+      const result = await task['execute']();
+
+      // Assert: the UPDATE was conditioned on the observed status …
+      expect(stepRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'step-race', status: StepStatus.IN_PROGRESS }),
+        expect.objectContaining({ status: StepStatus.FAILED }),
+      );
+      // … lost the race (affected: 0) …
+      expect(await stepRepository.update.mock.results[0].value).toEqual({ affected: 0 });
+      // … and therefore must NOT re-trigger orchestration for a step that a
+      // real callback already moved forward — that would race the callback's
+      // own continueJob call and could double-cascade.
+      expect(mockOrchestrationService.continueJob).not.toHaveBeenCalled();
+      expect(result.metrics.autoFailed).toBe(0);
     });
   });
 
