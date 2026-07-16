@@ -27,7 +27,7 @@ sequenceDiagram
     participant DB as dtm-db (Postgres)
 
     T->>Boot: bash scripts/init-clean-database.sh
-    Boot->>DB: DROP SCHEMA public CASCADE; CREATE SCHEMA public
+    Boot->>DB: DROP SCHEMA public CASCADE, CREATE SCHEMA public
     Boot->>M: migration:run  (against "dtm")
     M->>DB: apply InitialSchema<ts> migration
     T->>DB: dump information_schema("dtm")  -> bootstrap.schema

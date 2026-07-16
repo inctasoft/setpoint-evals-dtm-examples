@@ -1,373 +1,127 @@
-# E2E Eval: Deduplication Testing
+# SE-03: deduplication
 
 ## Setpoint Eval Metadata
 
-**Timeout**: 95s
-**Isolation**: parallel-safe
-**Category**: feature
+**Category**: feature · **Duration**: ~20s (sum of the two payloads' simDelay/ackDelay chains plus two explicit 1s pauses in test.sh) · **Timeout**: 95s · **Isolation**: parallel-safe
 
-## 🎯 **Objective**
+## Scenario
+```gherkin
+Feature: Ada's Beans Cafe order processing rejects duplicate job requests
+  Scenario: a request with a reused deduplicationKey is rejected, a different one is not
+    Given order-processing is running with customer_id=1 (Ada Lovelace) and order_id=1
+    When a job is submitted with enableDeduplication=true and a fresh deduplicationKey
+    Then it is accepted with HTTP 201
+    And when the identical request is submitted again immediately
+    Then it is rejected with HTTP 409
+    And when a request with a DIFFERENT deduplicationKey is submitted
+    Then it is accepted with HTTP 201 and both jobs complete independently
+    And when the original deduplicationKey is submitted again AFTER its job completes
+    Then it is still rejected with HTTP 409 — deduplication persists past completion
+```
 
-Validate that the DTM orchestrator correctly implements **idempotent request handling** through deduplication logic, preventing duplicate job submissions for the same entity.
-
----
-
-## 📋 **What This Tests**
-
-### 🌊 Flow Diagram
-
+## Architecture
 ```mermaid
 sequenceDiagram
-    participant Client
-    participant DEDUP as DeduplicationService
-    participant DB as Database
-    participant ORCH as Orchestrator
+    participant T as test.sh
+    participant O as Orchestrator
+    participant D as DeduplicationService
+    participant DB as dtm_jobs
 
-    Note over Client: Request 1 (Original)
-    Client->>DEDUP: POST /workflows/{name}/jobs (Entity-001)
-    DEDUP->>DB: Check existing (Today)
-    DB-->>DEDUP: None found
-    DEDUP->>ORCH: Create Job (201 Created)
+    T->>DB: DELETE any stale row for DEDUP_KEY_1 (pre-test cleanup)
+    T->>O: POST jobs, deduplicationKey=DEDUP_KEY_1
+    O->>D: check existing request
+    D-->>O: none found
+    O->>DB: INSERT job
+    O-->>T: 201, jobId
 
-    Note over Client: Request 2 (Duplicate)
-    Client->>DEDUP: POST /workflows/{name}/jobs (Entity-001)
-    DEDUP->>DB: Check existing (Today)
-    DB-->>DEDUP: Found Job ID: 123
-    DEDUP-->>Client: 409 Conflict (Existing Job 123)
+    T->>O: POST jobs again, same DEDUP_KEY_1
+    O->>D: check existing request
+    D-->>O: found, unresolved
+    O-->>T: 409 Conflict
 
-    Note over Client: Request 3 (Different)
-    Client->>DEDUP: POST /workflows/{name}/jobs (Entity-002)
-    DEDUP->>DB: Check existing (Today)
-    DB-->>DEDUP: None found
-    DEDUP->>ORCH: Create Job (201 Created)
+    T->>O: POST jobs, deduplicationKey=DEDUP_KEY_2
+    O-->>T: 201, jobId
+
+    T->>O: poll both jobs until COMPLETED
+    O-->>T: both COMPLETED
+
+    T->>O: POST jobs again, same DEDUP_KEY_1 (job already completed)
+    O->>D: check existing request
+    D-->>O: found, terminal
+    O-->>T: 409 Conflict, still rejected
 ```
 
-### **Core Functionality**
+## Test Data
+Reads (does not own) order-processing's seeded rows — `customer_id=1` (Ada Lovelace)
+and `order_id=1`, owned by workflow suite `SE-01-happy-path`
+(`workflows/order-processing/source-db/SEED-REGISTRY.md`). `deduplicationKey` values
+(`DEDUP_KEY_1`, `DEDUP_KEY_2`) are fresh `uuidgen` per run; `entityId` reuses the same
+key so the request body itself stays identical across the duplicate submission.
 
-- ✅ Duplicate request detection based on `deduplicationKey` + payload matching
-- ✅ Alternative deduplication via `externalSystemId`
-- ✅ Proper HTTP 409 (Conflict) response for duplicates
-- ✅ Deduplication persistence across job lifecycle
-- ✅ Independent processing of different requests
-
-### **Business Requirements**
-
-- ✅ **Idempotency**: Same request submitted multiple times yields same result
-- ✅ **No Data Duplication**: Prevents duplicate records in target system
-- ✅ **Client Retry Safety**: Clients can safely retry failed requests
-- ✅ **Race Condition Protection**: Concurrent duplicate requests handled correctly
-
----
-
-## 🧪 **Test Scenario**
-
-### **Setup**
-
-- `ENABLE_DEDUPLICATION=true` in environment
-- Valid test data for the configured workflow
-- Two unique `externalSystemId` values
-
-### **Pre-Test Cleanup**
-
-This eval performs a **targeted cleanup** before running, deleting only jobs for the test entity. This ensures:
-- First request always returns 201 (not 409 from previous runs)
-- Test can run repeatedly without full database purge
-- Other test data is preserved for parallel evals
-
-### **Test Flow**
-
-```
-1. Submit Request A (deduplicationKey=ENTITY-001, externalSystemId=UUID-1)
-   → ✅ Expect: 201 Created
-
-2. Submit Request A again (identical payload)
-   → ✅ Expect: 409 Conflict
-
-3. Submit Request B (deduplicationKey=ENTITY-002, externalSystemId=UUID-2)
-   → ✅ Expect: 201 Created (different request)
-
-4. Wait for both jobs to complete
-   → ✅ Expect: Both complete successfully
-
-5. Submit Request A again (after completion)
-   → ✅ Expect: 409 Conflict (still deduplicated)
-```
-
----
-
-## 📊 **Expected Results**
-
-### **Success Criteria**
-
-| Test | Action               | Expected HTTP | Expected Behavior                         |
-| ---- | -------------------- | ------------- | ----------------------------------------- |
-| 1    | First request        | `201`         | Job created and started                   |
-| 2    | Duplicate request    | `409`         | Rejected with conflict message            |
-| 3    | Different request    | `201`         | New job created                           |
-| 4    | Wait for completion  | N/A           | Both jobs complete                        |
-| 5    | Retry after complete | `409`         | Still rejected (persistent deduplication) |
-
-### **Response Format (409 Conflict)**
-
+## Payload
 ```json
 {
-  "statusCode": 409,
-  "message": "Job request already exists",
-  "error": "Conflict"
-}
-```
-
----
-
-## 🔍 **What Gets Validated**
-
-### **1. Deduplication Keys**
-
-The service checks for existing jobs using:
-
-**Primary Key**: `deduplicationKey` (unique external identifier)
-
-```typescript
-{
-  variant: 'full-order',
-  payload: {
-    customerId: 1,
-    orderId: 1
+  "deduplicationKey": "<uuidgen, DEDUP_KEY_1>",
+  "variant": "quick-order",
+  "payload": {
+    "customerId": 1,
+    "orderId": 1,
+    "entityId": "<same as deduplicationKey>"
+  },
+  "enableDeduplication": true,
+  "testOptions": {
+    "ValidateCustomer": { "simDelay": 2000 },
+    "ValidateProduct": { "simDelay": 2000 },
+    "SubmitCustomer": { "simDelay": 2000, "ackDelay": 1000 },
+    "SubmitOrder": { "simDelay": 2000, "ackDelay": 1000 }
   }
 }
 ```
+POSTed directly via `curl` to `${ORCHESTRATOR_HOST}/api/${API_VERSION}/workflows/order-processing/jobs`
+(this SE inlines its own curl calls rather than using `initiate_job()`, so it can read
+the raw HTTP status code). The second (different) request uses a fresh
+`deduplicationKey`/`entityId` (`DEDUP_KEY_2`) with 1000ms delays instead of 2000ms.
 
-**Alternative Key**: `externalSystemId`
+## Artifacts
 
-```typescript
-{
-  payload: {
-    externalSystemId: "uuid-1234";
-  }
-}
+### Expected output (HTTP status per request, in order)
+```
+1st request (DEDUP_KEY_1):        201
+2nd request (same DEDUP_KEY_1):   409
+3rd request (DEDUP_KEY_2):        201
+4th request (DEDUP_KEY_1, after both jobs completed): 409
 ```
 
-### **2. Database State**
+## Assertions
+<!-- one checkbox per exit-1 gate in test.sh, in execution order -->
+- [ ] Test 1: first request with `DEDUP_KEY_1` returns HTTP 201
+- [ ] Test 2: identical repeat request returns HTTP 409
+- [ ] Test 3: request with a different `deduplicationKey` (`DEDUP_KEY_2`) returns HTTP 201
+- [ ] Test 4: both jobs reach `completed` status
+- [ ] job 1 and job 2 stats: `result.totalRecords = 2` and `result.stepsCompleted = 4`
+- [ ] Test 5: `DEDUP_KEY_1` resubmitted after job completion still returns HTTP 409
 
-After Test 1:
-
-```sql
-SELECT id, type, status, payload->>'deduplicationKey', payload->>'externalSystemId'
-FROM dtm_jobs
-WHERE payload->>'deduplicationKey' = 'ENTITY-001';
-
--- Expect: 1 row with ENTITY-001 and UUID-1
-```
-
-After Test 3:
-
-```sql
--- Expect: 2 rows (ENTITY-001 with UUID-1, ENTITY-002 with UUID-2)
-```
-
-### **3. Service Logs**
-
-Look for:
-
-```
-[DeduplicationService] Checking for existing job...
-[DeduplicationService] Found existing job: {jobId}
-[IngestionController] Job request rejected - duplicate detected
-```
-
----
-
-## ⚙️ **Configuration Requirements**
-
-### **Environment Variables** `.env`
-
+## Run
 ```bash
-# REQUIRED: Must be set to 'true'
-ENABLE_DEDUPLICATION=true
-
-# For testing
-ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=true
-ENABLE_DEV_ACK_SIMULATOR=true
+bash setpoint-evals/run-all.sh --se 03
 ```
 
-### **If Deduplication is Disabled**
+## Troubleshooting
 
+**Duplicate not rejected (expected 409, got 201)** — check `.env`:
+`ENABLE_DEDUPLICATION=true` may be irrelevant here since this SE uses the
+**per-request** override (`testOptions.enableDeduplication`); verify
+`DeduplicationService` is wired into the workflow controller and restart the
+orchestrator after any `.env` change:
 ```bash
-ENABLE_DEDUPLICATION=false
-```
-
-- Test will **fail with fatal error**
-- Both requests would be accepted (201)
-- Duplicate jobs would be created
-
----
-
-## 🚀 **Running the Test**
-
-### **Prerequisites**
-
-1. ✅ Services running: `./scripts/local-env.sh start`
-2. ✅ Deduplication enabled in `.env`
-3. ✅ Test data loaded (consumer 1000 exists)
-
-### **Execute**
-
-```bash
-cd setpoint-evals/SE-03-deduplication
-chmod +x test.sh
-./test.sh
-```
-
-### **Expected Output**
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🧪 E2E Eval: Deduplication Testing
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✅ Deduplication is enabled
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🧪 Test 1: First Request (Should Succeed)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✅ First request accepted
-   Job ID: abc-123
-   HTTP Status: 201
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🧪 Test 2: Duplicate Request (Should Reject with 409)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✅ Duplicate request correctly rejected
-   HTTP Status: 409
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ ALL TESTS PASSED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 Deduplication Logic: WORKING CORRECTLY
-```
-
----
-
-## 🐛 **Troubleshooting**
-
-### **Test Fails on Step 2** (Duplicate not rejected)
-
-```
-❌ FAILED: Expected HTTP 409, got 201
-```
-
-**Possible Causes**:
-
-1. ✅ Check `.env`: `ENABLE_DEDUPLICATION=true`
-2. ✅ Restart orchestrator after changing `.env`
-3. ✅ Verify `DeduplicationService` is imported in controllers
-
-**Verify**:
-
-```bash
-# Check environment in running container
 docker exec dtm-orchestrator printenv | grep DEDUP
-
-# Check orchestrator logs
 docker logs dtm-orchestrator | grep Deduplication
 ```
 
-### **Test Fails on Step 4** (Job doesn't complete)
+**Job doesn't complete (Test 4 fails)** — check SQS queues aren't stuck and workers
+are processing: `./scripts/local-env.sh monitor sqs` / `./scripts/local-env.sh monitor api`.
 
-```
-❌ FAILED: First job did not complete successfully
-```
-
-**Check**:
-
-- SQS queues not stuck
-- Workers processing messages
-- No errors in orchestrator logs
-
-```bash
-./scripts/local-env.sh monitor sqs
-./scripts/local-env.sh monitor api
-```
-
----
-
-## 📊 **Monitoring**
-
-### **During Test Execution**
-
-**Terminal 1**: Run test
-
-```bash
-./test.sh
-```
-
-**Terminal 2**: Monitor jobs
-
-```bash
-./scripts/local-env.sh monitor api
-```
-
-**Terminal 3**: Monitor SQS
-
-```bash
-./scripts/local-env.sh monitor sqs
-```
-
-### **After Test Completion**
-
-**Check Database**:
-
-```bash
-docker exec -it dtm-db psql -U dtm_user -d dtm -c "
-  SELECT
-    id,
-    type,
-    status,
-    payload->>'deduplicationKey' as dedup_key,
-    payload->>'externalSystemId' as external_id,
-    submitted_at
-  FROM dtm_jobs
-  WHERE payload->>'deduplicationKey' = 'ENTITY-001'
-  ORDER BY submitted_at DESC
-  LIMIT 5;
-"
-```
-
-**Expected**: 2 completed jobs with different `external_id` values
-
----
-
-## 🎓 **Learning Objectives**
-
-After this eval, you understand:
-
-1. ✅ **How deduplication prevents duplicate job submissions**
-2. ✅ **When to return 409 vs 201 status codes**
-3. ✅ **How `DeduplicationService` checks for existing requests**
-4. ✅ **Why deduplication persists even after completion**
-5. ✅ **How `externalSystemId` provides alternative deduplication key**
-
----
-
-## 🔗 **Related Documentation**
-
-- [`docs/FEATURES.md`](../../docs/FEATURES.md) - Deduplication Service details
-- [`services/orchestrator/src/common/deduplication.service.ts`](../../services/orchestrator/src/common/deduplication.service.ts) - Implementation
-- [`CRITICAL-BUG-FIX-RETRY-HANDLING.md`](../../CRITICAL-BUG-FIX-RETRY-HANDLING.md) - Retry vs deduplication
-
----
-
-## 📈 **Success Metrics**
-
-| Metric                          | Target | Actual |
-| ------------------------------- | ------ | ------ |
-| First request accepted          | ✅ 201 | ✅     |
-| Duplicate rejected              | ✅ 409 | ✅     |
-| Different request accepted      | ✅ 201 | ✅     |
-| Both jobs complete              | ✅ Yes | ✅     |
-| Retry after completion rejected | ✅ 409 | ✅     |
-
-**Result**: ✅ **Deduplication logic working correctly**
+Related: [`docs/guides/PER-REQUEST-DEDUPLICATION.md`](../../docs/guides/PER-REQUEST-DEDUPLICATION.md)
+(the per-request `testOptions.enableDeduplication` override this SE exercises),
+[`services/orchestrator/src/common/deduplication.service.ts`](../../services/orchestrator/src/common/deduplication.service.ts)
+(implementation).
