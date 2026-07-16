@@ -90,8 +90,9 @@ CREATE TABLE ecommerce.shipments (
 -- ============================================================
 
 -- ============================================================
--- Seed Data: Customers (9 records)
--- IDs 1-9 assigned; 10-19 RESERVED for future SEs; 99999 = not-found sentinel
+-- Seed Data: Customers (13 records)
+-- IDs 1-13 assigned; 14-19 RESERVED for future SEs; 99999 = not-found sentinel
+-- 10-13 added Phase 3b (SE-07/08/09 new evals, see SEED-REGISTRY.md)
 -- ============================================================
 INSERT INTO ecommerce.customers (customer_id, first_name, last_name, email, phone, address, created_at) VALUES
 (1, 'Ada',      'Lovelace',   'ada@adasbeanscafe.example',      '(415) 555-0101', '1 Analytical Engine Way, San Francisco, CA 94102', '2025-01-15 09:30:00'),
@@ -102,7 +103,11 @@ INSERT INTO ecommerce.customers (customer_id, first_name, last_name, email, phon
 (6, 'Donald',   'Knuth',      'donald.knuth@example.com',       '(650) 555-0106', '1 TeX Terrace, Palo Alto, CA 94301',                '2025-05-10 08:15:00'),
 (7, 'Barbara',  'Liskov',     'barbara.liskov@example.com',     '(617) 555-0107', '1 Substitution Street, Cambridge, MA 02139',        '2025-05-18 13:40:00'),
 (8, 'Radia',    'Perlman',    'radia.perlman@example.com',      '(781) 555-0108', '1 Spanning Tree Blvd, Burlington, MA 01803',        '2025-05-22 09:05:00'),
-(9, 'Linus',    'Torvalds',   'linus.torvalds@example.com',     NULL,             '1 Kernel Circle, Portland, OR 97201',                '2025-05-30 17:50:00');
+(9, 'Linus',    'Torvalds',   'linus.torvalds@example.com',     NULL,             '1 Kernel Circle, Portland, OR 97201',                '2025-05-30 17:50:00'),
+(10, 'Katherine', 'Johnson',  'katherine.johnson@example.com',  '(757) 555-0110', '1 Trajectory Trail, Hampton, VA 23666',             '2025-08-01 09:00:00'),
+(11, 'Hedy',    'Lamarr',     'hedy.lamarr@example.com',        '(310) 555-0111', '1 Frequency Hop Lane, Los Angeles, CA 90028',       '2025-08-04 10:30:00'),
+(12, 'Dorothy', 'Vaughan',    'dorothy.vaughan@example.com',    '(757) 555-0112', '1 Fortran Fields, Hampton, VA 23666',               '2025-08-07 08:45:00'),
+(13, 'Mary',    'Jackson',    'mary.jackson@example.com',       '(757) 555-0113', '1 Wind Tunnel Way, Hampton, VA 23666',              '2025-08-10 11:15:00');
 
 -- ============================================================
 -- Seed Data: Products (10 records) — the Ada's Beans Cafe menu
@@ -121,12 +126,14 @@ INSERT INTO ecommerce.products (product_id, name, sku, price, category, descript
 (10, 'Ada''s Beans Subscription Box',         'ABC-SUBBOX-MO',     39.00, 'Bundle / Subscription', 'One bag a month, roaster''s choice, cancel anytime (you won''t)',             TRUE);
 
 -- ============================================================
--- Seed Data: Orders (9 records)
--- IDs 1-9 assigned; 10-19 RESERVED for future SEs; 99999 = not-found sentinel
+-- Seed Data: Orders (13 records)
+-- IDs 1-13 assigned; 14-19 RESERVED for future SEs; 99999 = not-found sentinel
 --   1 = SE-01 happy-path (Ada)              6 = SE-03 fan-out (Donald Knuth, 6 items)
 --   2,3,4,5,9 = general story fill           7 = SE-04 partial-payment-failure (Barbara, no payment row)
 --                                             8 = SE-05 quick-order variant (Radia)
--- Order totals equal the sum of their order_items below (order 8 is a
+--  10 = SE-07 quick-order-variant (Katherine)  12 = SE-09 required-cascade-failed (Dorothy, quick-order)
+--  11 = SE-08 request-deduplication (Hedy)      13 = SE-09 optional-cascade-failed (Mary, default, 2 items)
+-- Order totals equal the sum of their order_items below (orders 8, 10, 11, 12 are
 -- quick-order — no order_items/payments/shipments rows, per the variant's DAG).
 -- ============================================================
 INSERT INTO ecommerce.orders (order_id, customer_id, order_date, status, total_amount, shipping_address) VALUES
@@ -138,11 +145,15 @@ INSERT INTO ecommerce.orders (order_id, customer_id, order_date, status, total_a
 (6, 6, '2025-07-02 08:40:00', 'shipped',   163.50, '1 TeX Terrace, Palo Alto, CA 94301'),
 (7, 7, '2025-07-08 13:20:00', 'shipped',   35.50,  '1 Substitution Street, Cambridge, MA 02139'),
 (8, 8, '2025-07-10 17:05:00', 'confirmed', 45.00,  '1 Spanning Tree Blvd, Burlington, MA 01803'),
-(9, 9, '2025-07-12 12:00:00', 'pending',   24.00,  '1 Kernel Circle, Portland, OR 97201');
+(9, 9, '2025-07-12 12:00:00', 'pending',   24.00,  '1 Kernel Circle, Portland, OR 97201'),
+(10, 10, '2025-08-01 09:15:00', 'confirmed', 28.00, '1 Trajectory Trail, Hampton, VA 23666'),
+(11, 11, '2025-08-04 11:00:00', 'confirmed', 32.00, '1 Frequency Hop Lane, Los Angeles, CA 90028'),
+(12, 12, '2025-08-07 09:10:00', 'confirmed', 21.50, '1 Fortran Fields, Hampton, VA 23666'),
+(13, 13, '2025-08-10 11:30:00', 'confirmed', 46.00, '1 Wind Tunnel Way, Hampton, VA 23666');
 
 -- ============================================================
--- Seed Data: Order Items (17 records)
--- Order 8 (quick-order variant) intentionally has NO line items.
+-- Seed Data: Order Items (19 records)
+-- Orders 8, 10, 11, 12 (quick-order variant) intentionally have NO line items.
 -- ============================================================
 INSERT INTO ecommerce.order_items (order_item_id, order_id, product_id, quantity, unit_price, subtotal) VALUES
 -- Order 1 (Ada, SE-01 happy-path): 21.50 + 18.00 = 39.50
@@ -169,25 +180,29 @@ INSERT INTO ecommerce.order_items (order_item_id, order_id, product_id, quantity
 (15, 7, 1, 1, 21.50, 21.50),
 (16, 7, 5, 1, 14.00, 14.00),
 -- Order 9 (Linus, general filler, pending): 24.00
-(17, 9, 9, 1, 24.00, 24.00);
+(17, 9, 9, 1, 24.00, 24.00),
+-- Order 13 (Mary Jackson, SE-09 optional-cascade-failed): 21.50 + 24.50... use existing product prices: 22.00 + 24.00 = 46.00
+(18, 13, 1, 1, 22.00, 22.00),
+(19, 13, 9, 1, 24.00, 24.00);
 
 -- ============================================================
--- Seed Data: Payments (5 records)
+-- Seed Data: Payments (6 records)
 -- Order 7 (Barbara Liskov / SE-04) has NO payment row on purpose — the
 -- beans left the roastery before the card finished processing. ValidatePayment
 -- filters payments by order_id, so payload.paymentId=7 legitimately finds zero
 -- rows, driving the PARTIAL_SUCCESS outcome.
--- Orders 5, 8, 9 have no payment yet either (pending / quick-order variant).
+-- Orders 5, 8, 9, 10, 11, 12 have no payment yet either (pending / quick-order variant).
 -- ============================================================
 INSERT INTO ecommerce.payments (payment_id, order_id, payment_method, amount, payment_date, status, transaction_ref) VALUES
 (1, 1, 'credit_card',   39.50,  '2025-06-01 10:25:00', 'completed', 'TXN-CC-20250601-0001'),
 (2, 2, 'paypal',        33.00,  '2025-06-05 14:48:00', 'completed', 'TXN-PP-20250605-0002'),
 (3, 3, 'credit_card',   40.50,  '2025-06-12 09:12:00', 'completed', 'TXN-CC-20250612-0003'),
 (4, 4, 'bank_transfer', 39.00,  '2025-06-18 16:35:00', 'completed', 'TXN-BT-20250618-0004'),
-(5, 6, 'credit_card',   163.50, '2025-07-02 08:42:00', 'completed', 'TXN-CC-20250702-0005');
+(5, 6, 'credit_card',   163.50, '2025-07-02 08:42:00', 'completed', 'TXN-CC-20250702-0005'),
+(6, 13, 'credit_card',  46.00,  '2025-08-10 11:35:00', 'completed', 'TXN-CC-20250810-0006');
 
 -- ============================================================
--- Seed Data: Shipments (5 records)
+-- Seed Data: Shipments (6 records)
 -- Order 7's shipment exists even though its payment doesn't — the roastery
 -- shipped anyway (this is exactly the story PARTIAL_SUCCESS is telling).
 -- ============================================================
@@ -196,4 +211,5 @@ INSERT INTO ecommerce.shipments (shipment_id, order_id, carrier, tracking_number
 (2, 2, 'fedex', '794644790301',        '2025-06-06 10:30:00', '2025-06-09 18:00:00', 'delivered'),
 (3, 3, 'usps',  '9400111899223100001', '2025-06-13 07:45:00', '2025-06-17 18:00:00', 'shipped'),
 (4, 6, 'fedex', '794644790302',        '2025-07-03 09:15:00', '2025-07-06 18:00:00', 'shipped'),
+(6, 13, 'ups',  '1Z999AA10123456799',  '2025-08-11 08:00:00', '2025-08-14 18:00:00', 'shipped'),
 (5, 7, 'dhl',   '3S9999999999',        '2025-07-09 07:30:00', '2025-07-12 18:00:00', 'shipped');

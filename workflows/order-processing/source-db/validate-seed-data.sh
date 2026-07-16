@@ -47,12 +47,12 @@ fi
 echo "── order-processing seed validation (container=$CONTAINER db=$DB) ──"
 
 # ── table row counts ────────────────────────────────────────────────────────
-check_eq "customers count"   "SELECT count(*) FROM ecommerce.customers"   "9"
+check_eq "customers count"   "SELECT count(*) FROM ecommerce.customers"   "13"
 check_eq "products count"    "SELECT count(*) FROM ecommerce.products"    "10"
-check_eq "orders count"      "SELECT count(*) FROM ecommerce.orders"      "9"
-check_eq "order_items count" "SELECT count(*) FROM ecommerce.order_items" "17"
-check_eq "payments count"    "SELECT count(*) FROM ecommerce.payments"    "5"
-check_eq "shipments count"   "SELECT count(*) FROM ecommerce.shipments"   "5"
+check_eq "orders count"      "SELECT count(*) FROM ecommerce.orders"      "13"
+check_eq "order_items count" "SELECT count(*) FROM ecommerce.order_items" "19"
+check_eq "payments count"    "SELECT count(*) FROM ecommerce.payments"    "6"
+check_eq "shipments count"   "SELECT count(*) FROM ecommerce.shipments"   "6"
 
 # ── per-SE dedicated rows present ───────────────────────────────────────────
 check_eq "SE-01 customer 1 (Ada Lovelace) present" \
@@ -72,6 +72,22 @@ check_eq "SE-05 customer 8 (Radia Perlman) present" \
   "SELECT last_name FROM ecommerce.customers WHERE customer_id=8" "Perlman"
 check_eq "SE-05 order 8 has zero order_items (quick-order variant)" \
   "SELECT count(*) FROM ecommerce.order_items WHERE order_id=8" "0"
+check_eq "SE-07 customer 10 (Katherine Johnson) present" \
+  "SELECT last_name FROM ecommerce.customers WHERE customer_id=10" "Johnson"
+check_eq "SE-07 order 10 has zero order_items (quick-order variant)" \
+  "SELECT count(*) FROM ecommerce.order_items WHERE order_id=10" "0"
+check_eq "SE-08 customer 11 (Hedy Lamarr) present" \
+  "SELECT last_name FROM ecommerce.customers WHERE customer_id=11" "Lamarr"
+check_eq "SE-09 customer 12 (Dorothy Vaughan) present" \
+  "SELECT last_name FROM ecommerce.customers WHERE customer_id=12" "Vaughan"
+check_eq "SE-09 customer 13 (Mary Jackson) present" \
+  "SELECT last_name FROM ecommerce.customers WHERE customer_id=13" "Jackson"
+check_eq "SE-09 order 13 has 2 order_items (optional-cascade-boundary)" \
+  "SELECT count(*) FROM ecommerce.order_items WHERE order_id=13" "2"
+check_eq "SE-09 order 13 HAS a payment" \
+  "SELECT count(*) FROM ecommerce.payments WHERE order_id=13" "1"
+check_eq "SE-09 order 13 HAS a shipment" \
+  "SELECT count(*) FROM ecommerce.shipments WHERE order_id=13" "1"
 
 # ── not-found sentinels ABSENT ──────────────────────────────────────────────
 check_eq "sentinel customer 99999 ABSENT" \

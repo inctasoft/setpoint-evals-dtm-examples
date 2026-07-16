@@ -12,6 +12,11 @@ services:
       - .env
     environment:
       - NODE_ENV=development
+    volumes:
+      # Runtime mount (not build-time COPY, see Dockerfile.db-init) — the "migrate"
+      # script cats ../../.env directly, so this keeps a stale image reading the
+      # CURRENT host .env instead of whatever was baked in at image build time.
+      - ./.env:/app/.env:ro
     depends_on:
       db:
         condition: service_healthy

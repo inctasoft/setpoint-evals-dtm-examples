@@ -16,6 +16,8 @@
     "paths": {
       "@dtm/core": ["packages/core/src/index.ts"],
       "@dtm/core/*": ["packages/core/src/*"],
+      "@dtm/worker-sdk": ["packages/worker-sdk/src/index.ts"],
+      "@dtm/worker-sdk/*": ["packages/worker-sdk/src/*"],
       "@dtm-workflows/order-processing": ["workflows/order-processing/workflow.config.ts"],
       "@dtm-workflows/order-processing-workers": ["workflows/order-processing/workers/src/index.ts"],
       "@dtm-workflows/order-processing-workers/*": ["workflows/order-processing/workers/src/*"],

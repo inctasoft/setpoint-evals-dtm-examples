@@ -21,6 +21,14 @@ two in sync when you touch the seed.
 | orders | `order_id=7` | SE-04-partial-payment-failure | 2 order_items, 1 shipment, **0 payments** (see below) |
 | customers | `customer_id=8` (Radia Perlman) | SE-05-batch-import-variant | quick-order variant |
 | orders | `order_id=8` | SE-05-batch-import-variant | **0** order_items/payments/shipments — quick-order never reads those tables |
+| customers | `customer_id=10` (Katherine Johnson) | SE-07-quick-order-variant | quick-order variant, own dedicated rows (not SE-05's) |
+| orders | `order_id=10` | SE-07-quick-order-variant | **0** order_items/payments/shipments — quick-order never reads those tables |
+| customers | `customer_id=11` (Hedy Lamarr) | SE-08-request-deduplication | quick-order variant, generic workflow endpoint dedup |
+| orders | `order_id=11` | SE-08-request-deduplication | **0** order_items/payments/shipments |
+| customers | `customer_id=12` (Dorothy Vaughan) | SE-09-optional-cascade-boundary (part B) | quick-order variant — SubmitOrder exhausts retries → required cascade FAILED |
+| orders | `order_id=12` | SE-09-optional-cascade-boundary (part B) | **0** order_items/payments/shipments |
+| customers | `customer_id=13` (Mary Jackson) | SE-09-optional-cascade-boundary (part A) | default variant — line items forced to fail → optional cascade PARTIAL_SUCCESS |
+| orders | `order_id=13` | SE-09-optional-cascade-boundary (part A) | 2 order_items, 1 payment, 1 shipment — all healthy; only lineItem forced to fail |
 
 ## Payment/shipment lookup quirk (worker behavior, not seed behavior)
 
@@ -48,9 +56,9 @@ this deliberately: order 7 legitimately has zero payment rows, so
 
 | Table | Range | |
 |---|---|---|
-| customers | `10-19` | reserved |
+| customers | `14-19` | reserved (10-13 consumed by SE-07/08/09, Phase 3b) |
 | products | `11-19` | reserved |
-| orders | `10-19` | reserved |
+| orders | `14-19` | reserved (10-13 consumed by SE-07/08/09, Phase 3b) |
 | order_items / payments / shipments | next sequential id after the current max | reserved (no fixed range — these are child rows) |
 
 ## Not-found sentinels (guaranteed ABSENT — used for negative-path SEs)
@@ -66,12 +74,12 @@ this deliberately: order 7 legitimately has zero payment rows, so
 
 | Table | Count |
 |---|---|
-| customers | 9 |
+| customers | 13 |
 | products | 10 |
-| orders | 9 |
-| order_items | 17 |
-| payments | 5 |
-| shipments | 5 |
+| orders | 13 |
+| order_items | 19 |
+| payments | 6 |
+| shipments | 6 |
 
 ## Validator
 

@@ -360,11 +360,24 @@ export class FanOutService {
     const siblings = await this.stepRepository.findByParentId(childStep.parentStepId);
     const sameTypeSiblings = siblings.filter((s) => s.stepValue === childStep.stepValue);
 
+    // Terminal-status set for "this sibling is done, one way or another" — must match
+    // the TERMINAL_STATUSES used by callback.service.ts / step.repository.ts / the
+    // stuck-waiting-for-children maintenance task (SKIPPED + PARTIAL_SUCCESS included).
+    // Previously this list omitted SKIPPED and PARTIAL_SUCCESS: whenever a fan-out
+    // child's OWN dependent got SKIPPED (e.g. IngestReading fails -> its PublishReading
+    // sibling is skipped rather than independently retried), allSameTypeComplete stayed
+    // false FOREVER — even the stuck-waiting-for-children maintenance task's re-trigger
+    // hit this same check and silently no-op'd, so the parent discovery step never left
+    // WAITING_FOR_CHILDREN. Found via setpoint-evals/workflows/iot-sensor-pipeline
+    // SE-08-nested-fanout-partial-failure (a forced grandchild failure deterministically
+    // produces a SKIPPED sibling every run).
     const allSameTypeComplete = sameTypeSiblings.every(
       (s) =>
         s.status === StepStatus.COMPLETED ||
         s.status === StepStatus.FAILED ||
-        s.status === StepStatus.WAITING_FOR_ACK,
+        s.status === StepStatus.WAITING_FOR_ACK ||
+        s.status === StepStatus.SKIPPED ||
+        s.status === StepStatus.PARTIAL_SUCCESS,
     );
 
     if (!allSameTypeComplete) {

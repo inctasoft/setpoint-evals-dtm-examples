@@ -13,8 +13,13 @@ WORKDIR /app
 
 # Copy workspace configuration and lock file from root
 COPY pnpm-workspace.yaml pnpm-lock.yaml .pnpmfile.cjs ./
-# Copy .env file for migrations (and rename to .env for TypeORM)
-COPY .env ./.env
+# .env is intentionally NOT copied here (build-time bake). The "migrate" script
+# (services/orchestrator/package.json) reads ../../.env directly off disk at
+# CONTAINER-RUN time, so a build-time COPY goes stale the moment the host .env
+# changes without an image rebuild — docker-compose.yml's `env_file: - .env`
+# only seeds process env, it does NOT keep this baked file in sync. Fix: mount
+# .env at runtime instead (docker-compose.yml volumes: ./.env:/app/.env:ro),
+# so a stale image always reads the CURRENT host .env. See DIFFICULTIES-LOG.md.
 
 # Copy all package.json files for dependency resolution
 COPY packages/core/package.json ./packages/core/
