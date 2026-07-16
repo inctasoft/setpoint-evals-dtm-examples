@@ -63,6 +63,17 @@ export default defineConfig({
       workers: 4,
     },
 
+    // Scenarios screen UI coverage (Phase 4a) — boots its own hermetic monitor dev
+    // server per test (scenarios-dashboard.fixture.ts), sequential (each test owns
+    // a real orchestrator job; parallel workers would race the shared dtm-db).
+    {
+      name: 'ui-scenarios',
+      testDir: './src/ui',
+      fullyParallel: false,
+      workers: 1,
+      timeout: 120_000,
+    },
+
     // Demo video recordings — records the monitor dashboard during workflow execution
     {
       name: 'demo-videos',

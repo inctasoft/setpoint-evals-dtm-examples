@@ -11,6 +11,9 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
+    "dompurify": "^3.4.12",
+    "marked": "^18.0.6",
+    "mermaid": "^11.16.0",
     "preact": "^10.25.4",
     "supertokens-auth-react": "^0.51.2",
     "supertokens-web-js": "^0.16.0"

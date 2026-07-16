@@ -31,10 +31,12 @@ import {
   kafkaConfig,
   awsConfig,
   appConfig,
+  evalsConfig,
   configValidationSchema,
   configValidationOptions,
   logRuntimeMode,
 } from './config';
+import { EvalsModule } from './evals/evals.module';
 
 // Log runtime mode at module initialization
 logRuntimeMode();
@@ -46,7 +48,7 @@ logRuntimeMode();
       expandVariables: true,
       // .env file should be in orchestrator directory (symlinked to monorepo root)
       // Run: ln -s ../../.env .env (from services/orchestrator/)
-      load: [databaseConfig, kafkaConfig, awsConfig, appConfig],
+      load: [databaseConfig, kafkaConfig, awsConfig, appConfig, evalsConfig],
       validationSchema: configValidationSchema,
       validationOptions: configValidationOptions,
     }),
@@ -95,6 +97,7 @@ logRuntimeMode();
     CorrelationModule,
     WebSocketModule,
     AuthModule.forRoot(),
+    EvalsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

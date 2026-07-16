@@ -13,6 +13,7 @@
     "test:workflow:order": "playwright test --project=workflow-order-processing",
     "test:workflow:iot": "playwright test --project=workflow-iot-sensor-pipeline",
     "test:workflow:infra": "playwright test --project=workflow-infra-provisioning",
+    "test:ui:scenarios": "playwright test --project=ui-scenarios",
     "test:demos": "playwright test --project=demo-videos",
     "test:demo:order": "playwright test --project=demo-videos -g 'order-processing'",
     "test:demo:iot": "playwright test --project=demo-videos -g 'IoT'",

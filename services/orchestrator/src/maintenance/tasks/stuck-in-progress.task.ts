@@ -238,11 +238,38 @@ export class StuckInProgressTask extends BaseMaintenanceTask {
             `Auto-failing step ${step.id} (${step.stepValue}) — stuck in ${step.status} for ${stuckMinutes}min (timeout: ${Math.round(stepTimeoutMs / 60000)}min)`,
           );
 
-          await this.stepRepository.update(step.id, {
-            status: StepStatus.FAILED,
-            error: `Auto-failed by maintenance task: step exceeded ${Math.round(stepTimeoutMs / 60000)} minute timeout (stuck for ${stuckMinutes} minutes). Likely cause: ${likelyCause}`,
-            completedAt: new Date(),
-          });
+          // LEADER-2-style conditional UPDATE — only transition the step out of
+          // the SAME in-progress status this pass's SELECT actually observed
+          // (mirrors PR #27's stuck-acknowledgement guard). The SELECT and this
+          // UPDATE are two separate round-trips; a real callback can land on the
+          // step in between them (e.g. a slow-but-alive Lambda finally posts its
+          // callback). A bare `update(step.id, {...})` would blindly overwrite
+          // that legitimate progress back to FAILED. Gating the UPDATE's WHERE
+          // clause on `status: step.status` makes the race resolve safely: if
+          // the row is no longer in the status we saw, `affected` comes back 0
+          // and we skip — the real callback's own orchestration trigger (already
+          // in flight) is left to finish the job, instead of us double-triggering
+          // continueJob for a step we didn't actually fail.
+          const updateResult = await this.stepRepository.update(
+            { id: step.id, status: step.status },
+            {
+              status: StepStatus.FAILED,
+              error: `Auto-failed by maintenance task: step exceeded ${Math.round(stepTimeoutMs / 60000)} minute timeout (stuck for ${stuckMinutes} minutes). Likely cause: ${likelyCause}`,
+              completedAt: new Date(),
+            },
+          );
+
+          if (updateResult.affected === 0) {
+            this.logger.log(
+              `↩️  Step ${step.id} no longer in ${step.status} — a real callback (or another reaper) already moved it; skipping continueJob`,
+            );
+            actions.push({
+              type: 'alert',
+              description: `Auto-fail skipped — step already transitioned out of ${step.status} before the conditional UPDATE ran (race with a real callback)`,
+              subjectId: step.id,
+            });
+            continue;
+          }
 
           await this.orchestrationService.continueJob(jobId);
 
