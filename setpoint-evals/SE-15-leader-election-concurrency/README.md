@@ -1,6 +1,16 @@
 # SE-15: leader-election concurrency (LEADER-1)
 
-**Category**: maintenance · **Isolation**: parallel-safe (own synthetic jobs, tagged `payload.se='SE-15'`) · **Duration**: ~10s · **Timeout**: 60s
+**Category**: maintenance · **Isolation**: destructive · **Duration**: ~10s · **Timeout**: 60s
+
+The `stuck-acknowledgement` task it fires is **global** — it sweeps every row
+in `WAITING_FOR_ACK` across the whole `dtm_steps` table (matching
+`ackTimeoutMinutes`), not just this SE's own tagged rows (`payload.se='SE-15'`
+scopes seeding/cleanup, not the task's own query). Same reason `SE-06`/`SE-07`
+(and the other maintenance-task SEs) are `destructive`: run-all.sh's own
+Phase-2 rationale is "evals use global maintenance tasks" (`run-all.sh`
+header comment) — a parallel-safe label here would let this SE race a
+sibling SE's own `WAITING_FOR_ACK` step and clobber it (or get clobbered),
+passing only by luck of the concurrent set not colliding.
 
 ## Scenario
 ```gherkin
