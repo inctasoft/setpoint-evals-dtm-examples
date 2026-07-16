@@ -3,8 +3,10 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # SE 01: Happy Path
 # ═══════════════════════════════════════════════════════════════════════════
-# Verifies the standard end-to-end order-processing flow:
-#   1. Initiate a job with payload.entityId="customer-1" (mapped to customer_id=1)
+# Verifies the standard end-to-end order-processing flow using Ada Lovelace's
+# order at Ada's Beans Cafe (customer_id=1, order_id=1 — dedicated to this SE,
+# see ../../source-db/SEED-REGISTRY.md):
+#   1. Initiate a job with payload.entityId="ada-lovelace" (customer_id=1)
 #   2. All validate/submit steps complete successfully
 #   3. Job reaches COMPLETED status
 #
@@ -30,7 +32,7 @@ EVAL_PURPOSE="Test standard successful order-processing with default variant"
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: customer-1"
+log_info "Entity ID: ada-lovelace (customer_id=1, order_id=1)"
 log_info "Variant: default"
 log_info "Expected Outcome: Job COMPLETES successfully (all steps pass)"
 echo ""
@@ -50,7 +52,7 @@ PAYLOAD='{
     "orderItemId": 1,
     "paymentId": 1,
     "shipmentId": 1,
-    "entityId": "customer-1"
+    "entityId": "ada-lovelace"
   },
   "testOptions": {
     "ValidateCustomer":    { "simDelay": 300 },

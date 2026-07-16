@@ -12,6 +12,11 @@
 # No DiscoverLineItems, no ValidateLineItem/SubmitLineItem,
 # no Payment, no Shipment, no Product.
 #
+# Dedicated to Radia Perlman's order (customer_id=8, order_id=8) at Ada's
+# Beans Cafe — intentionally has no order_items/payments/shipments rows,
+# since the quick-order variant never touches those tables. Own rows,
+# isolated from every other SE — see ../../source-db/SEED-REGISTRY.md.
+#
 # Expected behavior:
 #   1. Only 4 steps execute (VC, SC, VO, SO)
 #   2. All 4 complete successfully
@@ -38,7 +43,7 @@ EVAL_PURPOSE="Test simplified quick-order variant (no fan-out, no discovery)"
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: customer-1000"
+log_info "Entity ID: radia-perlman (customer_id=8, order_id=8)"
 log_info "Variant: quick-order"
 log_info "Expected Steps: ValidateCustomer, SubmitCustomer, ValidateOrder, SubmitOrder"
 log_info "Expected Outcome: Job COMPLETES (simplified flow)"
@@ -54,9 +59,9 @@ PAYLOAD='{
   "enableDeduplication": false,
   "variant": "quick-order",
   "payload": {
-    "customerId": 1,
-    "orderId": 1,
-    "entityId": "customer-1000"
+    "customerId": 8,
+    "orderId": 8,
+    "entityId": "radia-perlman"
   },
   "testOptions": {
     "ValidateCustomer":  { "simDelay": 300 },

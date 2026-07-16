@@ -33,7 +33,7 @@ EVAL_PURPOSE="Test failure handling when critical entity (environment) does not 
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: ENV-NONEXISTENT (does NOT exist in source DB)"
+log_info "Entity ID: atlantis-eu (the reserved not-found sentinel — does NOT exist in source DB)"
 log_info "Variant: default"
 log_info "Expected Outcome: Job FAILS (critical entity failed)"
 echo ""
@@ -47,8 +47,8 @@ log_section "STEP 1: INITIATE JOB (NON-EXISTENT ENVIRONMENT)"
 PAYLOAD='{
   "variant": "default",
   "payload": {
-    "environmentId": "ENV-NONEXISTENT",
-    "entityId": "ENV-NONEXISTENT"
+    "environmentId": "atlantis-eu",
+    "entityId": "atlantis-eu"
   },
   "testOptions": {
     "PlanEnvironment":    { "simDelay": 300, "maxRetries": 0 },

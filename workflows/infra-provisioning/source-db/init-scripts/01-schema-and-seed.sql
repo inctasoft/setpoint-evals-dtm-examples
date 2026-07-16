@@ -108,66 +108,84 @@ CREATE TABLE dbo.load_balancers (
 );
 
 -- ============================================================
+-- Story: two European regions, "staging-eu" and "prod-eu". See
+-- ../SEED-REGISTRY.md for the full row->SE map and why compute instances
+-- are shared per-environment while storage/dns/certificate/load_balancer
+-- are per-SE isolated (worker lookup semantics, explained there).
+-- ============================================================
+
+-- ============================================================
 -- Seed Data: Environments (2 records)
+-- staging-eu / prod-eu assigned; qa-eu / dr-eu RESERVED for future SEs;
+-- atlantis-eu = not-found sentinel
 -- ============================================================
 INSERT INTO dbo.environments (environment_id, name, type, region, account_id, status, created_at) VALUES
-('ENV-DEV',     'Development',  'dev',     'us-east-1', 'aws-acct-111111111111', 'active', '2025-01-10 08:00:00'),
-('ENV-STAGING', 'Staging',      'staging', 'us-west-2', 'aws-acct-222222222222', 'active', '2025-01-15 10:00:00');
+('staging-eu', 'Staging EU',    'staging', 'eu-west-1',    'aws-acct-111111111111', 'active', '2025-01-10 08:00:00'),
+('prod-eu',    'Production EU', 'prod',    'eu-central-1', 'aws-acct-222222222222', 'active', '2025-01-15 10:00:00');
 
 -- ============================================================
--- Seed Data: Networks (3 records)
+-- Seed Data: Networks (2 records — exactly one per environment; PlanNetwork
+-- looks up by environment_id with findOne, so an environment with >1 network
+-- would be ambiguous. See SEED-REGISTRY.md "Worker behavior notes".)
 -- ============================================================
 INSERT INTO dbo.networks (network_id, environment_id, name, vpc_cidr, subnet_cidr, availability_zone, status, created_at) VALUES
-('NET-DEV-1', 'ENV-DEV',     'dev-vpc-primary',     '10.0.0.0/16', '10.0.1.0/24', 'us-east-1a', 'active', '2025-01-10 08:30:00'),
-('NET-STG-1', 'ENV-STAGING', 'staging-vpc-primary',  '10.1.0.0/16', '10.1.1.0/24', 'us-west-2a', 'active', '2025-01-15 10:30:00'),
-('NET-STG-2', 'ENV-STAGING', 'staging-vpc-secondary','10.2.0.0/16', '10.2.1.0/24', 'us-west-2b', 'active', '2025-01-15 11:00:00');
+('NET-STAGING-EU-1', 'staging-eu', 'staging-eu-vpc-primary', '10.0.0.0/16', '10.0.1.0/24', 'eu-west-1a',    'active', '2025-01-10 08:30:00'),
+('NET-PROD-EU-1',    'prod-eu',    'prod-eu-vpc-primary',    '10.1.0.0/16', '10.1.1.0/24', 'eu-central-1a', 'active', '2025-01-15 10:30:00');
 
 -- ============================================================
--- Seed Data: Compute Instances (6 records, 2 per network)
+-- Seed Data: Compute Instances (8 records)
+-- staging-eu: 2 instances (SE-01, SE-05 — one each, dedicated)
+-- prod-eu:    6 instances (SE-03 fan-out breadth; instance 1 also carries
+--             SE-04's dedicated storage/dns/certificate/load_balancer chain)
 -- ============================================================
 INSERT INTO dbo.compute_instances (instance_id, network_id, name, instance_type, ami_id, status, public_ip, private_ip, created_at) VALUES
--- NET-DEV-1 instances
-('INST-DEV-1', 'NET-DEV-1', 'web-server-dev-1',  't3.medium',  'ami-0abcdef1234567890', 'running', '54.89.123.45',  '10.0.1.10',  '2025-01-10 09:00:00'),
-('INST-DEV-2', 'NET-DEV-1', 'api-server-dev-1',  't3.medium',  'ami-0abcdef1234567890', 'running', NULL,            '10.0.1.11',  '2025-01-10 09:15:00'),
--- NET-STG-1 instances
-('INST-STG-1', 'NET-STG-1', 'web-server-stg-1',  'm5.large',   'ami-0fedcba9876543210', 'running', '52.38.201.100', '10.1.1.10',  '2025-01-15 11:00:00'),
-('INST-STG-2', 'NET-STG-1', 'api-server-stg-1',  'm5.large',   'ami-0fedcba9876543210', 'running', NULL,            '10.1.1.11',  '2025-01-15 11:15:00'),
--- NET-STG-2 instances
-('INST-STG-3', 'NET-STG-2', 'worker-server-stg-1','c5.xlarge',  'ami-0fedcba9876543210', 'running', NULL,            '10.2.1.10',  '2025-01-15 11:30:00'),
-('INST-STG-4', 'NET-STG-2', 'cache-server-stg-1', 't3.medium',  'ami-0fedcba9876543210', 'running', NULL,            '10.2.1.11',  '2025-01-15 11:45:00');
+-- staging-eu (SE-01 happy-path, SE-05 long-ack-wait)
+('INST-STAGING-EU-1', 'NET-STAGING-EU-1', 'web-staging-eu-1', 't3.medium', 'ami-0abcdef1234567890', 'running', '54.89.10.1', '10.0.1.10', '2025-01-10 09:00:00'),
+('INST-STAGING-EU-2', 'NET-STAGING-EU-1', 'api-staging-eu-1', 't3.medium', 'ami-0abcdef1234567890', 'running', NULL,        '10.0.1.11', '2025-01-10 09:15:00'),
+-- prod-eu (SE-03 compute-fan-out — 6 instances; SE-04 cascade-failure uses instance 1)
+('INST-PROD-EU-1', 'NET-PROD-EU-1', 'web-prod-eu-1',    'm5.large',  'ami-0fedcba9876543210', 'running', '52.38.20.1', '10.1.1.10', '2025-01-15 11:00:00'),
+('INST-PROD-EU-2', 'NET-PROD-EU-1', 'web-prod-eu-2',    'm5.large',  'ami-0fedcba9876543210', 'running', '52.38.20.2', '10.1.1.11', '2025-01-15 11:05:00'),
+('INST-PROD-EU-3', 'NET-PROD-EU-1', 'api-prod-eu-1',    'm5.large',  'ami-0fedcba9876543210', 'running', NULL,         '10.1.1.12', '2025-01-15 11:10:00'),
+('INST-PROD-EU-4', 'NET-PROD-EU-1', 'api-prod-eu-2',    'm5.large',  'ami-0fedcba9876543210', 'running', NULL,         '10.1.1.13', '2025-01-15 11:15:00'),
+('INST-PROD-EU-5', 'NET-PROD-EU-1', 'worker-prod-eu-1', 'c5.xlarge', 'ami-0fedcba9876543210', 'running', NULL,         '10.1.1.14', '2025-01-15 11:20:00'),
+('INST-PROD-EU-6', 'NET-PROD-EU-1', 'cache-prod-eu-1',  't3.medium', 'ami-0fedcba9876543210', 'running', NULL,         '10.1.1.15', '2025-01-15 11:25:00');
 
 -- ============================================================
--- Seed Data: Storage Volumes (6 records, 1 per compute instance)
+-- Seed Data: Storage Volumes (8 records, 1 per compute instance)
 -- ============================================================
 INSERT INTO dbo.storage_volumes (volume_id, instance_id, name, size_gb, volume_type, iops, status, attached_at) VALUES
-('VOL-DEV-1', 'INST-DEV-1', 'web-server-dev-1-root',     50,  'gp3', NULL,  'in-use', '2025-01-10 09:05:00'),
-('VOL-DEV-2', 'INST-DEV-2', 'api-server-dev-1-root',     50,  'gp3', NULL,  'in-use', '2025-01-10 09:20:00'),
-('VOL-STG-1', 'INST-STG-1', 'web-server-stg-1-root',     100, 'gp3', NULL,  'in-use', '2025-01-15 11:05:00'),
-('VOL-STG-2', 'INST-STG-2', 'api-server-stg-1-data',     200, 'io2', 5000,  'in-use', '2025-01-15 11:20:00'),
-('VOL-STG-3', 'INST-STG-3', 'worker-server-stg-1-data',  500, 'io2', 10000, 'in-use', '2025-01-15 11:35:00'),
-('VOL-STG-4', 'INST-STG-4', 'cache-server-stg-1-root',   100, 'gp3', NULL,  'in-use', '2025-01-15 11:50:00');
+('VOL-STAGING-EU-1', 'INST-STAGING-EU-1', 'web-staging-eu-1-root',  50,  'gp3', NULL,  'in-use', '2025-01-10 09:05:00'),
+('VOL-STAGING-EU-2', 'INST-STAGING-EU-2', 'api-staging-eu-1-root',  50,  'gp3', NULL,  'in-use', '2025-01-10 09:20:00'),
+('VOL-PROD-EU-1',    'INST-PROD-EU-1',    'web-prod-eu-1-root',     100, 'gp3', NULL,  'in-use', '2025-01-15 11:05:00'),
+('VOL-PROD-EU-2',    'INST-PROD-EU-2',    'web-prod-eu-2-root',     100, 'gp3', NULL,  'in-use', '2025-01-15 11:10:00'),
+('VOL-PROD-EU-3',    'INST-PROD-EU-3',    'api-prod-eu-1-data',     200, 'io2', 5000,  'in-use', '2025-01-15 11:15:00'),
+('VOL-PROD-EU-4',    'INST-PROD-EU-4',    'api-prod-eu-2-data',     200, 'io2', 5000,  'in-use', '2025-01-15 11:20:00'),
+('VOL-PROD-EU-5',    'INST-PROD-EU-5',    'worker-prod-eu-1-data',  500, 'io2', 10000, 'in-use', '2025-01-15 11:25:00'),
+('VOL-PROD-EU-6',    'INST-PROD-EU-6',    'cache-prod-eu-1-root',   100, 'gp3', NULL,  'in-use', '2025-01-15 11:30:00');
 
 -- ============================================================
--- Seed Data: DNS Records (4 records)
+-- Seed Data: DNS Records (3 records — one per SE that reaches PlanDNS)
 -- ============================================================
 INSERT INTO dbo.dns_records (record_id, network_id, instance_id, hostname, record_type, value, ttl, status, created_at) VALUES
-('DNS-DEV-1', 'NET-DEV-1', 'INST-DEV-1', 'web-dev.internal.example.com',     'A',     '10.0.1.10',                        300,  'active', '2025-01-10 09:30:00'),
-('DNS-STG-1', 'NET-STG-1', 'INST-STG-1', 'web-stg.staging.example.com',      'A',     '10.1.1.10',                        300,  'active', '2025-01-15 12:00:00'),
-('DNS-STG-2', 'NET-STG-1', 'INST-STG-2', 'api-stg.staging.example.com',      'A',     '10.1.1.11',                        300,  'active', '2025-01-15 12:15:00'),
-('DNS-STG-3', 'NET-STG-2', 'INST-STG-3', 'worker-stg.staging.example.com',   'CNAME', 'worker-server-stg-1.ec2.internal', 3600, 'active', '2025-01-15 12:30:00');
+('DNS-STAGING-EU-1', 'NET-STAGING-EU-1', 'INST-STAGING-EU-1', 'web-staging-eu.internal.example.com', 'A', '10.0.1.10', 300, 'active', '2025-01-10 09:30:00'),
+('DNS-STAGING-EU-2', 'NET-STAGING-EU-1', 'INST-STAGING-EU-2', 'api-staging-eu.internal.example.com', 'A', '10.0.1.11', 300, 'active', '2025-01-10 09:35:00'),
+-- SE-04 cascade-failure-propagation: this record exists (PlanDNS succeeds),
+-- but ApplyDNS is configured via testOptions.failureAfter to fail permanently
+-- — the SKIPPED-propagation story is a testOptions failure, not a missing row.
+('DNS-PROD-EU-1', 'NET-PROD-EU-1', 'INST-PROD-EU-1', 'web-prod-eu.example.com', 'A', '10.1.1.10', 300, 'active', '2025-01-15 12:00:00');
 
 -- ============================================================
 -- Seed Data: Certificates (3 records)
 -- ============================================================
 INSERT INTO dbo.certificates (certificate_id, dns_record_id, domain, issuer, status, issued_at, expires_at, created_at) VALUES
-('CERT-DEV-1', 'DNS-DEV-1', 'web-dev.internal.example.com', 'LetsEncrypt', 'issued', '2025-01-10 10:00:00', '2026-01-10 10:00:00', '2025-01-10 09:45:00'),
-('CERT-STG-1', 'DNS-STG-1', 'web-stg.staging.example.com', 'Amazon', 'issued', '2025-01-15 13:00:00', '2026-01-15 13:00:00', '2025-01-15 12:45:00'),
-('CERT-STG-2', 'DNS-STG-2', 'api-stg.staging.example.com', 'Amazon', 'issued', '2025-01-15 13:15:00', '2026-01-15 13:15:00', '2025-01-15 13:00:00');
+('CERT-STAGING-EU-1', 'DNS-STAGING-EU-1', 'web-staging-eu.internal.example.com', 'LetsEncrypt', 'issued', '2025-01-10 10:00:00', '2026-01-10 10:00:00', '2025-01-10 09:45:00'),
+('CERT-STAGING-EU-2', 'DNS-STAGING-EU-2', 'api-staging-eu.internal.example.com', 'LetsEncrypt', 'issued', '2025-01-10 10:15:00', '2026-01-10 10:15:00', '2025-01-10 10:00:00'),
+('CERT-PROD-EU-1',    'DNS-PROD-EU-1',    'web-prod-eu.example.com',             'Amazon',      'issued', '2025-01-15 13:00:00', '2026-01-15 13:00:00', '2025-01-15 12:45:00');
 
 -- ============================================================
 -- Seed Data: Load Balancers (3 records)
 -- ============================================================
 INSERT INTO dbo.load_balancers (lb_id, network_id, instance_id, name, type, port, protocol, health_check_path, status, created_at) VALUES
-('LB-DEV-1',  'NET-DEV-1', 'INST-DEV-1', 'web-alb-dev-1', 'ALB', 443,  'HTTPS', '/health',     'active', '2025-01-10 10:00:00'),
-('LB-STG-1',  'NET-STG-1', 'INST-STG-1', 'web-alb-stg-1', 'ALB', 443,  'HTTPS', '/health',     'active', '2025-01-15 13:30:00'),
-('LB-STG-2',  'NET-STG-1', 'INST-STG-2', 'api-alb-stg-1', 'ALB', 8443, 'HTTPS', '/api/health', 'active', '2025-01-15 13:45:00');
+('LB-STAGING-EU-1', 'NET-STAGING-EU-1', 'INST-STAGING-EU-1', 'web-alb-staging-eu', 'ALB', 443, 'HTTPS', '/health', 'active', '2025-01-10 10:00:00'),
+('LB-STAGING-EU-2', 'NET-STAGING-EU-1', 'INST-STAGING-EU-2', 'api-alb-staging-eu', 'ALB', 8443, 'HTTPS', '/api/health', 'active', '2025-01-10 10:05:00'),
+('LB-PROD-EU-1',    'NET-PROD-EU-1',    'INST-PROD-EU-1',    'web-alb-prod-eu',    'ALB', 443, 'HTTPS', '/health', 'active', '2025-01-15 13:30:00');

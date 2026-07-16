@@ -86,198 +86,151 @@ CREATE INDEX idx_aggregates_sensor_id ON dbo.aggregates(sensor_id);
 CREATE INDEX idx_aggregates_period ON dbo.aggregates(period_start, period_end);
 
 -- ============================================================
--- Seed Data: Devices
+-- Story: a greenhouse fleet. Every device is "greenhouse-N" — obviously a
+-- demo fixture, not a real deployment. See ../SEED-REGISTRY.md for the full
+-- row->SE map.
+-- ============================================================
+
+-- ============================================================
+-- Seed Data: Devices (5 records)
+-- greenhouse-1..4 assigned; greenhouse-offline assigned; greenhouse-5..9
+-- RESERVED for future SEs; greenhouse-999 = not-found sentinel
 -- ============================================================
 INSERT INTO dbo.devices (device_id, name, type, location, firmware_version, status, registered_at, last_seen_at) VALUES
-('DEV-001', 'IoT Gateway Alpha',    'temperature', 'Building A - Floor 1 - Server Room',     'v2.4.1', 'active',      '2025-01-15 08:00:00', '2025-06-15 14:30:00'),
-('DEV-002', 'Smart Hub Beta',        'humidity',    'Building B - Floor 3 - Greenhouse',       'v3.1.0', 'active',      '2025-02-20 10:30:00', '2025-06-15 14:28:00'),
-('DEV-003', 'Field Controller Gamma','pressure',    'Outdoor Station C - Weather Monitoring',   'v1.8.5', 'maintenance', '2025-03-10 14:00:00', '2025-06-14 09:15:00'),
-('DEV-EMPTY', 'Empty Reading Device', 'temperature', 'Test Lab - No Readings', 'v1.0.0', 'active', '2025-04-01 00:00:00', '2025-04-01 00:00:00');
+('greenhouse-1',       'Greenhouse 1 — Tomatoes',  'multi-sensor', 'North Field - Bay 1',  'v2.4.1', 'active', '2025-01-15 08:00:00', '2025-06-20 09:15:00'),
+('greenhouse-2',       'Greenhouse 2 — Peppers',   'multi-sensor', 'North Field - Bay 2',  'v2.4.1', 'active', '2025-02-01 08:00:00', '2025-06-20 09:15:00'),
+('greenhouse-3',       'Greenhouse 3 — Herbs',     'multi-sensor', 'South Field - Bay 1',  'v3.1.0', 'active', '2025-02-10 08:00:00', '2025-06-20 09:15:00'),
+('greenhouse-4',       'Greenhouse 4 — Orchids',   'multi-sensor', 'South Field - Bay 2',  'v3.1.0', 'active', '2025-02-15 08:00:00', '2025-06-20 09:15:00'),
+('greenhouse-offline', 'Greenhouse Offline — Spare Bay', 'multi-sensor', 'Storage Yard - Unwired', 'v1.0.0', 'active', '2025-03-01 00:00:00', NULL);
 
 -- ============================================================
--- Seed Data: Sensors (3 per device = 9 total + 1 empty-reading sensor)
+-- Seed Data: Sensors (9 records — 2 per device, 3 for greenhouse-3)
 -- ============================================================
 INSERT INTO dbo.sensors (sensor_id, device_id, type, unit, min_threshold, max_threshold, calibrated_at, status) VALUES
--- DEV-EMPTY sensor (has 0 readings — for SE 05 empty discovery test)
-('SENS-EMPTY-1', 'DEV-EMPTY', 'temperature', 'celsius', 0.00, 100.00, NULL, 'active'),
--- Device 1 sensors
-('SENS-001-TEMP', 'DEV-001', 'temperature', 'celsius',  15.00, 35.00, '2025-05-01 09:00:00', 'active'),
-('SENS-001-HUM',  'DEV-001', 'humidity',    'percent',  30.00, 80.00, '2025-05-01 09:15:00', 'active'),
-('SENS-001-PRES', 'DEV-001', 'pressure',    'hpa',     980.00, 1030.00, '2025-05-01 09:30:00', 'active'),
--- Device 2 sensors
-('SENS-002-TEMP', 'DEV-002', 'temperature', 'celsius',  18.00, 32.00, '2025-04-15 11:00:00', 'active'),
-('SENS-002-HUM',  'DEV-002', 'humidity',    'percent',  40.00, 90.00, '2025-04-15 11:15:00', 'active'),
-('SENS-002-PRES', 'DEV-002', 'pressure',    'hpa',     990.00, 1025.00, '2025-04-15 11:30:00', 'active'),
--- Device 3 sensors
-('SENS-003-TEMP', 'DEV-003', 'temperature', 'celsius',  -10.00, 45.00, '2025-03-20 14:00:00', 'inactive'),
-('SENS-003-HUM',  'DEV-003', 'humidity',    'percent',  20.00, 95.00, '2025-03-20 14:15:00', 'error'),
-('SENS-003-PRES', 'DEV-003', 'pressure',    'hpa',     970.00, 1040.00, '2025-03-20 14:30:00', 'active');
+-- greenhouse-1 (SE-01 happy-path): temp + humidity, calm readings
+('SENS-GH1-TEMP', 'greenhouse-1', 'temperature', 'celsius', 15.00, 35.00, '2025-06-01 09:00:00', 'active'),
+('SENS-GH1-HUM',  'greenhouse-1', 'humidity',    'percent', 40.00, 80.00, '2025-06-01 09:15:00', 'active'),
+-- greenhouse-2 (general story fill)
+('SENS-GH2-TEMP', 'greenhouse-2', 'temperature', 'celsius', 15.00, 32.00, '2025-06-01 10:00:00', 'active'),
+('SENS-GH2-HUM',  'greenhouse-2', 'humidity',    'percent', 40.00, 80.00, '2025-06-01 10:15:00', 'active'),
+-- greenhouse-3 (SE-03 double-fan-out — 3 sensors, wider fan-out breadth)
+('SENS-GH3-TEMP', 'greenhouse-3', 'temperature', 'celsius', 15.00, 30.00, '2025-06-01 11:00:00', 'active'),
+('SENS-GH3-HUM',  'greenhouse-3', 'humidity',    'percent', 45.00, 85.00, '2025-06-01 11:15:00', 'active'),
+('SENS-GH3-SOIL', 'greenhouse-3', 'soil_moisture','percent', 20.00, 80.00, '2025-06-01 11:30:00', 'active'),
+-- greenhouse-4 (SE-04 feature-flag-disable-alerts — temp sensor spikes)
+('SENS-GH4-TEMP', 'greenhouse-4', 'temperature', 'celsius', 15.00, 35.00, '2025-06-01 12:00:00', 'active'),
+('SENS-GH4-HUM',  'greenhouse-4', 'humidity',    'percent', 40.00, 80.00, '2025-06-01 12:15:00', 'active'),
+-- greenhouse-offline (SE-05 empty-discovery): ONE sensor, deliberately ZERO
+-- readings — this exercises the NESTED fan-out's empty case (DiscoverReadings
+-- returns 0 for an otherwise-real sensor), not the outer device->sensor one.
+('SENS-GHOFF-TEMP', 'greenhouse-offline', 'temperature', 'celsius', 15.00, 35.00, NULL, 'active');
 
 -- ============================================================
--- Seed Data: Readings (100 readings distributed across sensors)
+-- Seed Data: Readings (54 records — 6 per sensor)
 -- ============================================================
 
--- SENS-001-TEMP: Temperature readings (12 readings, 20-28 celsius range)
+-- SENS-GH1-TEMP: calm, well inside 15-35 threshold
 INSERT INTO dbo.readings (sensor_id, value, timestamp, quality, raw_value) VALUES
-('SENS-001-TEMP', 22.3400, '2025-06-15 08:00:00', 'good', 22.3512),
-('SENS-001-TEMP', 22.8100, '2025-06-15 08:15:00', 'good', 22.8203),
-('SENS-001-TEMP', 23.1500, '2025-06-15 08:30:00', 'good', 23.1487),
-('SENS-001-TEMP', 23.7200, '2025-06-15 08:45:00', 'good', 23.7310),
-('SENS-001-TEMP', 24.0800, '2025-06-15 09:00:00', 'good', 24.0915),
-('SENS-001-TEMP', 24.5600, '2025-06-15 09:15:00', 'good', 24.5588),
-('SENS-001-TEMP', 25.1300, '2025-06-15 09:30:00', 'good', 25.1421),
-('SENS-001-TEMP', 25.8900, '2025-06-15 09:45:00', 'good', 25.8776),
-('SENS-001-TEMP', 26.4200, '2025-06-15 10:00:00', 'good', 26.4315),
-('SENS-001-TEMP', 27.0100, '2025-06-15 10:15:00', 'uncertain', 27.0542),
-('SENS-001-TEMP', 27.5500, '2025-06-15 10:30:00', 'good', 27.5389),
-('SENS-001-TEMP', 28.0300, '2025-06-15 10:45:00', 'good', 28.0412);
+('SENS-GH1-TEMP', 20.10, '2025-06-20 08:00:00', 'good', 20.11),
+('SENS-GH1-TEMP', 20.60, '2025-06-20 08:15:00', 'good', 20.58),
+('SENS-GH1-TEMP', 21.20, '2025-06-20 08:30:00', 'good', 21.19),
+('SENS-GH1-TEMP', 21.80, '2025-06-20 08:45:00', 'good', 21.83),
+('SENS-GH1-TEMP', 22.30, '2025-06-20 09:00:00', 'good', 22.28),
+('SENS-GH1-TEMP', 22.90, '2025-06-20 09:15:00', 'good', 22.92);
 
--- SENS-001-HUM: Humidity readings (11 readings, 45-65% range)
+-- SENS-GH1-HUM
 INSERT INTO dbo.readings (sensor_id, value, timestamp, quality, raw_value) VALUES
-('SENS-001-HUM', 52.4500, '2025-06-15 08:00:00', 'good', 52.4610),
-('SENS-001-HUM', 53.1200, '2025-06-15 08:15:00', 'good', 53.1305),
-('SENS-001-HUM', 53.8800, '2025-06-15 08:30:00', 'good', 53.8912),
-('SENS-001-HUM', 54.2100, '2025-06-15 08:45:00', 'good', 54.2233),
-('SENS-001-HUM', 55.0600, '2025-06-15 09:00:00', 'good', 55.0488),
-('SENS-001-HUM', 55.7400, '2025-06-15 09:15:00', 'good', 55.7521),
-('SENS-001-HUM', 56.3200, '2025-06-15 09:30:00', 'uncertain', 56.3810),
-('SENS-001-HUM', 57.1500, '2025-06-15 09:45:00', 'good', 57.1399),
-('SENS-001-HUM', 58.0100, '2025-06-15 10:00:00', 'good', 58.0234),
-('SENS-001-HUM', 58.6800, '2025-06-15 10:15:00', 'good', 58.6712),
-('SENS-001-HUM', 59.4400, '2025-06-15 10:30:00', 'good', 59.4518);
+('SENS-GH1-HUM', 58.20, '2025-06-20 08:00:00', 'good', 58.24),
+('SENS-GH1-HUM', 59.00, '2025-06-20 08:15:00', 'good', 59.02),
+('SENS-GH1-HUM', 60.10, '2025-06-20 08:30:00', 'good', 60.08),
+('SENS-GH1-HUM', 61.40, '2025-06-20 08:45:00', 'good', 61.36),
+('SENS-GH1-HUM', 62.00, '2025-06-20 09:00:00', 'good', 62.05),
+('SENS-GH1-HUM', 62.80, '2025-06-20 09:15:00', 'good', 62.77);
 
--- SENS-001-PRES: Pressure readings (11 readings, 1010-1018 hpa range)
+-- SENS-GH2-TEMP
 INSERT INTO dbo.readings (sensor_id, value, timestamp, quality, raw_value) VALUES
-('SENS-001-PRES', 1013.2500, '2025-06-15 08:00:00', 'good', 1013.2610),
-('SENS-001-PRES', 1013.1800, '2025-06-15 08:15:00', 'good', 1013.1912),
-('SENS-001-PRES', 1013.0500, '2025-06-15 08:30:00', 'good', 1013.0623),
-('SENS-001-PRES', 1012.9200, '2025-06-15 08:45:00', 'good', 1012.9315),
-('SENS-001-PRES', 1012.8100, '2025-06-15 09:00:00', 'good', 1012.8234),
-('SENS-001-PRES', 1012.6500, '2025-06-15 09:15:00', 'good', 1012.6612),
-('SENS-001-PRES', 1012.5200, '2025-06-15 09:30:00', 'good', 1012.5310),
-('SENS-001-PRES', 1012.3800, '2025-06-15 09:45:00', 'good', 1012.3921),
-('SENS-001-PRES', 1012.2100, '2025-06-15 10:00:00', 'good', 1012.2244),
-('SENS-001-PRES', 1012.0500, '2025-06-15 10:15:00', 'good', 1012.0618),
-('SENS-001-PRES', 1011.9200, '2025-06-15 10:30:00', 'good', 1011.9312);
+('SENS-GH2-TEMP', 19.40, '2025-06-20 08:00:00', 'good', 19.42),
+('SENS-GH2-TEMP', 20.00, '2025-06-20 08:15:00', 'good', 19.98),
+('SENS-GH2-TEMP', 20.50, '2025-06-20 08:30:00', 'good', 20.51),
+('SENS-GH2-TEMP', 21.00, '2025-06-20 08:45:00', 'good', 21.03),
+('SENS-GH2-TEMP', 21.60, '2025-06-20 09:00:00', 'good', 21.58),
+('SENS-GH2-TEMP', 22.10, '2025-06-20 09:15:00', 'good', 22.12);
 
--- SENS-002-TEMP: Temperature readings (11 readings, 24-33 celsius - greenhouse warmer)
+-- SENS-GH2-HUM
 INSERT INTO dbo.readings (sensor_id, value, timestamp, quality, raw_value) VALUES
-('SENS-002-TEMP', 25.6100, '2025-06-15 08:00:00', 'good', 25.6215),
-('SENS-002-TEMP', 26.2400, '2025-06-15 08:15:00', 'good', 26.2512),
-('SENS-002-TEMP', 27.0800, '2025-06-15 08:30:00', 'good', 27.0923),
-('SENS-002-TEMP', 27.9500, '2025-06-15 08:45:00', 'good', 27.9410),
-('SENS-002-TEMP', 28.7300, '2025-06-15 09:00:00', 'good', 28.7418),
-('SENS-002-TEMP', 29.4100, '2025-06-15 09:15:00', 'good', 29.4234),
-('SENS-002-TEMP', 30.1600, '2025-06-15 09:30:00', 'good', 30.1712),
-('SENS-002-TEMP', 30.8900, '2025-06-15 09:45:00', 'good', 30.8821),
-('SENS-002-TEMP', 31.5400, '2025-06-15 10:00:00', 'good', 31.5510),
-('SENS-002-TEMP', 32.2100, '2025-06-15 10:15:00', 'uncertain', 32.2855),
-('SENS-002-TEMP', 32.8700, '2025-06-15 10:30:00', 'good', 32.8612);
+('SENS-GH2-HUM', 52.30, '2025-06-20 08:00:00', 'good', 52.31),
+('SENS-GH2-HUM', 53.10, '2025-06-20 08:15:00', 'good', 53.08),
+('SENS-GH2-HUM', 54.00, '2025-06-20 08:30:00', 'good', 54.03),
+('SENS-GH2-HUM', 55.20, '2025-06-20 08:45:00', 'good', 55.17),
+('SENS-GH2-HUM', 56.00, '2025-06-20 09:00:00', 'good', 56.04),
+('SENS-GH2-HUM', 56.70, '2025-06-20 09:15:00', 'good', 56.68);
 
--- SENS-002-HUM: Humidity readings (11 readings, 60-78% range - greenhouse humid)
+-- SENS-GH3-TEMP (SE-03 fan-out fixture)
 INSERT INTO dbo.readings (sensor_id, value, timestamp, quality, raw_value) VALUES
-('SENS-002-HUM', 68.2300, '2025-06-15 08:00:00', 'good', 68.2415),
-('SENS-002-HUM', 67.8100, '2025-06-15 08:15:00', 'good', 67.8234),
-('SENS-002-HUM', 67.3500, '2025-06-15 08:30:00', 'good', 67.3612),
-('SENS-002-HUM', 66.7200, '2025-06-15 08:45:00', 'good', 66.7310),
-('SENS-002-HUM', 66.1800, '2025-06-15 09:00:00', 'good', 66.1923),
-('SENS-002-HUM', 65.4500, '2025-06-15 09:15:00', 'good', 65.4618),
-('SENS-002-HUM', 64.8100, '2025-06-15 09:30:00', 'good', 64.8212),
-('SENS-002-HUM', 64.0300, '2025-06-15 09:45:00', 'good', 64.0410),
-('SENS-002-HUM', 63.4600, '2025-06-15 10:00:00', 'good', 63.4521),
-('SENS-002-HUM', 62.7800, '2025-06-15 10:15:00', 'good', 62.7912),
-('SENS-002-HUM', 62.1500, '2025-06-15 10:30:00', 'good', 62.1634);
+('SENS-GH3-TEMP', 21.50, '2025-06-20 08:00:00', 'good', 21.52),
+('SENS-GH3-TEMP', 22.10, '2025-06-20 08:15:00', 'good', 22.08),
+('SENS-GH3-TEMP', 22.70, '2025-06-20 08:30:00', 'good', 22.71),
+('SENS-GH3-TEMP', 23.30, '2025-06-20 08:45:00', 'good', 23.28),
+('SENS-GH3-TEMP', 23.90, '2025-06-20 09:00:00', 'good', 23.93),
+('SENS-GH3-TEMP', 24.50, '2025-06-20 09:15:00', 'good', 24.47);
 
--- SENS-002-PRES: Pressure readings (11 readings, 1008-1015 hpa range)
+-- SENS-GH3-HUM (SE-03 fan-out fixture)
 INSERT INTO dbo.readings (sensor_id, value, timestamp, quality, raw_value) VALUES
-('SENS-002-PRES', 1011.4200, '2025-06-15 08:00:00', 'good', 1011.4312),
-('SENS-002-PRES', 1011.3500, '2025-06-15 08:15:00', 'good', 1011.3621),
-('SENS-002-PRES', 1011.2800, '2025-06-15 08:30:00', 'good', 1011.2912),
-('SENS-002-PRES', 1011.1500, '2025-06-15 08:45:00', 'good', 1011.1618),
-('SENS-002-PRES', 1011.0200, '2025-06-15 09:00:00', 'good', 1011.0310),
-('SENS-002-PRES', 1010.8800, '2025-06-15 09:15:00', 'good', 1010.8921),
-('SENS-002-PRES', 1010.7100, '2025-06-15 09:30:00', 'good', 1010.7234),
-('SENS-002-PRES', 1010.5500, '2025-06-15 09:45:00', 'good', 1010.5612),
-('SENS-002-PRES', 1010.3800, '2025-06-15 10:00:00', 'good', 1010.3923),
-('SENS-002-PRES', 1010.2100, '2025-06-15 10:15:00', 'good', 1010.2218),
-('SENS-002-PRES', 1010.0500, '2025-06-15 10:30:00', 'good', 1010.0612);
+('SENS-GH3-HUM', 60.10, '2025-06-20 08:00:00', 'good', 60.14),
+('SENS-GH3-HUM', 61.00, '2025-06-20 08:15:00', 'good', 60.98),
+('SENS-GH3-HUM', 62.20, '2025-06-20 08:30:00', 'good', 62.24),
+('SENS-GH3-HUM', 63.40, '2025-06-20 08:45:00', 'good', 63.36),
+('SENS-GH3-HUM', 64.10, '2025-06-20 09:00:00', 'good', 64.15),
+('SENS-GH3-HUM', 65.00, '2025-06-20 09:15:00', 'good', 64.96);
 
--- SENS-003-TEMP: Temperature readings (11 readings, 15-30 celsius - outdoor wider range)
+-- SENS-GH3-SOIL (SE-03 fan-out fixture — 3rd sensor makes the fan-out wider)
 INSERT INTO dbo.readings (sensor_id, value, timestamp, quality, raw_value) VALUES
-('SENS-003-TEMP', 16.4200, '2025-06-15 08:00:00', 'good', 16.4310),
-('SENS-003-TEMP', 17.8500, '2025-06-15 08:15:00', 'good', 17.8612),
-('SENS-003-TEMP', 19.2100, '2025-06-15 08:30:00', 'good', 19.2234),
-('SENS-003-TEMP', 20.6700, '2025-06-15 08:45:00', 'good', 20.6818),
-('SENS-003-TEMP', 22.1300, '2025-06-15 09:00:00', 'good', 22.1421),
-('SENS-003-TEMP', 23.5800, '2025-06-15 09:15:00', 'good', 23.5912),
-('SENS-003-TEMP', 24.9400, '2025-06-15 09:30:00', 'good', 24.9510),
-('SENS-003-TEMP', 26.3100, '2025-06-15 09:45:00', 'bad', NULL),
-('SENS-003-TEMP', 27.6800, '2025-06-15 10:00:00', 'good', 27.6912),
-('SENS-003-TEMP', 28.9500, '2025-06-15 10:15:00', 'good', 28.9621),
-('SENS-003-TEMP', 30.1200, '2025-06-15 10:30:00', 'good', 30.1310);
+('SENS-GH3-SOIL', 42.00, '2025-06-20 08:00:00', 'good', 42.05),
+('SENS-GH3-SOIL', 43.20, '2025-06-20 08:15:00', 'good', 43.18),
+('SENS-GH3-SOIL', 44.10, '2025-06-20 08:30:00', 'good', 44.12),
+('SENS-GH3-SOIL', 45.00, '2025-06-20 08:45:00', 'good', 44.97),
+('SENS-GH3-SOIL', 45.80, '2025-06-20 09:00:00', 'good', 45.83),
+('SENS-GH3-SOIL', 46.50, '2025-06-20 09:15:00', 'good', 46.52);
 
--- SENS-003-HUM: Humidity readings (11 readings, 35-55% range - outdoor drier)
+-- SENS-GH4-TEMP (SE-04 feature-flag-disable-alerts — the alert-worthy spike)
 INSERT INTO dbo.readings (sensor_id, value, timestamp, quality, raw_value) VALUES
-('SENS-003-HUM', 48.7200, '2025-06-15 08:00:00', 'good', 48.7310),
-('SENS-003-HUM', 47.3500, '2025-06-15 08:15:00', 'good', 47.3612),
-('SENS-003-HUM', 46.1800, '2025-06-15 08:30:00', 'good', 46.1921),
-('SENS-003-HUM', 44.9100, '2025-06-15 08:45:00', 'good', 44.9234),
-('SENS-003-HUM', 43.6400, '2025-06-15 09:00:00', 'good', 43.6510),
-('SENS-003-HUM', 42.2800, '2025-06-15 09:15:00', 'good', 42.2912),
-('SENS-003-HUM', 41.0500, '2025-06-15 09:30:00', 'good', 41.0618),
-('SENS-003-HUM', 39.7200, '2025-06-15 09:45:00', 'bad', NULL),
-('SENS-003-HUM', 38.4100, '2025-06-15 10:00:00', 'good', 38.4212),
-('SENS-003-HUM', 37.1500, '2025-06-15 10:15:00', 'good', 37.1623),
-('SENS-003-HUM', 35.8200, '2025-06-15 10:30:00', 'good', 35.8310);
+('SENS-GH4-TEMP', 24.00, '2025-06-20 08:00:00', 'good', 24.02),
+('SENS-GH4-TEMP', 27.50, '2025-06-20 08:15:00', 'good', 27.48),
+('SENS-GH4-TEMP', 31.20, '2025-06-20 08:30:00', 'good', 31.24),
+('SENS-GH4-TEMP', 35.90, '2025-06-20 08:45:00', 'good', 35.87),
+('SENS-GH4-TEMP', 39.60, '2025-06-20 09:00:00', 'good', 39.63),
+('SENS-GH4-TEMP', 41.80, '2025-06-20 09:15:00', 'good', 41.77);
 
--- SENS-003-PRES: Pressure readings (11 readings, 1005-1012 hpa range - outdoor)
+-- SENS-GH4-HUM
 INSERT INTO dbo.readings (sensor_id, value, timestamp, quality, raw_value) VALUES
-('SENS-003-PRES', 1008.5200, '2025-06-15 08:00:00', 'good', 1008.5310),
-('SENS-003-PRES', 1008.3800, '2025-06-15 08:15:00', 'good', 1008.3921),
-('SENS-003-PRES', 1008.1500, '2025-06-15 08:30:00', 'good', 1008.1618),
-('SENS-003-PRES', 1007.9200, '2025-06-15 08:45:00', 'good', 1007.9310),
-('SENS-003-PRES', 1007.6800, '2025-06-15 09:00:00', 'good', 1007.6912),
-('SENS-003-PRES', 1007.4100, '2025-06-15 09:15:00', 'good', 1007.4234),
-('SENS-003-PRES', 1007.1500, '2025-06-15 09:30:00', 'good', 1007.1610),
-('SENS-003-PRES', 1006.8800, '2025-06-15 09:45:00', 'good', 1006.8921),
-('SENS-003-PRES', 1006.6200, '2025-06-15 10:00:00', 'good', 1006.6310),
-('SENS-003-PRES', 1006.3500, '2025-06-15 10:15:00', 'good', 1006.3618),
-('SENS-003-PRES', 1006.0800, '2025-06-15 10:30:00', 'good', 1006.0912);
+('SENS-GH4-HUM', 56.00, '2025-06-20 08:00:00', 'good', 56.03),
+('SENS-GH4-HUM', 56.80, '2025-06-20 08:15:00', 'good', 56.77),
+('SENS-GH4-HUM', 57.50, '2025-06-20 08:30:00', 'good', 57.52),
+('SENS-GH4-HUM', 58.10, '2025-06-20 08:45:00', 'good', 58.08),
+('SENS-GH4-HUM', 58.90, '2025-06-20 09:00:00', 'good', 58.93),
+('SENS-GH4-HUM', 59.60, '2025-06-20 09:15:00', 'good', 59.58);
 
 -- ============================================================
--- Seed Data: Alerts (5 threshold violations)
+-- Seed Data: Alerts (1 record — the greenhouse-4 heat spike)
+-- EvaluateAlert queries by device_id, so this is the ONLY device with any
+-- alert; greenhouse-1/2/3 legitimately have zero (valid empty result).
 -- ============================================================
 INSERT INTO dbo.alerts (device_id, sensor_id, severity, message, triggered_at, acknowledged_at, resolved_at) VALUES
-('DEV-001', 'SENS-001-TEMP', 'warning',  'Temperature approaching upper threshold: 28.03°C (max: 35.00°C)', '2025-06-15 10:45:00', '2025-06-15 10:50:00', '2025-06-15 11:15:00'),
-('DEV-002', 'SENS-002-TEMP', 'critical', 'Temperature exceeded upper threshold: 32.87°C (max: 32.00°C)',     '2025-06-15 10:30:00', '2025-06-15 10:35:00', NULL),
-('DEV-003', 'SENS-003-TEMP', 'warning',  'Bad quality reading detected on temperature sensor',               '2025-06-15 09:45:00', NULL, NULL),
-('DEV-003', 'SENS-003-HUM',  'critical', 'Bad quality reading detected on humidity sensor - possible sensor failure', '2025-06-15 09:45:00', '2025-06-15 10:00:00', NULL),
-('DEV-003', NULL,             'info',     'Device DEV-003 entered maintenance mode - firmware update pending', '2025-06-14 09:15:00', '2025-06-14 09:20:00', '2025-06-14 10:00:00');
+('greenhouse-4', 'SENS-GH4-TEMP', 'critical', 'Temperature spike: 41.80°C exceeds max threshold 35.00°C — orchids at risk', '2025-06-20 09:15:00', NULL, NULL);
 
 -- ============================================================
--- Seed Data: Aggregates (18 hourly aggregations - 2 hours x 9 sensors)
+-- Seed Data: Aggregates (9 records — 1 hourly rollup per sensor)
 -- ============================================================
 INSERT INTO dbo.aggregates (sensor_id, period_start, period_end, min_value, max_value, avg_value, sample_count, aggregation_type) VALUES
--- Hour 1: 08:00 - 09:00 (4 readings per sensor in this window)
-('SENS-001-TEMP', '2025-06-15 08:00:00', '2025-06-15 09:00:00', 22.3400, 23.7200, 23.0250, 4, 'hourly'),
-('SENS-001-HUM',  '2025-06-15 08:00:00', '2025-06-15 09:00:00', 52.4500, 54.2100, 53.4150, 4, 'hourly'),
-('SENS-001-PRES', '2025-06-15 08:00:00', '2025-06-15 09:00:00', 1012.9200, 1013.2500, 1013.1000, 4, 'hourly'),
-('SENS-002-TEMP', '2025-06-15 08:00:00', '2025-06-15 09:00:00', 25.6100, 27.9500, 26.7200, 4, 'hourly'),
-('SENS-002-HUM',  '2025-06-15 08:00:00', '2025-06-15 09:00:00', 66.7200, 68.2300, 67.5275, 4, 'hourly'),
-('SENS-002-PRES', '2025-06-15 08:00:00', '2025-06-15 09:00:00', 1011.1500, 1011.4200, 1011.3000, 4, 'hourly'),
-('SENS-003-TEMP', '2025-06-15 08:00:00', '2025-06-15 09:00:00', 16.4200, 20.6700, 18.5375, 4, 'hourly'),
-('SENS-003-HUM',  '2025-06-15 08:00:00', '2025-06-15 09:00:00', 44.9100, 48.7200, 46.7900, 4, 'hourly'),
-('SENS-003-PRES', '2025-06-15 08:00:00', '2025-06-15 09:00:00', 1007.9200, 1008.5200, 1008.2425, 4, 'hourly'),
--- Hour 2: 09:00 - 10:00 (4 readings per sensor in this window)
-('SENS-001-TEMP', '2025-06-15 09:00:00', '2025-06-15 10:00:00', 24.0800, 25.8900, 24.9150, 4, 'hourly'),
-('SENS-001-HUM',  '2025-06-15 09:00:00', '2025-06-15 10:00:00', 55.0600, 57.1500, 56.0675, 4, 'hourly'),
-('SENS-001-PRES', '2025-06-15 09:00:00', '2025-06-15 10:00:00', 1012.3800, 1012.8100, 1012.5900, 4, 'hourly'),
-('SENS-002-TEMP', '2025-06-15 09:00:00', '2025-06-15 10:00:00', 28.7300, 30.8900, 29.7975, 4, 'hourly'),
-('SENS-002-HUM',  '2025-06-15 09:00:00', '2025-06-15 10:00:00', 64.0300, 66.1800, 65.1150, 4, 'hourly'),
-('SENS-002-PRES', '2025-06-15 09:00:00', '2025-06-15 10:00:00', 1010.5500, 1011.0200, 1010.7900, 4, 'hourly'),
-('SENS-003-TEMP', '2025-06-15 09:00:00', '2025-06-15 10:00:00', 22.1300, 26.3100, 24.2400, 4, 'hourly'),
-('SENS-003-HUM',  '2025-06-15 09:00:00', '2025-06-15 10:00:00', 39.7200, 43.6400, 41.6725, 4, 'hourly'),
-('SENS-003-PRES', '2025-06-15 09:00:00', '2025-06-15 10:00:00', 1006.8800, 1007.6800, 1007.2800, 4, 'hourly');
+('SENS-GH1-TEMP', '2025-06-20 08:00:00', '2025-06-20 09:15:00', 20.10, 22.90, 21.48, 6, 'hourly'),
+('SENS-GH1-HUM',  '2025-06-20 08:00:00', '2025-06-20 09:15:00', 58.20, 62.80, 60.58, 6, 'hourly'),
+('SENS-GH2-TEMP', '2025-06-20 08:00:00', '2025-06-20 09:15:00', 19.40, 22.10, 20.77, 6, 'hourly'),
+('SENS-GH2-HUM',  '2025-06-20 08:00:00', '2025-06-20 09:15:00', 52.30, 56.70, 54.55, 6, 'hourly'),
+('SENS-GH3-TEMP', '2025-06-20 08:00:00', '2025-06-20 09:15:00', 21.50, 24.50, 23.00, 6, 'hourly'),
+('SENS-GH3-HUM',  '2025-06-20 08:00:00', '2025-06-20 09:15:00', 60.10, 65.00, 62.64, 6, 'hourly'),
+('SENS-GH3-SOIL', '2025-06-20 08:00:00', '2025-06-20 09:15:00', 42.00, 46.50, 44.43, 6, 'hourly'),
+('SENS-GH4-TEMP', '2025-06-20 08:00:00', '2025-06-20 09:15:00', 24.00, 41.80, 33.33, 6, 'hourly'),
+('SENS-GH4-HUM',  '2025-06-20 08:00:00', '2025-06-20 09:15:00', 56.00, 59.60, 57.83, 6, 'hourly');
 
 -- ============================================================
 -- Verify seed data counts

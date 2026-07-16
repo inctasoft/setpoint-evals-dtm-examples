@@ -3,8 +3,9 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # SE 01: Happy Path
 # ═══════════════════════════════════════════════════════════════════════════
-# Verifies the standard end-to-end iot-sensor-pipeline flow:
-#   1. Initiate a job with payload.entityId="DEV-001"
+# Verifies the standard end-to-end iot-sensor-pipeline flow using the
+# greenhouse-1 device (dedicated to this SE, see ../../source-db/SEED-REGISTRY.md):
+#   1. Initiate a job with payload.entityId="greenhouse-1"
 #   2. All pipeline steps complete successfully
 #   3. Fan-out: Device -> Sensors -> Readings (double fan-out)
 #   4. Alert and Aggregate steps complete
@@ -32,7 +33,7 @@ EVAL_PURPOSE="Test standard successful iot-sensor-pipeline with default variant"
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: DEV-001"
+log_info "Entity ID: greenhouse-1"
 log_info "Variant: default"
 log_info "Expected Outcome: Job COMPLETES successfully (all steps pass)"
 echo ""
@@ -46,8 +47,8 @@ log_section "STEP 1: INITIATE JOB"
 PAYLOAD='{
   "variant": "default",
   "payload": {
-    "deviceId": "DEV-001",
-    "entityId": "DEV-001"
+    "deviceId": "greenhouse-1",
+    "entityId": "greenhouse-1"
   },
   "testOptions": {
     "RegisterDevice":       { "simDelay": 300 },

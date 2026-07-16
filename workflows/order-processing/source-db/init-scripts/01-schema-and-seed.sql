@@ -83,103 +83,117 @@ CREATE TABLE ecommerce.shipments (
 );
 
 -- ============================================================
--- Seed Data: Customers (5 records)
+-- Story: "Ada's Beans Cafe" — a specialty coffee roaster shop.
+-- Every customer below is a (deceased or fictionalized) computing pioneer
+-- who is obviously NOT a real customer of a real coffee company — this is
+-- demo/fixture data only. See ../SEED-REGISTRY.md for the full row->SE map.
+-- ============================================================
+
+-- ============================================================
+-- Seed Data: Customers (9 records)
+-- IDs 1-9 assigned; 10-19 RESERVED for future SEs; 99999 = not-found sentinel
 -- ============================================================
 INSERT INTO ecommerce.customers (customer_id, first_name, last_name, email, phone, address, created_at) VALUES
-(1, 'Sarah',   'Mitchell',  'sarah.mitchell@email.com',   '(415) 555-0142', '742 Evergreen Terrace, San Francisco, CA 94102',  '2025-01-15 09:30:00'),
-(2, 'James',   'Rodriguez', 'james.rodriguez@email.com',  '(312) 555-0198', '1200 Lake Shore Dr, Apt 4B, Chicago, IL 60610',   '2025-02-20 14:15:00'),
-(3, 'Emily',   'Chen',      'emily.chen@email.com',       '(206) 555-0173', '889 Pine Street, Suite 12, Seattle, WA 98101',    '2025-03-08 11:45:00'),
-(4, 'Michael', 'Thompson',  'michael.thompson@email.com', NULL,             '2501 Peachtree Rd NE, Atlanta, GA 30305',         '2025-04-12 16:20:00'),
-(5, 'Olivia',  'Patel',     'olivia.patel@email.com',     '(512) 555-0156', NULL,                                              '2025-05-01 10:00:00');
+(1, 'Ada',      'Lovelace',   'ada@adasbeanscafe.example',      '(415) 555-0101', '1 Analytical Engine Way, San Francisco, CA 94102', '2025-01-15 09:30:00'),
+(2, 'Grace',    'Hopper',     'grace.hopper@example.com',       '(312) 555-0102', '1 Compiler Court, Chicago, IL 60610',               '2025-02-20 14:15:00'),
+(3, 'Alan',     'Turing',     'alan.turing@example.com',        '(206) 555-0103', '1 Bletchley Row, Seattle, WA 98101',                '2025-03-08 11:45:00'),
+(4, 'Margaret', 'Hamilton',   'margaret.hamilton@example.com',  NULL,             '1 Apollo Guidance Ave, Atlanta, GA 30305',          '2025-04-12 16:20:00'),
+(5, 'Edsger',   'Dijkstra',   'edsger.dijkstra@example.com',    '(512) 555-0105', NULL,                                                '2025-05-01 10:00:00'),
+(6, 'Donald',   'Knuth',      'donald.knuth@example.com',       '(650) 555-0106', '1 TeX Terrace, Palo Alto, CA 94301',                '2025-05-10 08:15:00'),
+(7, 'Barbara',  'Liskov',     'barbara.liskov@example.com',     '(617) 555-0107', '1 Substitution Street, Cambridge, MA 02139',        '2025-05-18 13:40:00'),
+(8, 'Radia',    'Perlman',    'radia.perlman@example.com',      '(781) 555-0108', '1 Spanning Tree Blvd, Burlington, MA 01803',        '2025-05-22 09:05:00'),
+(9, 'Linus',    'Torvalds',   'linus.torvalds@example.com',     NULL,             '1 Kernel Circle, Portland, OR 97201',                '2025-05-30 17:50:00');
 
 -- ============================================================
--- Seed Data: Products (10 records)
+-- Seed Data: Products (10 records) — the Ada's Beans Cafe menu
+-- IDs 1-10 assigned; 11-19 RESERVED for future SEs; 99999 = not-found sentinel
 -- ============================================================
 INSERT INTO ecommerce.products (product_id, name, sku, price, category, description, in_stock) VALUES
-(1,  'Sony WH-1000XM5 Wireless Headphones',    'SONY-WH1000XM5',   349.99, 'Electronics',     'Industry-leading noise canceling overhead headphones with Auto NC Optimizer',   TRUE),
-(2,  'Apple iPad Air 11-inch (M2)',             'APPLE-IPADAIR-M2',  599.00, 'Electronics',     '11-inch Liquid Retina display, M2 chip, 128GB storage',                         TRUE),
-(3,  'Patagonia Better Sweater Fleece Jacket',  'PAT-BTSW-FLC-M',   139.00, 'Clothing',        'Fair Trade Certified sewn, 100% recycled polyester fleece',                      TRUE),
-(4,  'Yeti Rambler 20 oz Tumbler',              'YETI-RAM-20OZ',      35.00, 'Kitchen',         'Double-wall vacuum insulated, 18/8 stainless steel tumbler with MagSlider Lid', TRUE),
-(5,  'Moleskine Classic Notebook Large',         'MLSK-CLSC-LG',      19.95, 'Office Supplies', 'Large ruled notebook, hard cover, 240 pages, 5 x 8.25 inches',                 TRUE),
-(6,  'Nike Air Max 270 Running Shoes',           'NIKE-AM270-BLK',   159.99, 'Footwear',        'Max Air unit delivers unrivaled all-day comfort, black colorway',               TRUE),
-(7,  'Bose SoundLink Flex Bluetooth Speaker',   'BOSE-SLKFLEX',     149.00, 'Electronics',     'Portable waterproof Bluetooth speaker with deep, clear sound',                  TRUE),
-(8,  'Le Creuset Enameled Cast Iron Dutch Oven', 'LECR-DO-5QT',     379.95, 'Kitchen',         '5.5 qt round Dutch oven in Flame, superior heat distribution',                  FALSE),
-(9,  'Osprey Daylite Plus Backpack',             'OSP-DAYLTP-BLU',    74.95, 'Outdoor',         '20L daypack with laptop sleeve, panel-loading design, blue colorway',           TRUE),
-(10, 'Kindle Paperwhite Signature Edition',      'AMZN-KPW-SIG',    189.99, 'Electronics',     '6.8-inch display, wireless charging, auto-adjusting front light, 32GB',         TRUE);
+(1,  'Midnight Roast 1kg',                    'ABC-MIDNIGHT-1KG',  21.50, 'Coffee / Whole Bean',   'Our darkest roast — bold, smoky, and built for polar-vortex mornings',        TRUE),
+(2,  'Sunrise Blend 250g',                    'ABC-SUNRISE-250G',   9.50, 'Coffee / Whole Bean',   'A bright, easygoing breakfast blend of Central American beans',               TRUE),
+(3,  'Ada''s House Espresso 500g',            'ABC-HOUSE-ESP-500G',18.00, 'Coffee / Espresso',     'The house pull — balanced, syrupy, unmistakably Ada''s',                      TRUE),
+(4,  'Ethiopia Yirgacheffe Single-Origin 250g','ABC-YIRG-250G',     16.50, 'Coffee / Single-Origin','Floral and citrus-forward, washed process',                                    TRUE),
+(5,  'Cascade Cold Brew Concentrate 1L',      'ABC-COLDBREW-1L',   14.00, 'Coffee / Cold Brew',    'Steeped 18 hours, dilute 1:1 over ice',                                        TRUE),
+(6,  'Oat Milk Foamer Pitcher',               'ABC-FOAMER-OAT',    12.00, 'Merch / Brew Gear',     '600ml stainless pitcher, laser-etched with the Ada''s Beans logo',            TRUE),
+(7,  'Pour-Over Dripper Set',                 'ABC-POUROVER-SET',  29.00, 'Merch / Brew Gear',     'Ceramic dripper + 40 filters + a stubbornly optimistic recipe card',          TRUE),
+(8,  'Decaf Colombia Supremo 500g',           'ABC-DECAF-500G',    17.50, 'Coffee / Decaf',        'Swiss Water process, all the flavor, none of the 2am staring at the ceiling', FALSE),
+(9,  'Barista Steel Tamper 58mm',             'ABC-TAMPER-58MM',   24.00, 'Merch / Brew Gear',     'Stainless 58mm tamper, flat base, weighted handle',                           TRUE),
+(10, 'Ada''s Beans Subscription Box',         'ABC-SUBBOX-MO',     39.00, 'Bundle / Subscription', 'One bag a month, roaster''s choice, cancel anytime (you won''t)',             TRUE);
 
 -- ============================================================
--- Seed Data: Orders (8 records)
--- Order totals are calculated from order_items below
+-- Seed Data: Orders (9 records)
+-- IDs 1-9 assigned; 10-19 RESERVED for future SEs; 99999 = not-found sentinel
+--   1 = SE-01 happy-path (Ada)              6 = SE-03 fan-out (Donald Knuth, 6 items)
+--   2,3,4,5,9 = general story fill           7 = SE-04 partial-payment-failure (Barbara, no payment row)
+--                                             8 = SE-05 quick-order variant (Radia)
+-- Order totals equal the sum of their order_items below (order 8 is a
+-- quick-order — no order_items/payments/shipments rows, per the variant's DAG).
 -- ============================================================
 INSERT INTO ecommerce.orders (order_id, customer_id, order_date, status, total_amount, shipping_address) VALUES
-(1, 1, '2025-06-01 10:23:00', 'delivered',  404.94, '742 Evergreen Terrace, San Francisco, CA 94102'),
-(2, 2, '2025-06-05 14:45:00', 'delivered',  827.95, '1200 Lake Shore Dr, Apt 4B, Chicago, IL 60610'),
-(3, 1, '2025-06-12 09:10:00', 'shipped',    149.85, '742 Evergreen Terrace, San Francisco, CA 94102'),
-(4, 3, '2025-06-18 16:30:00', 'shipped',    453.79, '889 Pine Street, Suite 12, Seattle, WA 98101'),
-(5, 4, '2025-06-25 11:55:00', 'confirmed',  569.84, '2501 Peachtree Rd NE, Atlanta, GA 30305'),
-(6, 5, '2025-07-02 08:40:00', 'confirmed',  837.95, '318 Congress Ave, Austin, TX 78701'),
-(7, 2, '2025-07-08 13:20:00', 'pending',    159.99, '1200 Lake Shore Dr, Apt 4B, Chicago, IL 60610'),
-(8, 3, '2025-07-10 17:05:00', 'pending',    569.94, '889 Pine Street, Suite 12, Seattle, WA 98101');
+(1, 1, '2025-06-01 10:23:00', 'delivered', 39.50,  '1 Analytical Engine Way, San Francisco, CA 94102'),
+(2, 2, '2025-06-05 14:45:00', 'delivered', 33.00,  '1 Compiler Court, Chicago, IL 60610'),
+(3, 3, '2025-06-12 09:10:00', 'shipped',   40.50,  '1 Bletchley Row, Seattle, WA 98101'),
+(4, 4, '2025-06-18 16:30:00', 'confirmed', 39.00,  '1 Apollo Guidance Ave, Atlanta, GA 30305'),
+(5, 5, '2025-06-25 11:55:00', 'pending',   17.50,  '1 TeX Terrace, Palo Alto, CA 94301'),
+(6, 6, '2025-07-02 08:40:00', 'shipped',   163.50, '1 TeX Terrace, Palo Alto, CA 94301'),
+(7, 7, '2025-07-08 13:20:00', 'shipped',   35.50,  '1 Substitution Street, Cambridge, MA 02139'),
+(8, 8, '2025-07-10 17:05:00', 'confirmed', 45.00,  '1 Spanning Tree Blvd, Burlington, MA 01803'),
+(9, 9, '2025-07-12 12:00:00', 'pending',   24.00,  '1 Kernel Circle, Portland, OR 97201');
 
 -- ============================================================
--- Seed Data: Order Items (25 records)
+-- Seed Data: Order Items (17 records)
+-- Order 8 (quick-order variant) intentionally has NO line items.
 -- ============================================================
 INSERT INTO ecommerce.order_items (order_item_id, order_id, product_id, quantity, unit_price, subtotal) VALUES
--- Order 1 (customer 1, delivered): 349.99 + 35.00 + 19.95 = 404.94
-(1,  1, 1,  1, 349.99, 349.99),
-(2,  1, 4,  1,  35.00,  35.00),
-(3,  1, 5,  1,  19.95,  19.95),
--- Order 2 (customer 2, delivered): 599.00 + 139.00 + 70.00 + 19.95 = 827.95
-(4,  2, 2,  1, 599.00, 599.00),
-(5,  2, 3,  1, 139.00, 139.00),
-(6,  2, 4,  2,  35.00,  70.00),
-(7,  2, 5,  1,  19.95,  19.95),
--- Order 3 (customer 1, shipped): 39.90 + 74.95 + 35.00 = 149.85
-(8,  3, 5,  2,  19.95,  39.90),
-(9,  3, 9,  1,  74.95,  74.95),
-(10, 3, 4,  1,  35.00,  35.00),
--- Order 4 (customer 3, shipped): 149.00 + 79.80 + 35.00 + 189.99 = 453.79
-(11, 4, 7,  1, 149.00, 149.00),
-(12, 4, 5,  4,  19.95,  79.80),
-(13, 4, 4,  1,  35.00,  35.00),
-(14, 4, 10, 1, 189.99, 189.99),
--- Order 5 (customer 4, confirmed): 349.99 + 105.00 + 74.95 + 39.90 = 569.84
-(15, 5, 1,  1, 349.99, 349.99),
-(16, 5, 4,  3,  35.00, 105.00),
-(17, 5, 9,  1,  74.95,  74.95),
-(18, 5, 5,  2,  19.95,  39.90),
--- Order 6 (customer 5, confirmed): 599.00 + 19.95 + 70.00 + 149.00 = 837.95
-(19, 6, 2,  1, 599.00, 599.00),
-(20, 6, 5,  1,  19.95,  19.95),
-(21, 6, 4,  2,  35.00,  70.00),
-(22, 6, 7,  1, 149.00, 149.00),
--- Order 7 (customer 2, pending): 159.99 = 159.99
-(23, 7, 6,  1, 159.99, 159.99),
--- Order 8 (customer 3, pending): 379.95 + 189.99 = 569.94
-(24, 8, 8,  1, 379.95, 379.95),
-(25, 8, 10, 1, 189.99, 189.99);
+-- Order 1 (Ada, SE-01 happy-path): 21.50 + 18.00 = 39.50
+(1,  1, 1, 1, 21.50, 21.50),
+(2,  1, 3, 1, 18.00, 18.00),
+-- Order 2 (Grace, general): 19.00 + 14.00 = 33.00
+(3,  2, 2, 2,  9.50, 19.00),
+(4,  2, 5, 1, 14.00, 14.00),
+-- Order 3 (Alan, general): 16.50 + 24.00 = 40.50
+(5,  3, 4, 1, 16.50, 16.50),
+(6,  3, 9, 1, 24.00, 24.00),
+-- Order 4 (Margaret, general): 39.00
+(7,  4, 10, 1, 39.00, 39.00),
+-- Order 5 (Edsger, general, pending): 17.50
+(8,  5, 8, 1, 17.50, 17.50),
+-- Order 6 (Donald Knuth, SE-03 fan-out — 6 items): 43.00+28.50+18.00+33.00+12.00+29.00 = 163.50
+(9,  6, 1, 2, 21.50, 43.00),
+(10, 6, 2, 3,  9.50, 28.50),
+(11, 6, 3, 1, 18.00, 18.00),
+(12, 6, 4, 2, 16.50, 33.00),
+(13, 6, 6, 1, 12.00, 12.00),
+(14, 6, 7, 1, 29.00, 29.00),
+-- Order 7 (Barbara Liskov, SE-04 partial-payment-failure): 21.50 + 14.00 = 35.50
+(15, 7, 1, 1, 21.50, 21.50),
+(16, 7, 5, 1, 14.00, 14.00),
+-- Order 9 (Linus, general filler, pending): 24.00
+(17, 9, 9, 1, 24.00, 24.00);
 
 -- ============================================================
--- Seed Data: Payments (8 records, one per order)
+-- Seed Data: Payments (5 records)
+-- Order 7 (Barbara Liskov / SE-04) has NO payment row on purpose — the
+-- beans left the roastery before the card finished processing. ValidatePayment
+-- filters payments by order_id, so payload.paymentId=7 legitimately finds zero
+-- rows, driving the PARTIAL_SUCCESS outcome.
+-- Orders 5, 8, 9 have no payment yet either (pending / quick-order variant).
 -- ============================================================
 INSERT INTO ecommerce.payments (payment_id, order_id, payment_method, amount, payment_date, status, transaction_ref) VALUES
-(1, 1, 'credit_card',   404.94, '2025-06-01 10:25:00', 'completed', 'TXN-CC-20250601-0001'),
-(2, 2, 'paypal',        827.95, '2025-06-05 14:48:00', 'completed', 'TXN-PP-20250605-0002'),
-(3, 3, 'credit_card',   149.85, '2025-06-12 09:12:00', 'completed', 'TXN-CC-20250612-0003'),
-(4, 4, 'bank_transfer', 453.79, '2025-06-18 16:35:00', 'completed', 'TXN-BT-20250618-0004'),
-(5, 5, 'credit_card',   569.84, '2025-06-25 11:58:00', 'completed', 'TXN-CC-20250625-0005'),
-(6, 6, 'paypal',        837.95, '2025-07-02 08:42:00', 'completed', 'TXN-PP-20250702-0006'),
-(7, 7, 'credit_card',   159.99, '2025-07-08 13:22:00', 'pending',   NULL),
-(8, 8, 'bank_transfer', 569.94, '2025-07-10 17:08:00', 'pending',   NULL);
+(1, 1, 'credit_card',   39.50,  '2025-06-01 10:25:00', 'completed', 'TXN-CC-20250601-0001'),
+(2, 2, 'paypal',        33.00,  '2025-06-05 14:48:00', 'completed', 'TXN-PP-20250605-0002'),
+(3, 3, 'credit_card',   40.50,  '2025-06-12 09:12:00', 'completed', 'TXN-CC-20250612-0003'),
+(4, 4, 'bank_transfer', 39.00,  '2025-06-18 16:35:00', 'completed', 'TXN-BT-20250618-0004'),
+(5, 6, 'credit_card',   163.50, '2025-07-02 08:42:00', 'completed', 'TXN-CC-20250702-0005');
 
 -- ============================================================
--- Seed Data: Shipments (6 records, not all orders shipped)
--- Orders 7 and 8 (pending) have no shipments yet
+-- Seed Data: Shipments (5 records)
+-- Order 7's shipment exists even though its payment doesn't — the roastery
+-- shipped anyway (this is exactly the story PARTIAL_SUCCESS is telling).
 -- ============================================================
 INSERT INTO ecommerce.shipments (shipment_id, order_id, carrier, tracking_number, shipped_date, estimated_delivery, status) VALUES
 (1, 1, 'ups',   '1Z999AA10123456784',  '2025-06-02 08:00:00', '2025-06-05 18:00:00', 'delivered'),
 (2, 2, 'fedex', '794644790301',        '2025-06-06 10:30:00', '2025-06-09 18:00:00', 'delivered'),
 (3, 3, 'usps',  '9400111899223100001', '2025-06-13 07:45:00', '2025-06-17 18:00:00', 'shipped'),
-(4, 4, 'ups',   '1Z999AA10123456785',  '2025-06-19 09:15:00', '2025-06-23 18:00:00', 'in_transit'),
-(5, 5, 'dhl',   NULL,                   NULL,                   NULL,                   'preparing'),
-(6, 6, 'fedex', NULL,                   NULL,                   NULL,                   'preparing');
+(4, 6, 'fedex', '794644790302',        '2025-07-03 09:15:00', '2025-07-06 18:00:00', 'shipped'),
+(5, 7, 'dhl',   '3S9999999999',        '2025-07-09 07:30:00', '2025-07-12 18:00:00', 'shipped');

@@ -4,7 +4,8 @@
 # SE 01: Happy Path
 # ═══════════════════════════════════════════════════════════════════════════
 # Verifies the standard end-to-end infra-provisioning flow:
-#   1. Initiate a job with payload.entityId="ENV-DEV" (Development environment)
+#   1. Initiate a job with payload.entityId="staging-eu" — dedicated to this SE
+#      (staging-eu's instance 1 chain — see ../../source-db/SEED-REGISTRY.md)
 #   2. All plan/apply steps complete successfully through the full
 #      cascade: Environment -> Network -> Compute (fan-out) -> Storage,
 #      DNS -> Certificate, LoadBalancer
@@ -32,7 +33,7 @@ EVAL_PURPOSE="Test standard successful infra-provisioning with default variant"
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: ENV-DEV"
+log_info "Entity ID: staging-eu (INST-STAGING-EU-1 chain)"
 log_info "Variant: default"
 log_info "Expected Outcome: Job COMPLETES successfully (all steps pass)"
 echo ""
@@ -46,13 +47,13 @@ log_section "STEP 1: INITIATE JOB"
 PAYLOAD='{
   "variant": "default",
   "payload": {
-    "environmentId": "ENV-DEV",
-    "networkId": "NET-DEV-1",
-    "instanceId": "INST-DEV-1",
-    "dnsRecordId": "DNS-DEV-1",
-    "certificateId": "CERT-DEV-1",
-    "loadBalancerId": "LB-DEV-1",
-    "entityId": "ENV-DEV"
+    "environmentId": "staging-eu",
+    "networkId": "NET-STAGING-EU-1",
+    "instanceId": "INST-STAGING-EU-1",
+    "dnsRecordId": "DNS-STAGING-EU-1",
+    "certificateId": "CERT-STAGING-EU-1",
+    "loadBalancerId": "LB-STAGING-EU-1",
+    "entityId": "staging-eu"
   },
   "testOptions": {
     "PlanEnvironment":    { "simDelay": 300 },

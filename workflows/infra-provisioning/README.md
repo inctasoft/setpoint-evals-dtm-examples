@@ -51,9 +51,9 @@ The `DiscoverCompute` step queries for all compute instance IDs in a network, an
 ```
 DiscoverCompute
     |
-    +-- PlanCompute (INST-DEV-1) -> ApplyCompute (INST-DEV-1)
-    +-- PlanCompute (INST-DEV-2) -> ApplyCompute (INST-DEV-2)
-    +-- PlanCompute (INST-N)     -> ApplyCompute (INST-N)
+    +-- PlanCompute (INST-PROD-EU-1) -> ApplyCompute (INST-PROD-EU-1)
+    +-- PlanCompute (INST-PROD-EU-2) -> ApplyCompute (INST-PROD-EU-2)
+    +-- PlanCompute (INST-N)         -> ApplyCompute (INST-N)
 ```
 
 ## Entity Relationship Diagram
@@ -226,26 +226,32 @@ DiscoverCompute
 
 | Table                   | Records | Description                                    |
 |-------------------------|---------|------------------------------------------------|
-| `dbo.environments`      | 2       | Environment configs (dev, staging)             |
-| `dbo.networks`          | 3       | VPC/subnet configurations                      |
-| `dbo.compute_instances` | 6       | EC2-like compute instances (2 per network)     |
-| `dbo.storage_volumes`   | 6       | EBS-like storage volumes (1 per instance)      |
-| `dbo.dns_records`       | 4       | DNS A/CNAME records                            |
-| `dbo.certificates`      | 2       | TLS certificates linked to DNS records         |
-| `dbo.load_balancers`    | 2       | ALB/NLB load balancer configs                  |
+| `dbo.environments`      | 2       | Environment configs (staging-eu, prod-eu)      |
+| `dbo.networks`          | 2       | VPC/subnet configurations (1 per environment)  |
+| `dbo.compute_instances` | 8       | EC2-like compute instances                     |
+| `dbo.storage_volumes`   | 8       | EBS-like storage volumes (1 per instance)      |
+| `dbo.dns_records`       | 3       | DNS A records                                  |
+| `dbo.certificates`      | 3       | TLS certificates linked to DNS records         |
+| `dbo.load_balancers`    | 3       | ALB load balancer configs                      |
 
-### Seed Data Summary
+### Seed Data Summary — two European regions
 
-| Environment | Networks     | Compute Instances                    |
-|-------------|-------------|--------------------------------------|
-| ENV-DEV     | NET-DEV-1   | INST-DEV-1 (web), INST-DEV-2 (api)  |
-| ENV-STAGING | NET-STG-1   | INST-STG-1 (web), INST-STG-2 (api)  |
-| ENV-STAGING | NET-STG-2   | INST-STG-3 (worker), INST-STG-4 (cache) |
+`staging-eu` and `prod-eu`. Full row->SE ownership map:
+[`source-db/SEED-REGISTRY.md`](source-db/SEED-REGISTRY.md) — including why
+compute instances are shared per-environment (`PlanNetwork` resolves by
+`environment_id`) while storage/DNS/certificate/load-balancer chains are
+genuinely per-SE isolated (addressed by explicit payload IDs).
 
-- `ENV-NONEXISTENT` does NOT exist (reserved for negative testing).
-- DNS records exist for INST-DEV-1, INST-STG-1, INST-STG-2, INST-STG-3.
-- Certificates exist for DNS-STG-1 and DNS-STG-2 only.
-- Load balancers exist for INST-STG-1 and INST-STG-2 only.
+| Environment | Network         | Compute Instances                                     | Owning SE(s) |
+|-------------|-----------------|--------------------------------------------------------|--------------|
+| staging-eu  | NET-STAGING-EU-1| INST-STAGING-EU-1 (web), INST-STAGING-EU-2 (api)        | SE-01 (inst 1), SE-05 (inst 2) |
+| prod-eu     | NET-PROD-EU-1   | INST-PROD-EU-1..6 (web x2, api x2, worker, cache)       | SE-03 (fan-out over all 6), SE-04 (inst 1's DNS chain) |
+
+- `atlantis-eu` does NOT exist (reserved not-found sentinel).
+- DNS/certificate/load-balancer chains exist for INST-STAGING-EU-1,
+  INST-STAGING-EU-2, and INST-PROD-EU-1 only — instances 2-6 in prod-eu
+  exist purely for fan-out breadth (SE-03) and are never addressed by an
+  explicit payload ID.
 
 ## Entity Criticality
 

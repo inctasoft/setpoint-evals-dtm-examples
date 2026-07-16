@@ -162,25 +162,34 @@ Only 4 steps. No discovery, no fan-out, no optional entities.
 
 | Table             | Records | Description                                  |
 |-------------------|---------|----------------------------------------------|
-| `ecommerce.customers`   | 5       | Customer profiles with contact info          |
+| `ecommerce.customers`   | 9       | Customer profiles with contact info          |
 | `ecommerce.products`    | 10      | Product catalog with pricing                 |
-| `ecommerce.orders`      | 8       | Orders linked to customers                   |
-| `ecommerce.order_items` | 25      | Line items linking orders to products        |
-| `ecommerce.payments`    | 8       | Payment records (one per order)              |
-| `ecommerce.shipments`   | 6       | Shipment tracking (not all orders shipped)   |
+| `ecommerce.orders`      | 9       | Orders linked to customers                   |
+| `ecommerce.order_items` | 17      | Line items linking orders to products        |
+| `ecommerce.payments`    | 5       | Payment records (not every order has one)    |
+| `ecommerce.shipments`   | 5       | Shipment tracking (not all orders shipped)   |
 
-### Seed Data Summary
+### Seed Data Summary — "Ada's Beans Cafe"
 
-| Customer ID | Name             | Orders        | Items per Order        |
-|-------------|------------------|---------------|------------------------|
-| 1           | Sarah Mitchell   | 1, 3          | 3 items, 4 items       |
-| 2           | James Rodriguez  | 2, 7          | 4 items, 1 item        |
-| 3           | Emily Chen       | 4, 8          | 4 items, 2 items       |
-| 4           | Michael Thompson | 5             | 3 items                |
-| 5           | Olivia Patel     | 6             | 4 items                |
+A specialty coffee roaster. Every customer is a computing pioneer used as an
+obviously-fictional demo persona. Full row->SE ownership map:
+[`source-db/SEED-REGISTRY.md`](source-db/SEED-REGISTRY.md).
 
-- Customer 99999 does NOT exist (reserved for negative testing).
-- Orders 7 and 8 have `pending` payment status and no shipment tracking yet.
+| Customer ID | Name             | Order | Items | Owning SE |
+|-------------|------------------|-------|-------|-----------|
+| 1           | Ada Lovelace     | 1     | 2     | SE-01-happy-path |
+| 2           | Grace Hopper     | 2     | 2     | general fill |
+| 3           | Alan Turing      | 3     | 2     | general fill |
+| 4           | Margaret Hamilton| 4     | 1     | general fill |
+| 5           | Edsger Dijkstra  | 5     | 1     | general fill (pending, no payment) |
+| 6           | Donald Knuth     | 6     | 6     | SE-03-fan-out-order-items |
+| 7           | Barbara Liskov   | 7     | 2     | SE-04-partial-payment-failure (0 payments) |
+| 8           | Radia Perlman    | 8     | 0     | SE-05-batch-import-variant (quick-order) |
+| 9           | Linus Torvalds   | 9     | 1     | general fill |
+
+- Customer/order/product `99999` does NOT exist (reserved not-found sentinel).
+- Order 7 has a real shipment but zero payment rows — the story behind the
+  PARTIAL_SUCCESS SE (SE-04).
 
 ## SE Catalog
 

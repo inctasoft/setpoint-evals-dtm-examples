@@ -42,7 +42,7 @@ EVAL_PURPOSE="Test DNS failure -> Certificate SKIPPED, but Storage succeeds -> P
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: ENV-DEV"
+log_info "Entity ID: prod-eu (INST-PROD-EU-1 chain)"
 log_info "Variant: default"
 log_info "ApplyDNS configured to fail permanently"
 log_info "Expected Outcome: PARTIAL_SUCCESS (DNS/Certificate fail, Storage/LB succeed)"
@@ -58,13 +58,13 @@ PAYLOAD='{
   "variant": "default",
   "enableDeduplication": false,
   "payload": {
-    "environmentId": "ENV-DEV",
-    "networkId": "NET-DEV-1",
-    "instanceId": "INST-DEV-1",
-    "dnsRecordId": "DNS-DEV-1",
-    "certificateId": "CERT-DEV-1",
-    "loadBalancerId": "LB-DEV-1",
-    "entityId": "ENV-DEV"
+    "environmentId": "prod-eu",
+    "networkId": "NET-PROD-EU-1",
+    "instanceId": "INST-PROD-EU-1",
+    "dnsRecordId": "DNS-PROD-EU-1",
+    "certificateId": "CERT-PROD-EU-1",
+    "loadBalancerId": "LB-PROD-EU-1",
+    "entityId": "prod-eu"
   },
   "testOptions": {
     "PlanEnvironment":    { "simDelay": 300 },

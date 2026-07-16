@@ -10,14 +10,14 @@
 #   -> ApplyNetwork -> DiscoverCompute
 #   -> N x (PlanCompute -> ApplyCompute)
 #
-# ENV-DEV has network NET-DEV-1, which has 2 compute instances:
-#   INST-DEV-1 (web-server-dev-1)
-#   INST-DEV-2 (api-server-dev-1)
+# prod-eu has network NET-PROD-EU-1, which has 6 compute instances
+# (INST-PROD-EU-1..6) — dedicated to this SE for fan-out breadth, see
+# ../../source-db/SEED-REGISTRY.md.
 #
 # We verify:
 #   1. DiscoverCompute completes and spawns child steps
-#   2. Multiple PlanCompute child steps are created (expect 2)
-#   3. Multiple ApplyCompute child steps are created (expect 2)
+#   2. Multiple PlanCompute child steps are created (expect 6)
+#   3. Multiple ApplyCompute child steps are created (expect 6)
 #   4. All child steps execute in parallel
 #   5. Job reaches COMPLETED status
 #
@@ -42,9 +42,9 @@ EVAL_PURPOSE="Test Discovery + Fan-Out pattern creating multiple child compute s
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: ENV-DEV"
+log_info "Entity ID: prod-eu (6 compute instances)"
 log_info "Variant: default (includes fan-out)"
-log_info "Network NET-DEV-1 has 2 compute instances"
+log_info "Network NET-PROD-EU-1 has 6 compute instances"
 log_info "Expected Outcome: Fan-out creates 2 child step pairs, job COMPLETES"
 echo ""
 
@@ -58,13 +58,13 @@ PAYLOAD='{
   "enableDeduplication": false,
   "variant": "default",
   "payload": {
-    "environmentId": "ENV-DEV",
-    "networkId": "NET-DEV-1",
-    "instanceId": "INST-DEV-1",
-    "dnsRecordId": "DNS-DEV-1",
-    "certificateId": "CERT-DEV-1",
-    "loadBalancerId": "LB-DEV-1",
-    "entityId": "ENV-DEV"
+    "environmentId": "prod-eu",
+    "networkId": "NET-PROD-EU-1",
+    "instanceId": "INST-PROD-EU-1",
+    "dnsRecordId": "DNS-PROD-EU-1",
+    "certificateId": "CERT-PROD-EU-1",
+    "loadBalancerId": "LB-PROD-EU-1",
+    "entityId": "prod-eu"
   },
   "testOptions": {
     "PlanEnvironment":    { "simDelay": 300 },

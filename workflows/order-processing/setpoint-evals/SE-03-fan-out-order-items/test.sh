@@ -9,12 +9,9 @@
 #   ValidateCustomer (root) -> SubmitCustomer -> ValidateOrder
 #   -> DiscoverLineItems -> N x (ValidateLineItem -> SubmitLineItem)
 #
-# Customer 1 (customer_id=1) has orders 1 and 3.
-# Order 1 has items: 1, 2, 16 (3 items after seed cleanup)
-# Order 3 has items: 5, 6, 8, 9, 24 (5 items after seed cleanup)
-#
-# This test sends an orderId that maps to order 1, which has 3 items,
-# or we use customer-1000 with an orderId payload to trigger 5+ items.
+# Dedicated to Donald Knuth's order (customer_id=6, order_id=6) at Ada's Beans
+# Cafe — order 6 has 6 order_items across 6 distinct products (SE-03's own
+# rows, isolated from every other SE — see ../../source-db/SEED-REGISTRY.md).
 #
 # We verify:
 #   1. DiscoverLineItems completes and spawns child steps
@@ -43,9 +40,9 @@ EVAL_PURPOSE="Test Discovery + Fan-Out pattern creating multiple child steps"
 
 display_eval_banner "$EVAL_NAME" "$EVAL_PURPOSE"
 
-log_info "Entity ID: customer-1000"
+log_info "Entity ID: donald-knuth (customer_id=6, order_id=6, 6 order_items)"
 log_info "Variant: default (includes fan-out)"
-log_info "Payload includes orderId targeting order with 5+ items"
+log_info "Order 6 has 6 order_items — dedicated fan-out fixture, see SEED-REGISTRY.md"
 log_info "Expected Outcome: Fan-out creates multiple child steps, job COMPLETES"
 echo ""
 
@@ -57,14 +54,13 @@ log_section "STEP 1: INITIATE JOB (FAN-OUT SCENARIO)"
 
 PAYLOAD='{
   "variant": "default",
-  "orderId": "order-4",
   "payload": {
-    "customerId": 1,
+    "customerId": 6,
     "productId": 1,
-    "orderId": 1,
-    "paymentId": 1,
-    "shipmentId": 1,
-    "entityId": "customer-1000"
+    "orderId": 6,
+    "paymentId": 6,
+    "shipmentId": 6,
+    "entityId": "donald-knuth"
   },
   "testOptions": {
     "ValidateCustomer":    { "simDelay": 300 },
