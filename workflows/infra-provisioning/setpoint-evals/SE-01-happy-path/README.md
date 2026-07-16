@@ -1,6 +1,11 @@
 # SE-01: happy path
 
-**Category**: happy-path · **Duration**: ~20s · **Timeout**: 660s · **Isolation**: parallel-safe
+## Setpoint Eval Metadata
+
+**Category**: happy-path
+**Duration**: ~20s
+**Timeout**: 660s
+**Isolation**: parallel-safe
 
 ## Scenario
 ```gherkin

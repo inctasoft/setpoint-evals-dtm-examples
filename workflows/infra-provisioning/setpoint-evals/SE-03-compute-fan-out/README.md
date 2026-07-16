@@ -1,6 +1,11 @@
 # SE-03: compute fan-out
 
-**Category**: fan-out · **Duration**: ~30s · **Timeout**: 660s · **Isolation**: parallel-safe
+## Setpoint Eval Metadata
+
+**Category**: fan-out
+**Duration**: ~30s
+**Timeout**: 660s
+**Isolation**: parallel-safe
 
 ## Scenario
 ```gherkin

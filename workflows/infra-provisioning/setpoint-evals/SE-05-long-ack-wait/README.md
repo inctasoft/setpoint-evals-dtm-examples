@@ -1,6 +1,11 @@
 # SE-05: long ACK wait
 
-**Category**: async-ack · **Duration**: ~25s · **Timeout**: 660s · **Isolation**: parallel-safe
+## Setpoint Eval Metadata
+
+**Category**: async-ack
+**Duration**: ~25s
+**Timeout**: 660s
+**Isolation**: parallel-safe
 
 ## Scenario
 ```gherkin

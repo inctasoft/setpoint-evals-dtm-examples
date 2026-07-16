@@ -1,6 +1,11 @@
 # SE-02: environment not found
 
-**Category**: error-handling · **Duration**: ~10s · **Timeout**: 330s · **Isolation**: parallel-safe
+## Setpoint Eval Metadata
+
+**Category**: error-handling
+**Duration**: ~10s
+**Timeout**: 330s
+**Isolation**: parallel-safe
 
 ## Scenario
 ```gherkin

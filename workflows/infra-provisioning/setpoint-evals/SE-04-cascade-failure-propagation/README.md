@@ -1,7 +1,15 @@
 # SE-04: cascade failure propagation
 
-**Category**: cascade-failure · **Duration**: ~60-90s (bounded by ApplyDNS's exhausted
-retry backoff before it fails permanently — see `poll_job` budget below) · **Timeout**: 960s · **Isolation**: parallel-safe
+## Setpoint Eval Metadata
+
+**Category**: cascade-failure
+**Duration**: ~60-90s
+**Timeout**: 960s
+**Isolation**: parallel-safe
+
+Duration is bounded by `ApplyDNS`'s exhausted retry backoff (`failOnAttempts: [1, 2, 3]`)
+before it fails permanently — see the `poll_job` budget in Artifacts below, which is why
+Timeout is set well above the other SEs in this suite.
 
 ## Scenario
 ```gherkin
@@ -45,7 +53,7 @@ flowchart TD
     ALB --> OUT
     ACert -.->|"optional cascade failed"| OUT
     AD -.->|"optional cascade failed"| OUT
-    OUT["Job PARTIAL_SUCCESS - critical cascades OK, dns and certificate failed"]
+    OUT["Job PARTIAL_SUCCESS - dns failed, certificate skipped, critical cascades OK"]
 
     classDef ok fill:#1a7f37,stroke:#0d4d21,color:#fff
     classDef failedNode fill:#8b1a1a,stroke:#4d0d0d,color:#fff
