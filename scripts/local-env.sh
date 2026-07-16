@@ -37,12 +37,12 @@ COMPOSE_INFRA_PROVISIONING="workflows/infra-provisioning/docker-compose.infra-pr
 COMPOSE_WORKERS="docker-compose.workers.yml"
 COMPOSE_WORKERS_DEV="docker-compose.workers.dev.yml"
 
-# External Kafka Network (for integrated mode with backend-apps)
-# Default network name matches backend-apps docker-compose.yaml network
-# Note: backend-apps uses 'default' network, which Docker names as 'backend-apps_default'
-EXTERNAL_KAFKA_NETWORK="${EXTERNAL_KAFKA_NETWORK:-backend-apps_default}"
-# Default broker address matches backend-apps Kafka service advertised listener
-# Using 'kafka' as that's the advertised listener hostname (not backend-apps-kafka-1)
+# External Kafka Network (for integrated mode with the external system)
+# Default network name matches the external system's docker-compose.yaml network
+# Note: the external system uses the 'default' network, which Docker names as '<project-dir>_default'
+EXTERNAL_KAFKA_NETWORK="${EXTERNAL_KAFKA_NETWORK:-external-system_default}"
+# Default broker address matches the external system's Kafka service advertised listener
+# Using 'kafka' as that's the advertised listener hostname (not a system-specific alias)
 EXTERNAL_KAFKA_BROKER="${EXTERNAL_KAFKA_BROKER:-kafka:9092}"
 
 # ============================================================================
@@ -66,7 +66,7 @@ Usage: $0 <command> [options]
 
 Commands:
   start --standalone [--orchestrator] [--monitor] [--build]          Start all services with local Kafka
-  start --integrated [--orchestrator] [--monitor] [--build]          Start services using backend-apps Kafka
+  start --integrated [--orchestrator] [--monitor] [--build]          Start services using the external system's Kafka
   stop                                                               Stop all services
   deploy-workers [--count=N] [--debug-server] [--build]              Deploy Lambda workers (default: --count=10)
   scale-pollers [count]                                              Scale SQS poller replicas (no redeploy)
@@ -152,7 +152,7 @@ Service Details:
     • dev-ack-simulator (temporarily included)
     • Orchestrator (if --orchestrator flag used)
     • SQS Poller (started via deploy-workers --poller)
-    • Kafka topic initialization (connects to backend-apps Kafka on 'backend' network)
+    • Kafka topic initialization (connects to the external system's Kafka on 'backend' network)
 
 EOF
 }
@@ -397,25 +397,25 @@ start_integrated() {
 
     # Create 'backend' network (used by main services and accessed by external services for ETL)
     # This network is shared across multiple compose files, so we create it as external
-    if ! docker network inspect backend-apps_default >/dev/null 2>&1; then
-        print_info "Creating 'backend-apps_default' Docker network..."
-        if docker network create backend-apps_default; then
-            print_success "'backend-apps_default' network created successfully"
+    if ! docker network inspect external-system_default >/dev/null 2>&1; then
+        print_info "Creating 'external-system_default' Docker network..."
+        if docker network create external-system_default; then
+            print_success "'external-system_default' network created successfully"
         else
-            print_error "Failed to create 'backend-apps_default' network"
+            print_error "Failed to create 'external-system_default' network"
             exit 1
         fi
     else
-        print_success "'backend-apps_default' network already exists"
+        print_success "'external-system_default' network already exists"
     fi
-    
-    # Check if backend-apps Kafka network exists (external dependency)
+
+    # Check if the external system's Kafka network exists (external dependency)
     if ! docker network inspect "$EXTERNAL_KAFKA_NETWORK" >/dev/null 2>&1; then
-        print_warning "Backend-apps Kafka network '$EXTERNAL_KAFKA_NETWORK' not found"
-        print_info "Make sure backend-apps docker compose is running (with Kafka services)"
+        print_warning "External system's Kafka network '$EXTERNAL_KAFKA_NETWORK' not found"
+        print_info "Make sure the external system's docker compose is running (with Kafka services)"
         print_info "Or update EXTERNAL_KAFKA_NETWORK environment variable if using different network"
         echo ""
-        print_info "To start backend-apps, navigate to backend-apps directory and run:"
+        print_info "To start the external system, navigate to its directory and run:"
         print_info "  docker compose --env-file "$ENV_FILE" -f docker-compose-kafka.yaml up -d"
         print_info "  docker compose --env-file "$ENV_FILE" -f docker-compose-local.yaml up -d"
         echo ""
@@ -450,7 +450,7 @@ start_integrated() {
 
     # Start DTM Core DB (and optionally orchestrator)
     print_info "Starting DTM Core database..."
-    # Set Kafka broker for integrated mode (backend-apps Kafka)
+    # Set Kafka broker for integrated mode (the external system's Kafka)
     export KAFKA_BROKER="$EXTERNAL_KAFKA_BROKER"
     
     # Build compose command with override for orchestrator if needed
@@ -484,8 +484,8 @@ start_integrated() {
     
     echo ""
     
-    # Initialize Kafka topics on backend-apps Kafka using docker-compose
-    print_info "Initializing DTM topics on backend-apps Kafka cluster..."
+    # Initialize Kafka topics on the external system's Kafka using docker-compose
+    print_info "Initializing DTM topics on the external system's Kafka cluster..."
     print_info "Connecting to: $EXTERNAL_KAFKA_BROKER (network: $EXTERNAL_KAFKA_NETWORK)"
     
     echo ""
@@ -505,7 +505,7 @@ start_integrated() {
     echo ""
     
     if [ $INIT_EXIT_CODE -eq 0 ]; then
-        print_success "DTM topics initialized on backend-apps Kafka cluster"
+        print_success "DTM topics initialized on the external system's Kafka cluster"
     else
         print_warning "Failed to initialize Kafka topics (they may already exist or Kafka is not ready)"
     fi
@@ -514,7 +514,7 @@ start_integrated() {
     
     # Show port allocation info in integrated mode
     echo -e "${YELLOW}ℹ️  Port Allocations:${NC}"
-    echo -e "  ${CYAN}→${NC} Backend-apps postgres:      ${BLUE}5432${NC}"
+    echo -e "  ${CYAN}→${NC} External system postgres:   ${BLUE}5432${NC}"
     echo -e "  ${CYAN}→${NC} DTM Core DB:                ${BLUE}${DTM_DB_PORT_HOST:-5448}${NC}"
     echo -e "  ${CYAN}→${NC} Order Processing DB:        ${BLUE}5449${NC}"
     echo -e "  ${CYAN}→${NC} IoT Sensor Pipeline DB:     ${BLUE}5450${NC}"
@@ -884,8 +884,8 @@ purge_all() {
         
         if [ -z "$KAFKA_CONTAINER" ]; then
             print_warning "Local Kafka is not running"
-            print_info "If using integrated mode, Kafka topics are in backend-apps"
-            print_info "Purge Kafka manually from backend-apps or Kafka UI"
+            print_info "If using integrated mode, Kafka topics are in the external system"
+            print_info "Purge Kafka manually from the external system or Kafka UI"
             echo ""
         else
         print_info "Fetching DTM and target topics from Kafka (container: $KAFKA_CONTAINER)..."
@@ -1644,7 +1644,7 @@ list_workers() {
         echo "  https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
         echo ""
         echo "Or use Docker to run AWS CLI:"
-        echo "  docker run --rm -it --network backend-apps_default amazon/aws-cli --endpoint-url=http://localstack:4566 lambda list-functions"
+        echo "  docker run --rm -it --network external-system_default amazon/aws-cli --endpoint-url=http://localstack:4566 lambda list-functions"
         echo ""
         exit 1
     fi
@@ -1890,9 +1890,9 @@ show_access_urls() {
         echo ""
     else
         echo -e "${BOLD}Event Streaming:${NC}"
-        echo -e "  ${YELLOW}→${NC} Using backend-apps Kafka at: ${BLUE}$EXTERNAL_KAFKA_BROKER${NC}"
+        echo -e "  ${YELLOW}→${NC} Using external system's Kafka at: ${BLUE}$EXTERNAL_KAFKA_BROKER${NC}"
         echo -e "  ${YELLOW}→${NC} Network: ${BLUE}$EXTERNAL_KAFKA_NETWORK${NC}"
-        echo -e "  ${GREEN}→${NC} Backend-apps Kafka UI: ${BLUE}http://localhost:8088${NC} (if backend-apps kafka-ui running)"
+        echo -e "  ${GREEN}→${NC} External system Kafka UI: ${BLUE}http://localhost:8088${NC} (if the external system's kafka-ui is running)"
         echo ""
     fi
     
@@ -1995,15 +1995,15 @@ case "${1:-help}" in
                 echo "Usage: $0 start <--standalone|--integrated> [--orchestrator] [--monitor] [--build]"
                 echo ""
                 echo "  --standalone    Start with local Kafka"
-                echo "  --integrated    Start using backend-apps Kafka (requires backend-apps running)"
+                echo "  --integrated    Start using the external system's Kafka (requires it running)"
                 echo ""
                 echo "Optional flags:"
                 echo "  --orchestrator  Start orchestrator service in Docker (debug always enabled on port 9229)"
                 echo "  --monitor       Start DTM Monitor dashboard (Vite dev server on port 5173)"
                 echo "  --build         Force rebuild of all Docker images"
                 echo ""
-                echo "For integrated mode, ensure backend-apps is running first:"
-                echo "  cd ../backend-apps"
+                echo "For integrated mode, ensure the external system is running first:"
+                echo "  cd ../external-system"
                 echo "  docker compose --env-file "$ENV_FILE" -f docker-compose-kafka.yaml up -d"
                 echo "  docker compose --env-file "$ENV_FILE" -f docker-compose-local.yaml up -d"
                 echo ""

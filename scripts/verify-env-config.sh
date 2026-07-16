@@ -84,7 +84,7 @@ if command -v lsof &> /dev/null; then
         echo "ℹ️  Port 5432 is currently in use:"
         sudo lsof -i :5432
     else
-        echo "✅ Port 5432 is FREE (available for backend-apps)"
+        echo "✅ Port 5432 is FREE (available for the external system)"
     fi
 else
     echo "ℹ️  'lsof' command not available, skipping port check"

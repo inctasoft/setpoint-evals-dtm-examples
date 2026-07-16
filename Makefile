@@ -17,7 +17,7 @@ help: ## Show this help message
 start-standalone: ## Start all services with local Kafka (Standalone Mode)
 	./scripts/local-env.sh start --standalone --orchestrator --front-end
 
-start-integrated: ## Start services using backend-apps Kafka (Integrated Mode)
+start-integrated: ## Start services using the external system's Kafka (Integrated Mode)
 	./scripts/local-env.sh start --integrated --orchestrator --front-end
 
 stop: ## Stop all services
