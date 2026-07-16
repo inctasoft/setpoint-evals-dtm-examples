@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { WorkflowRegistryService } from './workflow-registry.service';
+import { FeatureFlagService } from './feature-flag.service';
 
 /**
  * Workflow Management Controller
@@ -28,7 +29,10 @@ import { WorkflowRegistryService } from './workflow-registry.service';
 export class WorkflowManagementController {
   private readonly logger = new Logger(WorkflowManagementController.name);
 
-  constructor(private readonly workflowRegistry: WorkflowRegistryService) {}
+  constructor(
+    private readonly workflowRegistry: WorkflowRegistryService,
+    private readonly featureFlagService: FeatureFlagService,
+  ) {}
 
   /**
    * List all registered workflows
@@ -175,6 +179,48 @@ export class WorkflowManagementController {
       cascades,
       outcomeRules,
       featureFlags: workflow.featureFlags || {},
+    };
+  }
+
+  /**
+   * Get resolved feature flags for a workflow (Monitor "Flags" tab)
+   * GET /api/v1/workflows/:workflowName/flags
+   *
+   * Layer 1+2 only (workflow defaults + env overrides) — layer 3 (per-request
+   * client overrides) is deliberately NOT exercised here since there is no
+   * request to override; this endpoint reports the flags any NEW job on this
+   * workflow would resolve to right now.
+   */
+  @Get(':workflowName/flags')
+  @ApiOperation({
+    summary: 'Get resolved feature flags for a workflow',
+    description:
+      "Returns the workflow's feature flags after three-layer resolution (config defaults, " +
+      'then env var overrides — no per-request overrides apply here, there is no request).',
+  })
+  @ApiParam({
+    name: 'workflowName',
+    required: true,
+    description: 'Name of the workflow to inspect',
+    schema: { type: 'string', example: 'order-processing' },
+  })
+  @ApiResponse({ status: 200, description: 'Resolved feature flags' })
+  @ApiResponse({ status: 404, description: 'Workflow not found' })
+  getWorkflowFlags(@Param('workflowName') workflowName: string) {
+    if (!this.workflowRegistry.has(workflowName)) {
+      throw new NotFoundException(`Workflow '${workflowName}' not found`);
+    }
+
+    const config = this.workflowRegistry.get(workflowName);
+    const workflow = config.getWorkflow();
+    const flags = this.featureFlagService.resolveFlags(workflow);
+    const clientOverridable = workflow.featureFlags?.clientOverridable ?? [];
+
+    return {
+      workflow: workflowName,
+      flags,
+      clientOverridable,
+      requestOverridesEnabled: process.env.ENABLE_REQUEST_FEATURE_FLAGS === 'true',
     };
   }
 

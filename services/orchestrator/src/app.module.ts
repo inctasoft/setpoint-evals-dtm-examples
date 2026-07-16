@@ -18,6 +18,7 @@ import { CorrelationMiddleware } from './common/middleware/correlation.middlewar
 import { WorkflowLoaderModule } from './workflow-loader';
 import { WebSocketModule } from './websocket';
 import { AuthModule } from './auth/auth.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 // Import workflow definitions for multi-workflow registration
 import { orderProcessingWorkflow } from '@dtm-workflows/order-processing';
@@ -98,6 +99,7 @@ logRuntimeMode();
     WebSocketModule,
     AuthModule.forRoot(),
     EvalsModule,
+    MetricsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
