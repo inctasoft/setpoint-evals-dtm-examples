@@ -1,31 +1,45 @@
 #!/bin/bash
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SE 07: Feature Flag Three-Layer Resolution
+# SE 07: Feature Flag Three-Layer Resolution  [XFAIL — see README]
 # ═══════════════════════════════════════════════════════════════════════════
-# Pins FeatureFlagService.resolveFlags()'s full 3-layer priority for
-# ENABLE_ALERT_GENERATION (default < env var < per-request, gated by
-# clientOverridable):
+# Drives the DOCUMENTED 3-layer priority for ENABLE_ALERT_GENERATION
+# (default < env var < per-request) against the LIVE step-gating path:
 #
 #   Layer 1 (default): workflow.config.ts default is `true` -> alerts run.
 #   Layer 2 (env var):  FEATURE_FLAG_ENABLE_ALERT_GENERATION=false set on
-#     the orchestrator -> overrides the default -> alerts SKIPPED.
+#     the orchestrator -> SHOULD override the default -> alerts SKIPPED.
 #   Layer 3 (per-request): payload.featureFlags.ENABLE_ALERT_GENERATION=true
 #     with the env var STILL false -> per-request wins -> alerts run again.
+#
+# Layer 2 currently FAILS: orchestration.service.ts's step-gating block
+# (~line 690, "1b. Feature gate") does its own inline
+# `{ ...defaultFlags, ...jobFlags }` merge and never reads
+# process.env.FEATURE_FLAG_* at all — FeatureFlagService (which DOES
+# implement the env-var layer correctly) has zero callers anywhere in the
+# request path, confirmed by a repo-wide grep for resolveFlags/getFlag/
+# getBooleanFlag. This SE is anchored EXPECTED-FAIL in its README so this
+# gap is visible and tracked rather than silently worked around. See
+# DIFFICULTIES-LOG.md for the full finding.
 #
 # DESTRUCTIVE — the ONLY way to test Layer 2 for real is to actually set an
 # env var on the orchestrator process, which requires a container recreate
 # (env vars are read once at process start; no runtime override endpoint
-# exists — that gap is exactly what Layer 3 exists to work around). No other
-# SE in the estate mutates the shared orchestrator's environment; this is
-# the first, and it MUST run in isolation (see Isolation: destructive in
-# the README) — a concurrent job elsewhere would be disrupted by the
-# recreate. Restores the original .env and container state on exit via a
-# trap, even on failure.
+# exists). No other SE in the estate mutates the shared orchestrator's
+# environment; this is the first, and it MUST run in isolation (see
+# Isolation: destructive in the README) — a concurrent job elsewhere would
+# be disrupted by the recreate. Restores the original .env and container
+# state on exit via a trap, even on failure.
 #
-# Also proves the clientOverridable GATE: attempting to override
-# ENABLE_CASCADE_FK_INJECTION (NOT in iot's clientOverridable allowlist) via
-# a per-request flag is silently ignored — it stays at its default.
+# NOTE: an earlier "clientOverridable gate" sub-test (attempting to
+# override ENABLE_CASCADE_FK_INJECTION, expecting it to be ignored) was
+# removed — it was vacuous. No step in iot-sensor-pipeline.workflow.config.ts
+# uses ENABLE_CASCADE_FK_INJECTION as a featureGate, so the override had no
+# possible observable effect regardless of whether the allowlist is
+# enforced. It also isn't enforced: clientOverridable/
+# ENABLE_REQUEST_FEATURE_FLAGS are only referenced inside the dead
+# FeatureFlagService and a DTO comment, never in the live gating path — any
+# flag can be overridden per-request today, allowlisted or not.
 # ═══════════════════════════════════════════════════════════════════════════
 
 set -e
@@ -185,50 +199,5 @@ else
   FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 echo ""
-
-# ═══════════════════════════════════════════════════════════════════════════
-# clientOverridable gate: ENABLE_CASCADE_FK_INJECTION is NOT overridable
-# ═══════════════════════════════════════════════════════════════════════════
-
-log_section "GATE: ENABLE_CASCADE_FK_INJECTION is not in clientOverridable — override ignored"
-
-# ENABLE_CASCADE_FK_INJECTION governs whether ack_metadata externalIds get
-# threaded as FKs (see infra-provisioning SE-07). For iot, cheaper to assert
-# indirectly: the request is simply accepted and processed normally (201 +
-# terminal state) even though the override attempt is present — the
-# orchestrator does not error out on a non-overridable flag, it just ignores
-# it (logged as a warning server-side; see feature-flag.service.ts).
-PAYLOAD_GATE='{
-  "variant": "default",
-  "enableDeduplication": false,
-  "payload": { "deviceId": "greenhouse-1", "entityId": "greenhouse-1-flag-gate" },
-  "featureFlags": { "ENABLE_CASCADE_FK_INJECTION": false },
-  "testOptions": {
-    "RegisterDevice":  { "simDelay": 300 },
-    "ProvisionDevice": { "simDelay": 300, "ackDelay": 1000 },
-    "DiscoverSensors": { "simDelay": 300 },
-    "CalibrateSensor": { "simDelay": 300 },
-    "ActivateSensor":  { "simDelay": 300, "ackDelay": 1000 },
-    "DiscoverReadings":{ "simDelay": 300 },
-    "IngestReading":   { "simDelay": 300 },
-    "PublishReading":  { "simDelay": 300, "ackDelay": 1000 },
-    "ComputeAggregate":{ "simDelay": 300 },
-    "PublishAggregate":{ "simDelay": 300, "ackDelay": 1000 }
-  }
-}'
-IFS=':' read -r JOB_ID_GATE CORRELATION_ID_GATE <<< "$(initiate_job "$PAYLOAD_GATE")"
-if validate_job_id "$JOB_ID_GATE"; then
-  poll_job "$JOB_ID_GATE" 300 5
-  if verify_job_status "$JOB_ID_GATE" "COMPLETED"; then
-    log_success "Gate: non-overridable flag override was silently ignored — job still COMPLETED normally"
-    PASS_COUNT=$((PASS_COUNT + 1))
-  else
-    log_error "Gate: expected job to still complete normally despite the non-overridable flag attempt"
-    FAIL_COUNT=$((FAIL_COUNT + 1))
-  fi
-else
-  log_error "Gate: job failed to initiate"
-  FAIL_COUNT=$((FAIL_COUNT + 1))
-fi
 
 exit_with_summary "$PASS_COUNT" "$FAIL_COUNT"

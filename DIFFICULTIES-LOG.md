@@ -5,6 +5,45 @@
 
 ---
 
+### Feature-flag 3-layer contract (docs) vs. live step-gating code is actually 2-layer, unguarded
+**Severity:** Medium (architecture drift — flagship-documented capability doesn't match runtime)
+**Status:** Open — decision needed, not fixed (found while building
+`workflows/iot-sensor-pipeline/setpoint-evals/SE-07-feature-flag-layering`, which is anchored
+`EXPECTED-FAIL` to keep the gap visible; see that SE's README for the full write-up)
+
+`CLAUDE.md` § "Feature Flags" documents: `Layer 1 defaults < Layer 2 env var
+(FEATURE_FLAG_{KEY}) < Layer 3 per-request (gated by ENABLE_REQUEST_FEATURE_FLAGS +
+clientOverridable allowlist)`. `FeatureFlagService.resolveFlags()`
+(`services/orchestrator/src/workflow-loader/feature-flag.service.ts`) correctly implements all
+three layers and the gate — but a repo-wide grep for `resolveFlags`/`getFlag`/`getBooleanFlag`
+shows it has **zero callers** outside its own file and DI registration. It is dead code.
+
+The code that actually decides whether a step gets `SKIPPED` for a disabled flag is
+`orchestration.service.ts`'s "1b. Feature gate" block (~line 690): it does its own inline
+`resolvedFlags = { ...defaultFlags, ...jobFlags }` — Layer 1 and Layer 3 only. It never reads
+`process.env.FEATURE_FLAG_*` (no Layer 2) and never checks `clientOverridable` or
+`ENABLE_REQUEST_FEATURE_FLAGS` (no gate) — any flag can be overridden per-request today,
+allowlisted or not.
+
+Confirmed live: setting `FEATURE_FLAG_ENABLE_ALERT_GENERATION=false` on the orchestrator
+container (verified present via `docker exec dtm-orchestrator env`) has no effect —
+`EvaluateAlert`/`DispatchAlert` still run.
+
+An earlier commit (89b1f9e, reverted in a later commit on the same branch) fixed a real but
+separate bug in `FeatureFlagService.toScreamingSnake()` (mangled already-SCREAMING_SNAKE_CASE
+keys), on the mistaken assumption that this dead function was the live gating path. It wasn't —
+the fix was correct but changed no observable behavior, so it was reverted to avoid leaving a
+misleading "this fixes Layer 2" narrative in the repo.
+
+**Decision needed:** either wire `orchestration.service.ts` to call
+`FeatureFlagService.resolveFlags()` (real feature work — implements the missing env-var layer
+and the allowlist gate, touches the core step-gating path used by every workflow) or rewrite the
+docs to describe the 2-layer, unguarded reality. Left open rather than fixed unilaterally: this
+is a public example repo, the "correct" behavior isn't a one-liner, and the fix has blast radius
+across all three workflows' step-gating.
+
+---
+
 ### Orchestrator Unit Tests — 4 Suites / 22 Tests Failing (STALE — already resolved upstream)
 **Severity:** Medium (test quality)
 **Status:** Fixed (confirmed 2026-07-16, resolved by an earlier unrelated PR that never updated this entry)
