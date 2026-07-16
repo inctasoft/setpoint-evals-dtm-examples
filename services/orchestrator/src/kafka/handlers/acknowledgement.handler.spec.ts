@@ -13,6 +13,8 @@ describe('AcknowledgementHandler', () => {
   let handler: AcknowledgementHandler;
   let stepRepository: jest.Mocked<StepRepository>;
   let orchestrationService: jest.Mocked<OrchestrationService>;
+  let cascadePublishService: jest.Mocked<CascadePublishService>;
+  let workflowRegistryService: jest.Mocked<WorkflowRegistryService>;
   // Chainable QueryBuilder mock — handler uses .createQueryBuilder().update().set().where().execute(),
   // NOT repo.save(). Exposed at describe scope so tests can assert on .set()/.execute() calls.
   let mockQueryBuilder: {
@@ -123,6 +125,8 @@ describe('AcknowledgementHandler', () => {
     handler = module.get<AcknowledgementHandler>(AcknowledgementHandler);
     stepRepository = module.get(StepRepository);
     orchestrationService = module.get(OrchestrationService);
+    cascadePublishService = module.get(CascadePublishService);
+    workflowRegistryService = module.get(WorkflowRegistryService);
   });
 
   afterEach(() => {
@@ -185,6 +189,68 @@ describe('AcknowledgementHandler', () => {
       // it doesn't clobber the output field if it's being written concurrently.
       expect(mockQueryBuilder.execute).toHaveBeenCalled();
       expect(orchestrationService.continueJob).toHaveBeenCalledWith(mockJobId);
+    });
+
+    // Regression test for T2 (parallel-ACK race / RC5): hasDependentCascades() must be
+    // checked against the ACKed step's OWN workflow config, not the DI-default
+    // WorkflowConfigService (which only ever matches the first-registered workflow,
+    // order-processing). Before the fix, `resolved.config` from
+    // WorkflowRegistryService.getByAckTopic() was resolved but discarded — cascade
+    // checks for non-default workflows (infra-provisioning, iot-sensor-pipeline)
+    // silently always saw hasDependentCascades() return false, so
+    // checkAndExecutePendingPublishSteps() (the retry hook for a cascade whose publish
+    // was earlier deferred because a sibling parent hadn't ACKed yet) never fired.
+    it("resolves cascade checks against the ACKed topic's own workflow config, not the DI-default", async () => {
+      // A distinguishable per-workflow config marker — NOT the DI-default {}
+      // returned by other tests' getByAckTopic mock.
+      const infraProvisioningConfigMarker = { __workflow: 'infra-provisioning' };
+
+      (workflowRegistryService.getByAckTopic as jest.Mock).mockReturnValueOnce({
+        config: infraProvisioningConfigMarker,
+        cascadeName: 'network',
+      });
+      cascadePublishService.hasDependentCascades.mockReturnValueOnce(false);
+
+      const message = {
+        jobId: mockJobId,
+        stepId: mockStepId,
+        acknowledgedAt: '2025-01-01T00:00:00Z',
+      };
+
+      const payload: EachMessagePayload = {
+        topic: 'infra-provisioning.network.ack',
+        partition: 0,
+        message: {
+          key: Buffer.from('key'),
+          value: Buffer.from(JSON.stringify(message)),
+          timestamp: '1234567890',
+          attributes: 0,
+          offset: '0',
+          headers: {},
+          size: 0,
+        },
+      };
+
+      const mockStep = { id: mockStepId, status: StepStatus.WAITING_FOR_ACK };
+      stepRepository.findById.mockResolvedValueOnce(mockStep as any);
+      stepRepository.findById.mockResolvedValueOnce({
+        ...mockStep,
+        status: StepStatus.COMPLETED,
+      } as any);
+      stepRepository.updateStatus.mockResolvedValue(undefined);
+      orchestrationService.continueJob.mockResolvedValue({
+        success: true,
+        message: 'Orchestration continued',
+      });
+
+      await handler.handleMessage(payload);
+
+      // The gate MUST be checked against the resolved per-topic workflow config
+      // (infraProvisioningConfigMarker), never a bare/default call.
+      expect(cascadePublishService.hasDependentCascades).toHaveBeenCalledWith(
+        'network',
+        infraProvisioningConfigMarker,
+      );
     });
 
     it('should process customer order acknowledgement successfully', async () => {

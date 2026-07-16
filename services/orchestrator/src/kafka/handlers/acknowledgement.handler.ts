@@ -6,7 +6,7 @@ import { OrchestrationService } from '../../orchestration/orchestration.service'
 import { CascadePublishService } from '../../orchestration/cascade-publish.service';
 import { FanOutService } from '../../orchestration/fan-out.service';
 import { CorrelationService } from '../../common/correlation/correlation.service';
-import { WorkflowRegistryService } from '../../workflow-loader';
+import { WorkflowRegistryService, WorkflowConfigService } from '../../workflow-loader';
 import { EventsGateway } from '../../websocket/events.gateway';
 
 /**
@@ -114,7 +114,7 @@ export class AcknowledgementHandler implements OnModuleInit, IMessageHandler {
         }
 
         const cascadeName = resolved.cascadeName;
-        await this.processAcknowledgement(message, cascadeName);
+        await this.processAcknowledgement(message, cascadeName, resolved.config);
       } catch (processingError) {
         // Business logic errors - don't throw, just log
         this.logger.error(`❌ Failed to process acknowledgement (business logic error)`, {
@@ -145,6 +145,7 @@ export class AcknowledgementHandler implements OnModuleInit, IMessageHandler {
   private async processAcknowledgement(
     message: AcknowledgementMessage,
     cascadeName: string,
+    wfConfig: WorkflowConfigService,
   ): Promise<void> {
     const { jobId, stepId, acknowledgedAt, metadata, ...customPayload } = message;
 
@@ -241,7 +242,7 @@ export class AcknowledgementHandler implements OnModuleInit, IMessageHandler {
     }
 
     // Check if any dependent cascades can now be published now that this parent has been ACKed
-    if (this.cascadePublishService.hasDependentCascades(cascadeName)) {
+    if (this.cascadePublishService.hasDependentCascades(cascadeName, wfConfig)) {
       this.logger.log(`🔗 Checking for cascade publishing after ${cascadeName} ACK...`);
 
       try {

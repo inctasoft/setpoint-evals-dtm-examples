@@ -7,7 +7,7 @@
 
 The DTM engine handles asynchronous callbacks from Lambda workers. When multiple steps complete simultaneously (especially in fan-out scenarios), when SQS re-delivers messages, or when concurrent orchestration calls race to delegate the same steps, race conditions can cause premature job completion, output corruption, or double-delegation.
 
-This document explains the four race conditions discovered and the fixes applied, with diagrams illustrating each one.
+This document explains the five race conditions discovered and the fixes applied, with diagrams illustrating each one.
 
 ---
 
@@ -611,6 +611,146 @@ if (!claimed) {
 
 ---
 
+## Race Condition #5: Cascade Recovery Checked Against the Wrong Workflow's Config
+
+### Problem
+
+**Location**: `kafka/handlers/acknowledgement.handler.ts` → `hasDependentCascades()` gate
+
+**Discovered**: 2026-07-16, `infra-provisioning` `SE-07-cascade-fk-every-hop` (~50% repro on a
+fresh stack). See `DIFFICULTIES-LOG.md` (T2) for the original write-up.
+
+**Scenario** (infra-provisioning: `ApplyDNS`/`ApplyStorage`/`ApplyLoadBalancer` delegated in
+parallel once `ApplyNetwork` + the `ApplyCompute` fan-out both complete):
+
+1. `ApplyDNS`'s Lambda "completed" callback arrives at `callback.service.ts`. Its cascade
+   (`dns`) depends on `network` **and** `compute`. At the exact moment this callback is
+   processed, `compute`'s fan-out ACKs may not have ALL landed yet (`ackDelay` on 5 parallel
+   `ApplyCompute` instances racing a `simDelay` on `ApplyDNS` itself) — a **legitimate, expected**
+   race under parallel delegation.
+2. `areCascadeDependenciesMet('dns', ...)` correctly returns `false` in that instant.
+   `callback.service.ts` logs `"requires acknowledgement but parent cascade dependencies not yet
+   met. Deferring publish."` and returns — by design, the recovery path is supposed to be: once
+   the LAST needed parent ACK lands, `AcknowledgementHandler.processAcknowledgement()` calls
+   `cascadePublishService.checkAndExecutePendingPublishSteps(jobId)`, which re-scans for
+   `COMPLETED` steps with `kafkaPublishedAt: null` and republishes them.
+3. That re-check is gated: `if (this.cascadePublishService.hasDependentCascades(cascadeName))`.
+   `hasDependentCascades(parentCascadeName, wfConfig?)` defaults `wfConfig` to
+   `CascadePublishService`'s own DI-injected `WorkflowConfigService` — which
+   (`workflow-loader.module.ts`) is **always bound to the first-registered workflow**
+   (`order-processing`), a NestJS singleton shared by construction, not resolved per-job.
+   `AcknowledgementHandler` never overrode this — even though it already resolves the CORRECT
+   per-topic `WorkflowConfigService` via `WorkflowRegistryService.getByAckTopic(topic)` a few
+   lines earlier, it discarded that `config` and called `hasDependentCascades(cascadeName)` with
+   only one argument.
+4. For any `infra-provisioning` (or `iot-sensor-pipeline`) cascade name — `'network'`,
+   `'compute'`, `'environment'`, `'certificate'`, `'dns'` — none of those exist in
+   `order-processing`'s cascade config, so `hasDependentCascades()` silently returns `false`.
+   **The recovery hook never fires — for any job of any non-default workflow, ever.**
+   `checkAndExecutePendingPublishSteps()` itself resolves the workflow correctly (via
+   `job.workflowName`), but it never gets called.
+5. Net effect: a step that lost the deps-met race at step 2 stays `COMPLETED` with
+   `kafkaPublishedAt: null` / `ackReceivedAt: null` / `ackMetadata: null` **forever**. Nothing
+   else in the system re-checks it. The job still reaches `COMPLETED` with `stepsFailed: 0`
+   because job-completion logic only looks at `step.status`, not whether its output was ever
+   actually published or ACKed.
+
+This is the same anti-pattern as the feature-flag-layering gap (`CLAUDE.md` / `FeatureFlagService`,
+fixed the same day): a NestJS DI singleton bound to one workflow at bootstrap, silently wrong for
+every other registered workflow, with no compile-time signal because the interface degrades to "no
+dependents" instead of erroring.
+
+### Diagram: Without Fix (Bug)
+
+```mermaid
+sequenceDiagram
+    participant DNS as ApplyDNS callback
+    participant CB as CallbackService
+    participant Compute as ApplyCompute ACK (last of 5)
+    participant ACK as AcknowledgementHandler
+    participant Cascade as CascadePublishService
+    participant DB as Database
+
+    DNS->>CB: completed (dns deps: network, compute)
+    CB->>DB: areCascadeDependenciesMet('dns')? NO (compute not fully ACKed yet)
+    CB->>DB: stays COMPLETED, kafkaPublishedAt=NULL
+    CB-->>CB: "Deferring publish" (by design — expects a later recheck)
+
+    Compute->>ACK: last ApplyCompute ACK arrives
+    ACK->>Cascade: hasDependentCascades('compute')
+    Note over Cascade: checks DI-default wfConfig<br/>(order-processing — WRONG workflow!)
+    Cascade-->>ACK: false ('compute' unknown to order-processing)
+    Note over ACK: checkAndExecutePendingPublishSteps() NEVER CALLED
+    Note over DB: ApplyDNS stuck COMPLETED forever:<br/>kafkaPublishedAt=NULL, ackMetadata=NULL
+```
+
+### Diagram: With Fix (Safe)
+
+```mermaid
+sequenceDiagram
+    participant DNS as ApplyDNS callback
+    participant CB as CallbackService
+    participant Compute as ApplyCompute ACK (last of 5)
+    participant ACK as AcknowledgementHandler
+    participant Registry as WorkflowRegistryService
+    participant Cascade as CascadePublishService
+    participant DB as Database
+
+    DNS->>CB: completed (dns deps: network, compute)
+    CB->>DB: areCascadeDependenciesMet('dns')? NO
+    CB-->>CB: "Deferring publish"
+
+    Compute->>ACK: last ApplyCompute ACK arrives (topic-routed)
+    ACK->>Registry: getByAckTopic(topic) → { config: infraProvisioningConfig, cascadeName: 'compute' }
+    ACK->>Cascade: hasDependentCascades('compute', infraProvisioningConfig)
+    Cascade-->>ACK: true (compute has dns/storage/loadBalancer as dependents)
+    ACK->>Cascade: checkAndExecutePendingPublishSteps(jobId)
+    Cascade->>DB: scan COMPLETED steps, kafkaPublishedAt=NULL
+    Cascade->>DB: ApplyDNS deps now met → inject FKs, publish, WAITING_FOR_ACK
+    Note over DB: ApplyDNS now correctly published and ACKed
+```
+
+### Fix Applied
+
+`kafka/handlers/acknowledgement.handler.ts` — thread the already-resolved per-topic
+`WorkflowConfigService` through instead of discarding it:
+
+```typescript
+// handleMessage(): resolved.config was already being computed and thrown away
+const resolved = this.workflowRegistry.getByAckTopic(topic);
+const cascadeName = resolved.cascadeName;
+await this.processAcknowledgement(message, cascadeName, resolved.config); // now passed through
+
+// processAcknowledgement(): accepts and uses it
+private async processAcknowledgement(
+  message: AcknowledgementMessage,
+  cascadeName: string,
+  wfConfig: WorkflowConfigService, // new param
+): Promise<void> {
+  // ...
+  if (this.cascadePublishService.hasDependentCascades(cascadeName, wfConfig)) {
+    // now checks the ACKed step's OWN workflow, not the DI-default
+    await this.cascadePublishService.checkAndExecutePendingPublishSteps(jobId);
+  }
+}
+```
+
+`CascadePublishService.hasDependentCascades()` already accepted an optional `wfConfig` — the bug
+was purely that the one caller never passed it. No change needed to `CascadePublishService` or
+`WorkflowConfigService` themselves.
+
+**Regression test**: `acknowledgement.handler.spec.ts` — `'resolves cascade checks against the
+ACKed topic's own workflow config, not the DI-default'` asserts `hasDependentCascades` is called
+with the exact `resolved.config` object from `getByAckTopic()`, not a bare single-arg call.
+Reproduces red against the pre-fix code (`Received: "network"` with no second argument at all).
+
+**Statistical verification**: `SE-07-cascade-fk-every-hop` (previously `se_skip`'d for this exact
+race) — 10/10 consecutive PASS on the fixed build; the previously-dead `"🔗 Checking for cascade
+publishing after X ACK..."` / `"🎉 Cascade publishing: N dependent cascades published"` log lines
+now fire on every run.
+
+---
+
 ## All Race Condition Guards Summary
 
 ```mermaid
@@ -639,18 +779,23 @@ flowchart LR
         G6["Atomic Claim Guard<br/>(delegation.service.ts)<br/><br/>claimForDelegation()<br/>UPDATE WHERE status='pending'"]
     end
 
+    subgraph "Guard Layer 7: Cascade Recovery"
+        G7["Per-Job Workflow Resolution<br/>(acknowledgement.handler.ts)<br/><br/>hasDependentCascades(name, wfConfig)<br/>— resolved.config threaded through,<br/>never the DI-default"]
+    end
+
     G1 -->|"Blocks"| RC3["Race #3:<br/>SQS Re-delivery"]
     G2 -->|"Blocks"| RC3
     G3 -->|"Blocks"| RC1["Race #1:<br/>Premature Discovery<br/>Completion"]
     G4 -->|"Blocks"| RC2["Race #2:<br/>Premature Job<br/>Completion"]
     G5 -->|"Blocks"| RC_ACK["Duplicate ACK<br/>Messages"]
     G6 -->|"Blocks"| RC4["Race #4:<br/>Double Delegation"]
+    G7 -->|"Blocks"| RC5["Race #5:<br/>Cascade Recovery<br/>Checked Wrong Workflow"]
 
     classDef guard fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
     classDef race fill:#ffcdd2,stroke:#c62828,stroke-width:2px
 
-    class G1,G2,G3,G4,G5,G6 guard
-    class RC1,RC2,RC3,RC4,RC_ACK race
+    class G1,G2,G3,G4,G5,G6,G7 guard
+    class RC1,RC2,RC3,RC4,RC5,RC_ACK race
 ```
 
 ---
@@ -712,6 +857,10 @@ HAVING j.completed_at < MAX(s.ack_received_at);
 - **RC4 Delegation Guard**: `services/orchestrator/src/delegation/delegation.service.ts`
 - **ACK Handler Guard**: `services/orchestrator/src/kafka/handlers/acknowledgement.handler.ts`
 - **Fan-Out Service**: `services/orchestrator/src/orchestration/fan-out.service.ts`
+- **RC5 Fix Location**: `services/orchestrator/src/kafka/handlers/acknowledgement.handler.ts` (`processAcknowledgement()` / `hasDependentCascades()` call)
+- **RC5 Gated Recovery Method**: `services/orchestrator/src/orchestration/cascade-publish.service.ts` (`hasDependentCascades()`, `checkAndExecutePendingPublishSteps()`)
+- **RC5 Regression Test**: `services/orchestrator/src/kafka/handlers/acknowledgement.handler.spec.ts`
+- **RC5 SE**: `workflows/infra-provisioning/setpoint-evals/SE-07-cascade-fk-every-hop`
 - **Diagram**: `docs/diagrams/callback-flow-race-prevention.mermaid`
 - **Changelog (Race #1-2)**: `CHANGELOG/bug-fixes/2026-02-04-race-condition-job-completion.md`
 - **Changelog (Race #3)**: `CHANGELOG/bug-fixes/2026-02-05-terminal-state-callback-guard.md`

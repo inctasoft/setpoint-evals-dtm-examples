@@ -24,19 +24,19 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../shared/helpers.sh"
 
-# QUARANTINED (2026-07-16): NOT an environment gap — se_skip's own convention
-# ("never as a way to silence a real failure") is being knowingly overridden
-# here. A fresh-stack full-suite run surfaced a genuine, reproducible (~50%)
-# race: ApplyDNS/ApplyStorage/ApplyLoadBalancer (delegated in parallel after
-# ApplyNetwork+ApplyCompute) intermittently end up with ack_metadata=NULL
-# (not just an empty _fkInjections audit field — the step's OWN ACK payload
-# never lands) despite ackDelay being set and the job still reporting full
-# success (stepsFailed=0). This is a real engine bug in the parallel-ACK
-# path, not something this new SE lane can safely fix blind (unconfirmed
-# root cause, core cascade code shared by all 3 workflows, needs statistical
-# verification). See DIFFICULTIES-LOG.md for the full write-up and the
-# reproduction steps. Remove this skip once that's fixed and verified.
-se_skip "quarantined — parallel-ACK race intermittently drops ack_metadata on ApplyDNS/ApplyStorage/ApplyLoadBalancer (see DIFFICULTIES-LOG.md); this is a real bug, not a false pass being hidden"
+# UN-QUARANTINED (2026-07-16, RC5 fix, fix/parallel-ack-race): was se_skip'd for a
+# genuine ~50% race where ApplyDNS/ApplyStorage/ApplyLoadBalancer intermittently ended
+# up with ack_metadata=NULL. Root cause (see docs/guides/race-condition-prevention.md
+# RC5): AcknowledgementHandler.hasDependentCascades() checked the DI-default
+# WorkflowConfigService (bound to order-processing, the first-registered workflow)
+# instead of the ACKed step's own resolved workflow config — so for infra-provisioning
+# (and iot-sensor-pipeline) the "re-check deferred publishes after a parent ACK" gate
+# always returned false and the retry hook never fired. A step whose own
+# areCascadeDependenciesMet check lost the race at completion time (legitimate,
+# expected under parallel delegation) then stayed deferred FOREVER. Fixed by threading
+# the per-topic WorkflowConfigService (already resolved via
+# WorkflowRegistryService.getByAckTopic()) through to hasDependentCascades(). Verified
+# 10/10 consecutive PASS on the fixed build (see PR).
 
 EVAL_NAME="SE 07: Cascade FK Every Hop"
 EVAL_PURPOSE="ack_metadata externalId threads through all 5 cascade hops via _fkInjections"
