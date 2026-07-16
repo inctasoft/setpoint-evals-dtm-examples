@@ -153,3 +153,27 @@ would migrate the wrong (or previous) database with zero error. Fixed by droppin
 the current host `.env`. Proven: built the image once with `DTM_DB_HOST=A` baked in (pre-fix
 behavior), changed `.env` to `DTM_DB_HOST=B` with no rebuild, re-ran the container — post-fix it
 picks up `B` (see PR evidence).
+### .results/ dirs are not self-gitignoring
+**Severity:** Low
+**Status:** Open
+The v2 SE convention says `.results/` is self-gitignoring (runner drops a `.gitignore` inside), but runs leave untracked `setpoint-evals/.results/` + per-workflow `.results/` noise (observed during PR #16 acceptance). Make the vendored runner create `.results/.gitignore` (`*`) on first write, or add the four paths to the repo .gitignore. Fold into the Phase 3 SE-estate PR.
+
+### tools/sqs-poller tsc build red on master (missing @dtm/worker-sdk path mappings)
+**Severity:** Medium
+**Status:** Open
+`pnpm run build:tools` fails on master: tools/sqs-poller tsconfig lacks path mappings for @dtm/worker-sdk (package added to the workspace after the poller's tsconfig was written). Runtime is unaffected (poller runs via tsx; lambda bundling resolves through pnpm links post-install), so the stack and all 28 SEs stay green — but the advertised build command is broken. Found during PR #16 verification (out of scope there). Fix: add the three path mappings mirroring the existing @dtm-workflows/* entries; candidate for the Phase 3 estate PR or a standalone quick fix.
+
+### Dockerfile.db-init bakes .env at build time — stale image silently runs outdated migrations
+**Severity:** Medium
+**Status:** Open
+`services/orchestrator/Dockerfile.db-init` (and likely the main Dockerfile) does `COPY .env ./.env` at build time. A cached dtm-init-typeorm image (a) auth-fails with Postgres 28P01 against a fresh DB if .env changed since build, and (b) silently applies an OUTDATED migration set while exiting 0 if migration source changed since the last build. CI always builds fresh; LOCAL runs after any .env/migration change need `--build` (bit the schema-fin lane on first stack start, PR #18). Proper fix: mount .env at runtime instead of baking, or make the init container always rebuild. Candidate for Phase 3 estate PR or standalone fix.
+
+### local-env.sh workspace-build-check never fires (templating bug)
+**Severity:** Low
+**Status:** Open
+scripts/local-env.sh ~lines 201-216: the auto-build-on-start check renders $d/$NEEDS_BUILD as empty strings, so the "workspace needs build" detection silently never fires — fresh clones/worktrees hit stale-dist crashloops the check was meant to prevent (dev-ack-simulator bind-mounts dist/). Found during the T2 ack-race lane (PR #25), deliberately out of scope there.
+
+### stuck-in-progress.task auto-fail has the LEADER-2-class bare-id UPDATE race
+**Severity:** Medium
+**Status:** Open
+services/orchestrator/src/maintenance/tasks/stuck-in-progress.task.ts (autoFailEnabled branch): bare id-keyed update — a step completing between the task's SELECT and UPDATE gets clobbered back to FAILED, the exact race LEADER-2 fixed in stuck-acknowledgement.task (PR #27). Fix = conditional UPDATE (WHERE id=? AND status='in_progress') + regression test pinning the WHERE criteria. Flagged by the PR #27 lane, deliberately out of its scope. Assign to the next backend lane (Phase 4a brief).
