@@ -12,7 +12,11 @@ import { DelegationService } from '../delegation/delegation.service';
 import { KafkaService } from '../kafka/kafka.service';
 import { CorrelationService } from '../common/correlation/correlation.service';
 import { StepDelegationDto } from '../delegation/dto/step-delegation.dto';
-import { WorkflowConfigService, WorkflowRegistryService } from '../workflow-loader';
+import {
+  WorkflowConfigService,
+  WorkflowRegistryService,
+  FeatureFlagService,
+} from '../workflow-loader';
 import type { StepDefinition, JobContext, OutcomeResult } from '@dtm/core';
 import { JobCompletedEvent, JobFailedEvent } from '../callback/dto/job-status-events.dto';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -42,6 +46,7 @@ export class OrchestrationService {
     private readonly workflowConfig: WorkflowConfigService,
     private readonly workflowRegistry: WorkflowRegistryService,
     private readonly eventsGateway: EventsGateway,
+    private readonly featureFlagService: FeatureFlagService,
   ) {}
 
   /**
@@ -689,9 +694,8 @@ export class OrchestrationService {
         if (job) {
           const wfCfg = this.getWorkflowConfig(job);
           const wfDef = wfCfg.getWorkflow();
-          const defaultFlags = wfDef.featureFlags?.defaults ?? {};
           const jobFlags = (job.payload as any)?.featureFlags ?? {};
-          const resolvedFlags: Record<string, unknown> = { ...defaultFlags, ...jobFlags };
+          const resolvedFlags = this.featureFlagService.resolveFlags(wfDef, jobFlags);
 
           const stepDefs = wfCfg.getStepDefinitionsForJob(job);
           for (const step of steps) {
