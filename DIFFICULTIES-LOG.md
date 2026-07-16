@@ -5,6 +5,57 @@
 
 ---
 
+### Parallel-delegated Apply* steps intermittently get ack_metadata=NULL (infra-provisioning, ~50% repro)
+**Severity:** Medium (real, reproducible engine bug — not a test artifact)
+**Status:** Open — quarantined via `se_skip`, not fixed (found during the Phase-3b full-suite
+verification run; see `workflows/infra-provisioning/setpoint-evals/SE-07-cascade-fk-every-hop`,
+now anchored `se_skip` rather than run as a live assertion)
+
+Running `infra-provisioning/setpoint-evals/run-all.sh --se 07` repeatedly against the SAME
+freshly-built stack (`scripts/local-env.sh start --standalone --orchestrator --build`) is
+non-deterministic: PASS, FAIL, PASS, FAIL across 4 consecutive runs (~50%). This is **not** a
+timing artifact in the SE's own verification query (checked: on a failing run the job still
+reaches `COMPLETED` with `stepsFailed: 0`, `successCount: 18` — the job looks entirely healthy
+from the API).
+
+Direct `dtm_steps` query on a captured failure (`--skip-purge` used to preserve the row before
+investigating):
+```
+ApplyNetwork        | completed | ack_metadata: {"externalId": "357127ad-...", ...}   (real, populated)
+ApplyDNS            | completed | ack_metadata: NULL
+ApplyStorage        | completed | ack_metadata: NULL
+ApplyLoadBalancer   | completed | ack_metadata: NULL
+```
+`ApplyDNS`/`ApplyStorage`/`ApplyLoadBalancer` are the 3 steps `OrchestrationService` delegates
+**in parallel** right after `ApplyNetwork`+`ApplyCompute` both complete (confirmed via
+orchestrator log: `"Delegating 3 steps in parallel ... steps ApplyDNS, ApplyLoadBalancer,
+ApplyStorage"`). All three have `ackDelay: 1000` set in the test payload — they're expected to
+go through `WAITING_FOR_ACK` and receive a real ACK, same as `ApplyNetwork`/`ApplyCompute`
+(which correctly populate `ack_metadata` in the same run). Their `ack_metadata` staying
+completely `NULL` means the ACK for these three individually never landed or was never
+persisted — the downstream FK-injection failure (`ApplyCertificate`'s `ext_dns_id` staying
+empty) is a symptom, not the cause.
+
+**Root cause NOT diagnosed** — deliberately not guessed at further; the earlier hypothesis in
+this same investigation ("stale read in `checkAndExecutePendingPublishSteps`") could not be
+verified (the underlying row was already purged by the next SE in the suite before it could be
+checked) and was dropped rather than shipped as an unverified fix. Suspect area: something in
+the parallel-delegation path (`OrchestrationService.delegateMultipleSteps` /
+`AcknowledgementHandler` / the dev-ack-simulator's concurrent handling of 3 simultaneous
+`WAITING_FOR_ACK` steps) drops or races the ACK write for 2-3 of them under contention. Reproduce
+by running infra-provisioning SE-07 (or SE-04/SE-08, which share the same parallel `Apply*` fan)
+several times in a row against a fresh stack and directly querying `ack_metadata` on the
+parallel-delegated steps.
+
+**Why not fixed here:** out of scope for an SE-authoring lane — unconfirmed root cause, shared
+cascade/ACK code with blast radius across all 3 workflows, and a real fix needs statistical
+verification (many repeated runs) that a single PR turnaround can't cheaply provide. Decision
+needed: someone with more orchestration-core context should investigate
+`OrchestrationService`'s parallel-delegation path and the ACK-write path for a race, then remove
+`SE-07-cascade-fk-every-hop`'s `se_skip` once fixed and re-verified stable across many runs.
+
+---
+
 ### Feature-flag 3-layer contract (docs) vs. live step-gating code is actually 2-layer, unguarded
 **Severity:** Medium (architecture drift — flagship-documented capability doesn't match runtime)
 **Status:** Open — decision needed, not fixed (found while building
