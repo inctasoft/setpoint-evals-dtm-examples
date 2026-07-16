@@ -103,19 +103,8 @@ export class FeatureFlagService {
   /**
    * Convert camelCase to SCREAMING_SNAKE_CASE for env var lookup.
    * e.g., "enableDeduplication" → "ENABLE_DEDUPLICATION"
-   *
-   * Idempotent for keys that are ALREADY SCREAMING_SNAKE_CASE (e.g.
-   * iot-sensor-pipeline's featureFlags.defaults keys, "ENABLE_ALERT_GENERATION").
-   * Without this guard, the regex inserts "_" before every already-uppercase
-   * letter — "ENABLE_ALERT_GENERATION" became
-   * "_E_N_A_B_L_E__A_L_E_R_T__G_E_N_E_R_A_T_I_O_N", so
-   * FEATURE_FLAG_ENABLE_ALERT_GENERATION never matched and Layer 2 (env var
-   * override) was a silent no-op for any workflow whose flag keys are already
-   * SCREAMING_SNAKE_CASE (found via setpoint-evals/workflows/iot-sensor-pipeline
-   * SE-07-feature-flag-layering).
    */
   private toScreamingSnake(key: string): string {
-    if (/^[A-Z][A-Z0-9_]*$/.test(key)) return key;
     return key.replace(/([A-Z])/g, '_$1').toUpperCase();
   }
 }
