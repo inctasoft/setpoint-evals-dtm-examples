@@ -47,7 +47,7 @@ When adding new testOptions fields to `TestOptionsDto`:
 
 ### Legacy Code
 - **Rule**: "No Legacy Code".
-- **Action**: If you find unused controllers, services, or DTOs (especially related to old "ElasticMQ" or "backend-apps" patterns), **delete them** after verifying they are unused.
+- **Action**: If you find unused controllers, services, or DTOs (especially related to old "ElasticMQ" or legacy external-system-specific patterns), **delete them** after verifying they are unused.
 
 ### Logging & Tracing
 - **Correlation ID**:

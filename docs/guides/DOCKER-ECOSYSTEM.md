@@ -153,7 +153,7 @@ This section details exactly which containers are running in specific scenarios 
 ```
 
 **Pre-requisites:**
-- `backend-apps` repo must be running locally (provides Kafka).
+- The external system must be running locally (provides Kafka).
 
 **Running Containers:**
 
@@ -170,7 +170,7 @@ This section details exactly which containers are running in specific scenarios 
 
 **Key Differences:**
 - **NO Local Kafka** containers (`zookeeper`, `kafka`, `kafka-ui`) are started.
-- Services connect to the **External Kafka** provided by `backend-apps` via the `backend-apps_default` network.
+- Services connect to the **External Kafka** provided by the external system via the `external-system_default` network.
 - Ideal for full system integration testing.
 
 ---

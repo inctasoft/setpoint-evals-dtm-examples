@@ -117,7 +117,7 @@ services:
 
   # Dev Acknowledgement Simulator (Development Only - Standalone Mode)
   # ⚠️  This service simulates external system acknowledgements for testing
-  # Only runs in standalone mode (not in integrated mode with backend-apps)
+  # Only runs in standalone mode (not in integrated mode with the external system)
   dev-ack-simulator:
     build:
       context: tools/dev-ack-simulator
