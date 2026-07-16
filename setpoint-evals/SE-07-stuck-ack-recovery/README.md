@@ -1,292 +1,129 @@
-# Eval 12: Stuck Acknowledgement Recovery
+# SE-07: stuck ack recovery
 
 ## Setpoint Eval Metadata
 
-**Timeout**: 95s
-**Isolation**: destructive
-**Category**: maintenance
-
-> ✅ **NON-DESTRUCTIVE TEST**: This eval uses `testOptions.SubmitCustomer.skipAck` to simulate stuck acknowledgements without killing any services.
-
-## Purpose
-
-Tests the **StuckAcknowledgementTask** maintenance task, which automatically fails workflow steps that are stuck waiting for external acknowledgements.
-
-## ⚠️ Architecture Note: Why Single Step Only
-
-Due to the **cascade dependency architecture**, SubmitOrder cannot reach `WAITING_FOR_ACK` until SubmitCustomer has received its ACK:
-
-```
-SubmitCustomer → publishes to Kafka → WAITING_FOR_ACK → receives ACK → COMPLETED
-                                                                              │
-                                                                              ▼
-                              SubmitOrder is NOW delegated ──────────────►
-```
-
-**This means:**
-
-- SubmitCustomer must receive its ACK before SubmitOrder even starts
-- It's **impossible** for both steps to be in `WAITING_FOR_ACK` simultaneously
-- We can only test a **single step** (SubmitCustomer) getting stuck
-
-This is correct cascade architecture behavior, not a test limitation.
-
-## Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant Test as E2E Test
-    participant Orch as Orchestrator
-    participant VC as ValidateCustomer
-    participant VO as ValidateOrder
-    participant SC as SubmitCustomer
-    participant SO as SubmitOrder
-    participant Sim as DevAckSimulator
-    participant Maint as MaintenanceTask
-
-    Test->>Orch: POST /jobs (SC: skipAck=true, SO: skipAck=true)
-    Orch->>VC: Delegate ValidateCustomer
-    Orch->>VO: Delegate ValidateOrder
-
-    VC->>Orch: Callback: completed
-    VO->>Orch: Callback: completed
-
-    Orch->>SC: Delegate SubmitCustomer
-    SC->>Orch: Callback: completed
-    Orch->>Sim: Publish consumer.completed
-
-    Note over SC: SC → WAITING_FOR_ACK
-    Note over SO: SO still PENDING (blocked by SC ACK)
-
-    rect rgb(255, 240, 200)
-        Note over Sim: skipAck=true → SC ack never sent
-        Sim--xOrch: No customer ack!
-    end
-
-    Note over SC: SC stuck - no ACK coming!
-    Note over SO: SO can't start (SC ACK required)
-
-    Test->>Maint: Trigger stuck-ack task
-    Maint->>Orch: Auto-fail SC (stuck >6s)
-
-    Note over SC: SC → FAILED
-    Note over SO: SO → SKIPPED (dependency failed)
-    Note over Orch: Job → FAILED
-```
+**Category**: maintenance · **Duration**: ~30-45s (per test.sh's own banner) · **Timeout**: 95s · **Isolation**: destructive
 
 ## Scenario
+```gherkin
+Feature: the stuck-acknowledgement maintenance task auto-fails hung acks
+  Scenario: SubmitCustomer's ack never arrives (skipAck) and is auto-failed
+    Given order-processing is running with customer_id=1 (Ada Lovelace) and order_id=1
+    When a quick-order job is submitted with SubmitCustomer and SubmitOrder both
+      configured with skipAck=true (the dev-ack-simulator will never send an ack)
+    Then SubmitCustomer reaches WAITING_FOR_ACK and stays there
+    And SubmitOrder can never reach WAITING_FOR_ACK itself — it depends on
+      SubmitCustomer's ack (cascade architecture), so only SubmitCustomer is
+      testable as "stuck"
+    When the stuck-acknowledgement maintenance task is triggered with a 6s threshold
+    Then SubmitCustomer is auto-failed, SubmitOrder is skipped (cascade), and the
+      job reaches FAILED
+```
 
-1. **start job with `SubmitCustomer.skipAck: true`
-2. **Submit Phase**: Validates complete, SubmitCustomer runs
-3. **SC Waits for ACK**: SubmitCustomer publishes to Kafka → `WAITING_FOR_ACK`
-4. **ACK Never Arrives**: `skipAck=true` tells simulator to skip the acknowledgement
-5. **SC Stuck**: SubmitCustomer remains in `WAITING_FOR_ACK` indefinitely
-6. **SO Blocked**: SubmitOrder still `PENDING` (waiting for SC ACK)
-7. **Auto-Fail**: Maintenance task detects stuck SC, auto-fails it
-8. **Cascade Skip**: SubmitOrder marked as `SKIPPED` (dependency failed)
-9. **Job Failed**: Overall job marked as `FAILED`
+## Architecture
+```mermaid
+sequenceDiagram
+    participant T as test.sh
+    participant O as Orchestrator
+    participant SC as SubmitCustomer worker
+    participant K as Kafka
+    participant Task as StuckAcknowledgementTask
 
-## What This Tests
+    T->>O: POST jobs (quick-order, skipAck=true on Submit steps)
+    O->>SC: attempt 1
+    SC-->>O: success
+    O->>K: publish SubmitCustomer event, status WAITING_FOR_ACK
+    Note over K: dev-ack-simulator intentionally skips this ack
 
-- **StuckAcknowledgementTask** execution and detection logic
-- Auto-fail mechanism for stuck acknowledgements
-- Cascade dependency handling (SO skipped when SC fails)
-- Correct job state transition after auto-fail
-- Single stuck step recovery
+    T->>O: poll until SubmitCustomer = waiting_for_ack
+    O-->>T: confirmed waiting_for_ack
+
+    Note over T: wait 15s for the ack to become stuck
+    T->>Task: POST maintenance/tasks/stuck-acknowledgement/execute, ackTimeoutMinutes=0.1
+    Task->>O: find steps in WAITING_FOR_ACK past threshold
+    Task->>O: auto-fail SubmitCustomer
+    O->>O: markDependentStepsAsSkipped(SubmitOrder)
+    O->>O: job -> FAILED
+    Task-->>T: success=true, stuckStepsFound>=1, autoFixed>=1
+```
 
 ## Test Data
+Reads (does not own) order-processing's seeded rows — `customer_id=1` (Ada Lovelace)
+and `order_id=1`, owned by workflow suite `SE-01-happy-path`
+(`workflows/order-processing/source-db/SEED-REGISTRY.md`). `entityId` is a fresh
+`uuidgen` per run.
 
-| Field         | Value        | Notes                                               |
-| ------------- | ------------ | ---------------------------------------------------- |
-| Variant       | `quick-order`| customerId 1 / orderId 1                            |
-| SC skipAck    | true         | **ACK will never be sent**                          |
-| SO skipAck    | true         | Also skipped (but SO never reaches waiting_for_ack) |
+## Payload
 
-## Expected Duration
-
-~20-30 seconds
-
-## Success Criteria
-
-1. ✅ Job starts successfully
-2. ✅ SubmitCustomer reaches `WAITING_FOR_ACK`
-3. ✅ ACK never arrives (skipAck=true)
-4. ✅ Maintenance task finds ≥1 stuck step
-5. ✅ SubmitCustomer is marked as `failed`
-6. ✅ SubmitOrder is `skipped` (or `pending`)
-7. ✅ Job is marked as `failed`
-
-## Configuration
-
+### Job payload
 ```json
 {
+  "variant": "quick-order",
+  "payload": {
+    "customerId": 1,
+    "orderId": 1,
+    "entityId": "<uuidgen per run>"
+  },
+  "enableDeduplication": false,
   "testOptions": {
-    "enableDeduplication": false,
     "ValidateCustomer": { "simDelay": 500 },
-    "ValidateOrder": { "simDelay": 500 },
+    "ValidateProduct": { "simDelay": 500 },
     "SubmitCustomer": { "simDelay": 500, "skipAck": true },
     "SubmitOrder": { "simDelay": 500, "skipAck": true }
   }
 }
 ```
 
-## Running
-
+### Maintenance task invocation
 ```bash
-# Standalone
-./setpoint-evals/SE-07-stuck-ack-recovery/test.sh
-
-# Via runner
-./setpoint-evals/run-all.sh
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"ackTimeoutMinutes": 0.1}' \
+  "${ORCHESTRATOR_HOST}/api/${API_VERSION}/maintenance/tasks/stuck-acknowledgement/execute"
 ```
 
-## How skipAck Works
+## Artifacts
 
-The `SubmitCustomer.skipAck: true` option tells the `dev-ack-simulator` to **never send** the acknowledgement:
-
+### Expected output (task response + final step statuses)
+```json
+{ "success": true, "metrics": { "stuckStepsFound": 1, "autoFixed": 1 } }
 ```
-Dev-Ack-Simulator logs:
-🚫 [DEV] Skipping consumer acknowledgement for step xxx (SubmitCustomer.skipAck=true)
-   Step will remain in WAITING_FOR_ACK state for testing stuck ack recovery
 ```
-
-**Benefits over killing the simulator:**
-
-- No Kafka consumer group corruption
-- No complex cleanup required
-- No risk of affecting subsequent tests
-- Faster test execution (~20s vs ~60s)
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ STEP 1: Normal Job Flow                                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  [Orchestrator]                                              │
-│       │                                                      │
-│       ├─> ValidateCustomer ──────────> completed              │
-│       ├─> ValidateOrder ────────> completed              │
-│       └─> SubmitCustomer ────────> WAITING_FOR_ACK        │
-│                                                              │
-│  SubmitOrder is PENDING (waiting for SC ACK)         │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│ STEP 2: skipAck=true (ACK never sent)                       │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  [dev-ack-simulator]                                         │
-│       │                                                      │
-│       └─> 🚫 Skipping ACK (SubmitCustomer.skipAck=true)   │
-│                                                              │
-│  SC is stuck:                                                │
-│    • SubmitCustomer: WAITING_FOR_ACK ❌ (no ack coming)  │
-│                                                              │
-│  SO is blocked:                                              │
-│    • SubmitOrder: PENDING (cascade blocked)         │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│ STEP 3: Maintenance Task Auto-Fails TC                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  [StuckAcknowledgementTask]                                  │
-│       │                                                      │
-│       ├─> Detect: SubmitCustomer stuck >6s               │
-│       ├─> Auto-fail: SubmitCustomer → failed             │
-│       │                                                      │
-│       └─> Trigger: Orchestration continues                  │
-│                                                              │
-│  [Orchestrator]                                              │
-│       │                                                      │
-│       └─> Skip: SubmitOrder → skipped               │
-│           (dependency SC failed)                             │
-│                                                              │
-│  Result:                                                     │
-│    • SubmitCustomer: failed ❌                            │
-│    • SubmitOrder: skipped ⏭️                         │
-│    • Job: failed ❌                                          │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+SubmitCustomer = failed    (auto-failed by maintenance task)
+SubmitOrder    = skipped   (cascade dependency)
+job.status     = failed
 ```
 
-## Why Single Step Only?
+## Assertions
+<!-- one checkbox per exit-1 gate in test.sh, in execution order -->
+- [ ] `SubmitCustomer` reaches `waiting_for_ack` (not `completed` — skipAck worked)
+- [ ] maintenance task HTTP response is `200`
+- [ ] `success = true` in the task response
+- [ ] `metrics.stuckStepsFound >= 1`
+- [ ] `metrics.autoFixed >= 1`
+- [ ] `SubmitCustomer` final status is `failed`
+- [ ] `SubmitOrder` final status is `skipped` or `pending`
+- [ ] job overall status is `failed`
 
-**Previous Test Design (with killing simulator):**
-
+## Run
+```bash
+bash setpoint-evals/run-all.sh --se 07
 ```
-Wait for BOTH SubmitCustomer AND SubmitOrder → WAITING_FOR_ACK
-```
-
-**Why It's Impossible:**
-
-```
-SubmitOrder depends on SubmitCustomer ACK!
-
-Timeline:
-├─ SC completes → publishes → WAITING_FOR_ACK
-├─ [SC waits for ACK...]
-├─ SC receives ACK → COMPLETED
-├─ NOW SO can be delegated
-├─ SO completes → publishes → WAITING_FOR_ACK
-└─ [SO waits for ACK...]
-
-They can NEVER be in WAITING_FOR_ACK at the same time!
-```
-
-**Current Test Design (CORRECT):**
-
-```
-SC: skipAck=true → stays in WAITING_FOR_ACK forever
-SO: never gets delegated → stays PENDING
-Maintenance task: auto-fails SC
-Cascade: SO is skipped
-```
-
-## Why This Matters
-
-In production, if the external system is down or Kafka has issues, jobs can hang indefinitely waiting for acknowledgements. This maintenance task provides automatic recovery by:
-
-1. Detecting steps stuck in `WAITING_FOR_ACK` state longer than the timeout
-2. Auto-failing those steps with an appropriate error message
-3. Triggering orchestration to skip dependent steps and fail the job
-
----
-
-## Related
-
-- **Eval 11 (partial-ack-failure)**: Tests partial ack stuck (SC acked, SO stuck)
-- **Eval 09 (acknowledgement-delays)**: Tests normal ack delays
-- **Eval 13 (stuck-in-progress-detection)**: Tests stuck workers (not acks)
-- **Maintenance Task**: `services/orchestrator/src/maintenance/tasks/stuck-acknowledgement.task.ts`
 
 ## Troubleshooting
 
-### Test Fails: "SubmitCustomer did not reach WAITING_FOR_ACK"
+**"SubmitCustomer did not reach WAITING_FOR_ACK"** — check orchestrator logs and
+that workers are deployed.
 
-- **Cause**: Submit steps failed or never started
-- **Solution**: Check orchestrator logs, verify workers are deployed
+**"SubmitCustomer already completed"** — `skipAck` isn't working, or stale
+messages are being processed; check dev-ack-simulator logs for a "skipping" line,
+or run a full purge: `./scripts/local-env.sh purge --full`.
 
-### Test Fails: "SubmitCustomer already completed"
+**"Expected at least 1 stuck step, found: 0"** — the step wasn't in
+`waiting_for_ack` long enough before the maintenance task ran; the test already
+waits 15s against a 6s threshold, which should be sufficient margin.
 
-- **Cause**: skipAck not working, or stale messages being processed
-- **Solution**:
-  - Check dev-ack-simulator logs for "🚫 Skipping" message
-  - Run full purge: `./scripts/local-env.sh purge --full`
-
-### Test Fails: "Expected at least 1 stuck step, found: 0"
-
-- **Cause**: Step not in `waiting_for_ack` long enough
-- **Solution**: Test waits 15s before triggering maintenance task with 6s threshold, should be sufficient
-
----
-
-## Notes
-
-- This eval is **non-destructive** (no services killed)
-- Runs sequentially in Phase 2 because maintenance tasks scan ALL steps globally
-- The `skipAck` feature eliminates Kafka consumer group corruption issues
+This eval is **non-destructive** (no services killed) despite its `destructive`
+isolation tag — it runs sequentially because the maintenance task scans ALL
+steps globally, which would race with unrelated concurrently-running SEs.
+`skipAck` avoids the older approach of killing the dev-ack-simulator, which used
+to corrupt Kafka consumer groups for the rest of the suite.

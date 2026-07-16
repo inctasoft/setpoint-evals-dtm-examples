@@ -1,370 +1,144 @@
-# Eval 14: Health Metrics
+# SE-08: health metrics
 
 ## Setpoint Eval Metadata
 
-**Timeout**: 150s
-**Isolation**: destructive
-**Category**: maintenance
+**Category**: maintenance · **Duration**: ~60-120s (includes SQS retry delays, per test.sh's own banner) · **Timeout**: 150s · **Isolation**: destructive
 
-## 🎯 Purpose
+## Scenario
+```gherkin
+Feature: the health-metrics maintenance task reports operational counters
+  Scenario: 3 successful jobs and 1 permanently-failed job are reflected in metrics
+    Given order-processing is running with customers 1, 2, 3 (Ada Lovelace,
+      Grace Hopper, Alan Turing) and orders 1, 2, 3
+    When 3 quick-order jobs complete successfully
+    And 1 quick-order job is submitted with SubmitOrder failing on every attempt
+      (exhausting retries, same DLQ mechanism as SE-02)
+    And the health-metrics maintenance task is triggered
+    Then the metrics response reports totalJobs >= 4 and carries every expected
+      field (activeJobs, pendingJobs, totalJobs, jobsCompletedLast5min,
+      jobsFailedLast5min)
+```
 
-### 🌊 Flow Diagram
-
+## Architecture
 ```mermaid
-graph TD
-    START(Start) --> SEED[Seed Data]
-    SEED --> MIG_S[3x Success Jobs]
-    SEED --> MIG_F[1x Failed Job]
+sequenceDiagram
+    participant T as test.sh
+    participant O as Orchestrator
+    participant DB as dtm_jobs
+    participant Task as HealthMetricsTask
 
-    MIG_S --> DB[(Database)]
-    MIG_F --> DB
-
-    TASK[HealthMetricsTask] -->|Query| DB
-
-    DB -->|Counts| METRICS[Metrics Object]
-
-    subgraph Metric Computation
-        METRICS --> CNT[Total/Active/Pending]
-        METRICS --> HIST[History 5m/1h/24h]
-        METRICS --> RATES[Success Rates %]
+    loop 3 successful jobs (customerId/orderId = 1, 2, 3)
+      T->>O: POST jobs (quick-order, fast delays)
+      O-->>T: COMPLETED
     end
 
-    METRICS --> VALIDATE{Validate}
-    VALIDATE -->|Pass| END(End)
+    T->>O: POST jobs (quick-order, SubmitOrder failOnAttempts [1,2,3])
+    Note over O: SQS exhausts retries (~90s), same DLQ path as SE-02
+    O-->>T: FAILED (or still retrying — test tolerates either)
+
+    T->>Task: POST maintenance/tasks/health-metrics/execute
+    Task->>DB: aggregate counts by status and time window
+    DB-->>Task: activeJobs, pendingJobs, totalJobs, completed/failedLast5min
+    Task-->>T: success=true, metrics={...}
+
+    T->>O: GET maintenance/health
+    O-->>T: status
 ```
 
-Tests the **HealthMetricsTask** maintenance task, which generates operational health metrics for monitoring dashboards and alerting systems.
-
-## 📋 Scenario
-
-1. **Clean Environment**: Purge existing data for clean test
-2. **Create Successes**: Run 3 successful jobs
-3. **Create Failure**: Run 1 failed job
-4. **Collect Metrics**: Trigger health-metrics task
-5. **Validate Data**: Verify metrics are accurate and complete
-6. **Check API**: Validate maintenance health endpoint
-
-## 🔍 What This Tests
-
-### Primary Focus
-
-- **HealthMetricsTask** execution and metric collection
-- Accuracy of collected metrics (job counts, throughput, etc.)
-- Completeness of metric data (all expected fields present)
-- API endpoint availability
-
-### Metrics Validated
-
-- `totalJobs` - Total number of jobs in system
-- `activeJobs` - Jobs currently processing
-- `pendingJobs` - Jobs waiting to start
-- `jobsCompletedLast5min` - Recently completed jobs
-- `jobsFailedLast5min` - Recently failed jobs
-
-## 📊 Test Data
-
-Uses multiple `quick-order` jobs to create diverse job states:
-
-- **Completed** (3 jobs): customerId/orderId `1`, `2`, `3` — each with a unique `entityId`
-- **Failed** (1 job): customerId/orderId `1` with `SubmitOrder.failOnAttempts: [1, 2, 3]` (exhausts retries → DLQ)
-- **Source**: `workflows/order-processing/source-db/init-scripts/01-schema-and-seed.sql`
-
-## ⏱️ Expected Duration
-
-- **Normal**: ~30 seconds
-  - Environment cleanup: ~3s
-  - 3 successful jobs: ~15s (3 × 5s)
-  - 1 failed job: ~10s (with retries)
-  - Metrics collection: ~1s
-  - Validation: ~1s
-
-## ✅ Success Criteria
-
-1. ✅ 3 completed jobs created
-2. ✅ 1 failed job created
-3. ✅ Maintenance task executes successfully
-4. ✅ Total jobs ≥ 4
-5. ✅ All expected metric fields present
-6. ✅ Maintenance health endpoint accessible
-
-## 🔧 Configuration
-
-### Environment Variables
-
-```bash
-# No special configuration needed
-# Task runs every 5 minutes by default
-```
-
-## 🚀 Running
-
-```bash
-# Standalone
-./setpoint-evals/SE-08-health-metrics/test.sh
-
-# Via runner
-./setpoint-evals/run-all.sh
-```
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ STEP 1: Create Test Data                                    │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  3 Successful Jobs (quick-order):                      │
-│    Job 1: customerId=1 → completed ✅                 │
-│    Job 2: customerId=2 → completed ✅                 │
-│    Job 3: customerId=3 → completed ✅                 │
-│                                                              │
-│  1 Failed Job (quick-order):                           │
-│    Job 4: customerId=1 → failed ❌                    │
-│                  (SubmitOrder: permanent failure)    │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│ STEP 2: Collect Metrics                                     │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  [HealthMetricsTask]                                         │
-│       │                                                      │
-│       ├─> Query: Count jobs by status                       │
-│       │    • PROCESSING → activeJobs                        │
-│       │    • PENDING → pendingJobs                          │
-│       │    • COMPLETED → totalCompleted                     │
-│       │    • FAILED → totalFailed                           │
-│       │                                                      │
-│       ├─> Query: Recent activity (last 5 minutes)           │
-│       │    • Jobs completed in last 5min                    │
-│       │    • Jobs failed in last 5min                       │
-│       │                                                      │
-│       ├─> Query: Recent activity (last hour)                │
-│       │    • Jobs completed in last hour                    │
-│       │    • Jobs failed in last hour                       │
-│       │                                                      │
-│       ├─> Query: Recent activity (last 24 hours)            │
-│       │    • Jobs completed in last 24h                     │
-│       │    • Jobs failed in last 24h                        │
-│       │                                                      │
-│       ├─> Calculate: Success rates                          │
-│       │    • Hourly success rate                            │
-│       │    • Daily success rate                             │
-│       │                                                      │
-│       └─> Return: Comprehensive metrics object              │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│ STEP 3: Validate Metrics                                    │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Expected Results:                                           │
-│    ✅ totalJobs ≥ 4                                         │
-│    ✅ jobsCompletedLast5min ≥ 1 (lenient)                   │
-│    ✅ All expected fields present:                          │
-│       • activeJobs                                           │
-│       • pendingJobs                                          │
-│       • totalJobs                                            │
-│       • jobsCompletedLast5min                               │
-│       • jobsFailedLast5min                                  │
-│       • (and many more...)                                   │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## 📝 Notes
-
-### Metric Categories
-
-The HealthMetricsTask collects metrics in several categories:
-
-1. **Current State**
-   - `activeJobs`: Currently processing
-   - `pendingJobs`: Waiting to start
-   - Total counts by status
-
-2. **Recent Activity** (5min, 1hr, 24hr)
-   - Completed jobs
-   - Failed jobs
-   - Throughput indicators
-
-3. **Success Rates**
-   - Hourly success rate (%)
-   - Daily success rate (%)
-   - Helps identify trends
-
-4. **Step Health**
-   - Steps in retrying state
-   - Steps waiting for ack
-   - Potential bottlenecks
-
-### Use Cases
-
-These metrics support:
-
-1. **Monitoring Dashboards**
-   - Grafana: Real-time job status
-   - Datadog: APM and metrics
-   - CloudWatch: AWS-native monitoring
-
-2. **Alerting**
-   - Spike in failures
-   - Drop in throughput
-   - Stuck job detection
-
-3. **SLO/SLA Tracking**
-   - Success rate targets
-   - Processing time SLOs
-   - Capacity planning
-
-4. **Operational Insights**
-   - Peak usage times
-   - Failure patterns
-   - System health trends
-
-### Lenient Validation
-
-The test uses lenient validation for time-based metrics:
-
-- ⚠️ `jobsCompletedLast5min ≥ 1` is a soft requirement
-- ✅ Main validation: Task executes + expected fields present
-- ⚠️ Timing variations acceptable (e.g., jobs took 6 minutes instead of 5)
-
-**Why?**
-
-- Docker container overhead varies
-- LocalStack performance fluctuates
-- E2E environment not production-like
-
-**Focus**: Validate mechanism works, not exact values.
-
-## 🐛 Troubleshooting
-
-### Test Fails: "Expected at least 4 total jobs"
-
-- **Cause**: Jobs failed to start or weren't persisted
-- **Solutions**:
-  1. Check orchestrator logs: `docker logs dtm-orchestrator`
-  2. Check database: `docker exec dtm-db psql -U dtm_user -d dtm -c "SELECT COUNT(*) FROM dtm_jobs;"`
-  3. Ensure workers are deployed: `./scripts/local-env.sh deploy-workers`
-
-### Warning: "Expected at least 1 completed job in last 5 minutes, got: 0"
-
-- **Not a failure**: This is a lenient check
-- **Reason**: Jobs took longer than 5 minutes to complete
-- **Impact**: None (test still passes)
-
-### Test Fails: "Missing expected metric fields"
-
-- **Cause**: HealthMetricsTask implementation changed
-- **Solutions**:
-  1. Check task source: `services/orchestrator/src/maintenance/tasks/health-metrics.task.ts`
-  2. Update `EXPECTED_FIELDS` array in test script
-  3. Verify task executed: Check logs
-
-### Jobs Don't Complete
-
-- **Cause**: Workers not deployed or dev-ack-simulator down
-- **Solutions**:
-  1. Deploy workers: `./scripts/local-env.sh deploy-workers --poller`
-  2. Check dev-ack-simulator: `docker ps | grep dev-ack`
-  3. Restart if needed: `docker restart dtm-dev-ack-simulator`
-
-## 🔗 Related
-
-- **Maintenance Task**: `services/orchestrator/src/maintenance/tasks/health-metrics.task.ts`
-- **API Endpoint**: `POST /maintenance/tasks/health-metrics/execute`
-- **Cron Schedule**: Every 5 minutes
-- **Health Endpoint**: `GET /maintenance/health`
-- **Task Listing**: `GET /maintenance/tasks`
-
-## 💡 Production Integration
-
-### Prometheus Example
-
-```typescript
-// Future enhancement: Prometheus metrics endpoint
-import { Counter, Gauge } from "prom-client";
-
-const activeJobsGauge = new Gauge({
-  name: "job_active_jobs",
-  help: "Number of jobs currently processing",
-});
-
-const completionCounter = new Counter({
-  name: "job_completions_total",
-  help: "Total number of completed jobs",
-});
-
-// In HealthMetricsTask:
-activeJobsGauge.set(metrics.activeJobs);
-completionCounter.inc(metrics.jobsCompletedLast5min);
-```
-
-### CloudWatch Example
-
-```typescript
-// Future enhancement: CloudWatch integration
-import { CloudWatch } from "aws-sdk";
-
-const cloudwatch = new CloudWatch();
-
-await cloudwatch
-  .putMetricData({
-    Namespace: "JobService",
-    MetricData: [
-      {
-        MetricName: "ActiveJobs",
-        Value: metrics.activeJobs,
-        Unit: "Count",
-      },
-      {
-        MetricName: "SuccessRate",
-        Value: metrics.successRateHourly,
-        Unit: "Percent",
-      },
-    ],
-  })
-  .promise();
-```
-
-### Grafana Dashboard
-
-```sql
--- Example Grafana query (PostgreSQL datasource)
-SELECT
-  date_trunc('minute', completed_at) as time,
-  count(*) as completed_jobs
-FROM dtm_jobs
-WHERE
-  status = 'completed' AND
-  completed_at > NOW() - INTERVAL '1 hour'
-GROUP BY time
-ORDER BY time;
-```
-
-## 📈 Sample Output
-
+## Test Data
+Reads (does not own) order-processing's seeded rows — `customer_id`/`order_id`
+1, 2, 3 (Ada Lovelace, Grace Hopper, Alan Turing), per
+`workflows/order-processing/source-db/SEED-REGISTRY.md` general demo-fill rows
+(customer/order 1 also owned by `SE-01-happy-path`; 2 and 3 are unowned fill
+rows, free to read). This SE intentionally does NOT purge the database first —
+its metrics assertions use `>=` comparisons so accumulated history from other
+runs doesn't break it.
+
+## Payload
+
+### Successful job payload (repeated for i = 1, 2, 3)
 ```json
 {
-  "success": true,
-  "message": "Health metrics collected successfully",
-  "metrics": {
-    "activeJobs": 0,
-    "pendingJobs": 0,
-    "totalJobs": 4,
-    "jobsCompletedLast5min": 3,
-    "jobsFailedLast5min": 1,
-    "jobsCompletedLastHour": 3,
-    "jobsFailedLastHour": 1,
-    "jobsCompletedLast24h": 3,
-    "jobsFailedLast24h": 1,
-    "successRateHourly": 75.0,
-    "successRateDaily": 75.0,
-    "stepsRetrying": 0,
-    "stepsWaitingForAck": 0
+  "variant": "quick-order",
+  "payload": {
+    "customerId": "<from helpers, loop index i>",
+    "orderId": "<from helpers, loop index i>",
+    "entityId": "<uuidgen per run>"
+  },
+  "enableDeduplication": false,
+  "testOptions": {
+    "ValidateCustomer": { "simDelay": 500 },
+    "ValidateProduct": { "simDelay": 500 },
+    "SubmitCustomer": { "simDelay": 500, "ackDelay": 500 },
+    "SubmitOrder": { "simDelay": 500, "ackDelay": 500 }
   }
 }
 ```
+
+### Failed job payload
+```json
+{
+  "variant": "quick-order",
+  "payload": {
+    "customerId": 1,
+    "orderId": 1,
+    "entityId": "<uuidgen per run>"
+  },
+  "enableDeduplication": false,
+  "testOptions": {
+    "ValidateCustomer": { "simDelay": 500 },
+    "ValidateProduct": { "simDelay": 500 },
+    "SubmitCustomer": { "simDelay": 500 },
+    "SubmitOrder": { "simDelay": 500, "failOnAttempts": [1, 2, 3] }
+  }
+}
+```
+
+### Maintenance task invocation
+```bash
+curl -X POST "${ORCHESTRATOR_HOST}/api/${API_VERSION}/maintenance/tasks/health-metrics/execute"
+```
+
+## Artifacts
+
+### Expected output (task response, excerpt)
+```json
+{
+  "success": true,
+  "metrics": {
+    "activeJobs": 0, "pendingJobs": 0, "totalJobs": 4,
+    "jobsCompletedLast5min": 3, "jobsFailedLast5min": 1
+  }
+}
+```
+
+## Assertions
+<!-- one checkbox per exit-1 gate in test.sh, in execution order -->
+- [ ] `POST .../health-metrics/execute` returns `success = true`
+- [ ] `metrics.totalJobs >= 4` (3 completed + 1 failed job created this run)
+- [ ] every expected field is present in `metrics`: `activeJobs`, `pendingJobs`,
+      `totalJobs`, `jobsCompletedLast5min`, `jobsFailedLast5min`
+
+Two checks are `log_warning`-only (no `exit 1`): the failed job's terminal status
+being exactly `failed` (DLQ routing is async, may not have landed yet), and
+`jobsCompletedLast5min >= 1` (non-critical if jobs took longer than 5 minutes).
+`GET maintenance/health` is also checked but only warns if not `healthy`.
+
+## Run
+```bash
+bash setpoint-evals/run-all.sh --se 08
+```
+
+## Troubleshooting
+
+**"Expected at least 4 total jobs"** — check orchestrator logs and
+`docker exec dtm-db psql -U dtm_user -d dtm -c "SELECT COUNT(*) FROM dtm_jobs;"`;
+ensure workers are deployed (`./scripts/local-env.sh deploy-workers`).
+
+**"Missing expected metric fields"** — `HealthMetricsTask`'s output shape
+changed; check `services/orchestrator/src/maintenance/tasks/health-metrics.task.ts`
+against the `EXPECTED_FIELDS` list in `test.sh`.
+
+Related: `services/orchestrator/src/maintenance/tasks/health-metrics.task.ts`,
+`GET /api/v1/maintenance/health`. These metrics feed monitoring dashboards,
+alerting, SLO/SLA tracking, and capacity planning.

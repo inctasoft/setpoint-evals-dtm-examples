@@ -1,76 +1,138 @@
-# SE 13: In-Progress Auto-Timeout
+# SE-13: in-progress auto-timeout
 
 ## Setpoint Eval Metadata
 
-**Timeout**: 120s
-**Isolation**: parallel-safe
-**Category**: maintenance
-
-## Purpose
-
-Tests the **StuckInProgressTask** maintenance task with **auto-fail enabled**, which automatically fails steps stuck in `IN_PROGRESS` beyond their timeout threshold.
-
-```mermaid
-sequenceDiagram
-    participant TEST as Test Script
-    participant LAMBDA as Lambda Worker
-    participant DB as Database
-    participant TASK as MaintenanceTask
-    participant ORCH as OrchestrationService
-
-    Note over TEST: Step 1: Start with long-running step
-    TEST->>LAMBDA: ValidateCustomer with 60s delay
-    LAMBDA->>DB: Status = IN_PROGRESS
-
-    Note over TEST: Step 2: Kill worker mid-execution
-    TEST->>LAMBDA: Kill container
-
-    Note over TASK: Step 3: Auto-fail recovery
-    TASK->>DB: Find IN_PROGRESS steps > timeout
-    TASK->>DB: Auto-fail stuck step
-    TASK->>ORCH: continueJob()
-    ORCH->>DB: Skip dependent steps (cascade)
-    ORCH->>DB: Job = FAILED
-```
+**Category**: maintenance · **Duration**: ~30s (per test.sh's own banner) · **Timeout**: 120s · **Isolation**: parallel-safe
 
 ## Scenario
+```gherkin
+Feature: the stuck-in-progress maintenance task can auto-fail hung steps
+  Scenario: a step manually stuck in IN_PROGRESS is auto-failed with cascade skip
+    Given order-processing is running with customer_id=1 (Ada Lovelace) and order_id=1
+    And a quick-order job has already completed successfully
+    When ValidateCustomer is manually set back to in_progress with started_at
+      15 minutes in the past (simulating a Lambda crash mid-execution)
+    And the stuck-in-progress maintenance task is triggered with
+      stuckTimeoutMinutes=0.25 AND autoFailEnabled=true
+    Then it is auto-failed once its per-step timeout is exceeded, its
+      dependents (SubmitCustomer, SubmitOrder) cascade to SKIPPED, and the job
+      reaches FAILED
+    And if the per-step timeout was not yet exceeded, the task still reports the
+      step as found with autoFailSkipped — detection and cascade infrastructure
+      are exercised either way
+```
 
-1. start job with ValidateCustomer configured for 60s delay (simulates long processing)
-2. Wait for ValidateCustomer to enter `in_progress`
-3. Kill the Lambda container mid-execution
-4. Wait for stuck timeout threshold (15s)
-5. Trigger maintenance task with `autoFailEnabled: true`
-6. Verify auto-fail: ValidateCustomer -> `failed`
-7. Verify cascade skip: SubmitCustomer, SubmitOrder -> `skipped`
-8. Verify job -> `failed`
+## Architecture
+```mermaid
+sequenceDiagram
+    participant T as test.sh
+    participant O as Orchestrator
+    participant DB as dtm_steps / dtm_jobs
+    participant Task as StuckInProgressTask
+    participant Orch as OrchestrationService
 
-## What This Tests
+    T->>O: POST jobs (quick-order), poll to COMPLETED
+    O-->>T: job COMPLETED
 
-- Detection of steps stuck in `IN_PROGRESS` or `IN_PROGRESS_RETRYING`
-- Auto-fail mechanism (upgraded from alert-only)
-- Cascade skip logic: dependent steps marked `SKIPPED` when upstream fails
-- Per-step `timeoutMs` configuration respected
-- Job failure after critical step auto-fail
+    Note over T: simulate a Lambda crash mid-execution
+    T->>DB: UPDATE ValidateCustomer SET status=in_progress, started_at=NOW-15min
+    T->>DB: UPDATE job SET status=processing
+
+    T->>Task: POST maintenance/tasks/stuck-in-progress/execute, stuckTimeoutMinutes=0.25, autoFailEnabled=true
+    Task->>DB: SELECT steps WHERE status=in_progress AND started_at < NOW-timeout
+    DB-->>Task: ValidateCustomer matches
+
+    alt per-step timeoutMs exceeded
+      Task->>DB: mark ValidateCustomer FAILED
+      Task->>Orch: continueJob()
+      Orch->>DB: markDependentStepsAsSkipped(SubmitCustomer, SubmitOrder)
+      Orch->>DB: job -> FAILED
+      Task-->>T: metrics.autoFailed >= 1
+    else per-step timeoutMs not yet exceeded
+      Task-->>T: metrics.autoFailSkipped >= 1, no DB write, no cascade
+    end
+```
 
 ## Test Data
+Reads (does not own) order-processing's seeded rows — `customer_id=1` (Ada Lovelace)
+and `order_id=1`, owned by workflow suite `SE-01-happy-path`
+(`workflows/order-processing/source-db/SEED-REGISTRY.md`). `entityId` is a fresh
+`uuidgen` per run.
 
-- **Consumer**: 1012
-- **ValidateCustomer delay**: 60s (ensures step is in-progress when killed)
-- **Other steps**: 2s delay (fast)
+## Payload
 
-## Parallel Safety
+### Job payload
+```json
+{
+  "variant": "quick-order",
+  "payload": {
+    "customerId": 1,
+    "orderId": 1,
+    "entityId": "<uuidgen per run>"
+  },
+  "enableDeduplication": false,
+  "testOptions": {
+    "ValidateCustomer": { "simDelay": 500 },
+    "ValidateProduct": { "simDelay": 500 },
+    "SubmitCustomer": { "simDelay": 500, "ackDelay": 500 },
+    "SubmitOrder": { "simDelay": 500, "ackDelay": 500 }
+  }
+}
+```
 
-**MUST RUN SEQUENTIALLY** -- kills Lambda containers, which affects shared infrastructure used by other tests.
+### Maintenance task invocation
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"stuckTimeoutMinutes": 0.25, "autoFailEnabled": true}' \
+  "${ORCHESTRATOR_HOST}/api/${API_VERSION}/maintenance/tasks/stuck-in-progress/execute"
+```
 
-## Simulates
+## Artifacts
 
-- Lambda crash mid-execution (OOM, process kill)
-- Container failure / restart
-- Worker unable to send callback (network partition)
-- Stuck worker consuming resources indefinitely
+### Expected output (task response, auto-fail branch)
+```json
+{ "success": true, "metrics": { "stuckStepsFound": 1, "autoFailed": 1, "autoFailSkipped": 0 } }
+```
+```
+ValidateCustomer = failed    (auto-failed by maintenance task)
+SubmitCustomer   = skipped   (cascade)
+SubmitOrder      = skipped   (cascade)
+job.status       = failed
+```
 
-## Related
+## Assertions
+<!-- one checkbox per exit-1 gate in test.sh, in execution order -->
+- [ ] the DB manipulation lands: `ValidateCustomer.status = in_progress`
+- [ ] `POST .../stuck-in-progress/execute` returns `success = true`
+- [ ] `metrics.stuckStepsFound >= 1`
+- [ ] either `metrics.autoFailed >= 1` OR `metrics.autoFailSkipped >= 1`
+      (one of the two branches must fire — neither means the flag was ignored)
+- [ ] **only when `autoFailed >= 1`**: `ValidateCustomer` final status is `failed`
 
-- **Task**: `services/orchestrator/src/maintenance/tasks/stuck-in-progress.task.ts`
-- **API**: `POST /maintenance/tasks/stuck-in-progress/execute`
-- **Cascade logic**: `services/orchestrator/src/orchestration/orchestration.service.ts` (`markDependentStepsAsSkipped`)
+Cascade-skip on `SubmitCustomer`/`SubmitOrder` and the job reaching `failed` are
+checked but only `log_warning` (no `exit 1`) if the cascade hasn't propagated
+yet — this SE's hard gate is the auto-fail itself, not the full cascade.
+
+## Run
+```bash
+bash setpoint-evals/run-all.sh --se 13
+```
+
+## Troubleshooting
+
+**Neither `autoFailed` nor `autoFailSkipped` increments** — the `autoFailEnabled`
+flag isn't reaching `StuckInProgressTask`; check
+`services/orchestrator/src/maintenance/tasks/stuck-in-progress.task.ts`.
+
+**`autoFailSkipped` fires instead of `autoFailed`** — the step's per-step
+`StepDefinition.timeoutMs` (default 30 min) hasn't been exceeded even though the
+detection threshold (`stuckTimeoutMinutes`) has; this is expected and still a
+pass — detection + auto-fail infrastructure are both verified.
+
+Pairs with SE-06 (same underlying `StuckInProgressTask`, but alert-only —
+`autoFailEnabled` omitted).
+
+Related: `services/orchestrator/src/maintenance/tasks/stuck-in-progress.task.ts`,
+`POST /maintenance/tasks/stuck-in-progress/execute`,
+`services/orchestrator/src/orchestration/orchestration.service.ts`
+(`markDependentStepsAsSkipped`).
