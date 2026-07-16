@@ -290,7 +290,7 @@ no forked runner logic. Defaults to `--in-band` (sequential): these SEs share th
 ```bash
 ./workflows/order-processing/setpoint-evals/run-all.sh        # order-processing SEs (5 tests)
 ./workflows/iot-sensor-pipeline/setpoint-evals/run-all.sh     # iot-sensor-pipeline SEs (5 tests)
-./workflows/infra-provisioning/setpoint-evals/run-all.sh      # infra-provisioning SEs (5 tests)
+./workflows/infra-provisioning/setpoint-evals/run-all.sh      # infra-provisioning SEs (6 tests)
 ```
 
 ### Helper Architecture (Two-Layer Chain)
@@ -423,7 +423,7 @@ Restarting LocalStack wipes ALL state. Recovery:
 - **Workflow config**: `workflows/infra-provisioning/workflow.config.ts`
 - **Workers**: `workflows/infra-provisioning/workers/` (15 handlers)
 - **Source DB**: `workflows/infra-provisioning/source-db/` (7 entities, port 5451)
-- **SEs**: `workflows/infra-provisioning/setpoint-evals/` (5 tests)
+- **SEs**: `workflows/infra-provisioning/setpoint-evals/` (6 tests — 5 behavioral + seed-data-integrity)
 - **Showcases**: Deep cascade FK chains (5 levels), long ACK timeouts (10min), wide parallel branches, cascade failure -> SKIPPED propagation
 
 ## Adding a New Workflow (Integration Checklist)
