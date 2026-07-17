@@ -88,8 +88,12 @@ export interface NormalizedChild {
 /** Same two-shape normalization for the drill-down's child list + distribution bar. */
 export function normalizedChildren(activity: StepActivity): NormalizedChild[] {
   if (isAggregateActivity(activity)) {
+    // Index is always folded into the key (not just used as a childItemId fallback):
+    // childItemId/childIndex are not guaranteed unique across instances — e.g. the
+    // fan-out double-emission bug (SE-03-double-fan-out) produces two rows with the
+    // same childItemId, which previously collided into one Preact key (#35 defect 1).
     return activity.instances.map((c, i) => ({
-      key: c.childItemId ?? `${c.childIndex ?? i}`,
+      key: `${c.childItemId ?? c.childIndex ?? 'idx'}-${i}`,
       step: c.parentStep ?? undefined,
       childIndex: c.childIndex,
       childItemId: c.childItemId,
@@ -100,7 +104,7 @@ export function normalizedChildren(activity: StepActivity): NormalizedChild[] {
   }
   if (activity.fanOut) {
     return activity.fanOut.children.map((c, i) => ({
-      key: c.childItemId ?? `${c.childIndex ?? i}`,
+      key: `${c.childItemId ?? c.childIndex ?? 'idx'}-${i}`,
       step: c.step,
       childIndex: c.childIndex,
       childItemId: c.childItemId,

@@ -152,6 +152,25 @@ export class StepRepository {
   }
 
   /**
+   * Find an existing chain-step row for one fan-out branch — (parentStepId,
+   * childItemId, stepValue) uniquely identifies "the next chain step for THIS
+   * item under THIS discovery parent". Used by FanOutService.delegateNextChildChainStep()
+   * as an idempotency guard: that method previously created a fresh row
+   * unconditionally on every call, so any duplicate invocation (redelivered ACK,
+   * maintenance-task re-evaluation of an already-terminal child) created a second
+   * full fan-out branch (dtm-video-v2 Lane B.1 double-emission).
+   */
+  async findChainStepByParentChildAndValue(
+    parentStepId: string,
+    childItemId: string | null | undefined,
+    stepValue: string,
+  ): Promise<Step | null> {
+    return this.repo.findOne({
+      where: { parentStepId, childItemId: childItemId ?? IsNull(), stepValue },
+    });
+  }
+
+  /**
    * Batch-fetch steps by id — used to resolve each fan-out child instance's
    * immediate parent row (for the instance-aggregate response's `parentStep` field)
    * without an N+1 query per child.
@@ -312,6 +331,30 @@ export class StepRepository {
     const result = await this.repo.update(
       { id, status: StepStatus.PENDING },
       { status: StepStatus.DELEGATED },
+    );
+    return (result.affected ?? 0) > 0;
+  }
+
+  /**
+   * Atomically claim a step's Kafka ACK completion.
+   * Uses WHERE status = 'waiting_for_ack' — the same claim-row pattern as
+   * claimForDelegation() above — to close the TOCTOU window in
+   * AcknowledgementHandler.processAcknowledgement(): a plain read-then-write
+   * (fetch step, check status, then unconditionally update) lets two deliveries
+   * of the same redelivered ACK both pass the status check before either write
+   * commits, so both proceed into handleChildStepComplete() ->
+   * delegateNextChildChainStep(), creating a duplicate next-chain-step row per
+   * delivery (dtm-video-v2 Lane B.1 double-emission: iot-sensor-pipeline
+   * DiscoverReadings/IngestReading/PublishReading rows doubled per sensor).
+   *
+   * @returns true if this caller won the claim (proceed with post-ACK side
+   *   effects), false if the step was already COMPLETED/claimed by a
+   *   concurrent delivery (treat as a no-op duplicate ACK).
+   */
+  async claimAckCompletion(id: string): Promise<boolean> {
+    const result = await this.repo.update(
+      { id, status: StepStatus.WAITING_FOR_ACK },
+      { status: StepStatus.COMPLETED },
     );
     return (result.affected ?? 0) > 0;
   }

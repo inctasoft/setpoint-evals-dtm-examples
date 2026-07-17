@@ -95,9 +95,23 @@ export class CallbackService {
       // 3. Guard: Reject callbacks for steps already in terminal state
       // This prevents SQS re-delivery from overwriting step output after
       // downstream steps have already been delegated with the original data
+      //
+      // WAITING_FOR_CHILDREN is included here even though it is NOT terminal for
+      // the step's own lifecycle (it later transitions to COMPLETED/PARTIAL_SUCCESS/
+      // FAILED once children finish, via FanOutService.handleChildStepComplete ->
+      // StepRepository.updateFromCallback — a *different* code path that updates the
+      // parent row directly and never re-enters this method). It IS terminal from the
+      // perspective of THIS discovery step's own worker callback: a fan-out discovery
+      // step reports completion exactly once, and handleDiscoveryComplete() below
+      // already consumed that report and moved the step into WAITING_FOR_CHILDREN.
+      // Without this, SQS at-least-once redelivery of the same "discovery complete"
+      // message re-enters the fan-out branch and calls handleDiscoveryComplete() a
+      // second time, creating a full duplicate batch of child steps (double-emission —
+      // see workflows/iot-sensor-pipeline/setpoint-evals/SE-03-double-fan-out).
       const TERMINAL_STATUSES: ReadonlySet<StepStatus> = new Set([
         StepStatus.COMPLETED,
         StepStatus.WAITING_FOR_ACK,
+        StepStatus.WAITING_FOR_CHILDREN,
         StepStatus.FAILED,
         StepStatus.SKIPPED,
         StepStatus.PARTIAL_SUCCESS,

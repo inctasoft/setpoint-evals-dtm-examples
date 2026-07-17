@@ -141,8 +141,16 @@ verify_step_status "DiscoverSensors"    → "COMPLETED"
 - [ ] Test 2: DiscoverSensors should be COMPLETED
 - [ ] Test 3: At least 1 CalibrateSensor child step should exist
 - [ ] Test 4: At least 1 DiscoverReadings step should exist (nested fan-out trigger)
+- [ ] Test 4b: DiscoverReadings count is EXACTLY 3 (one per sensor) — regression guard
+      against fan-out double-emission (a duplicate ACK re-triggering
+      `delegateNextChildChainStep()` and creating a second DiscoverReadings row per
+      sensor; found dtm-video-v2 Lane B.1)
 - [ ] Test 5: At least 1 IngestReading child step should exist (nested children)
+- [ ] Test 5b: IngestReading count is EXACTLY 18 (6 readings × 3 sensors) — same
+      double-emission regression guard, one level down the chain
 - [ ] Test 6: All PublishReading steps completed (retried up to 15× for the race condition)
+- [ ] Test 7: PublishReading count is EXACTLY 18 (6 readings × 3 sensors) — same
+      double-emission regression guard
 
 ## Run
 ```bash

@@ -46,7 +46,9 @@ export function JobDetail({ job }: JobDetailProps) {
           Steps
         </div>
         {job.steps.map((step, i) => (
-          <StepRow key={step.step} step={step} index={i} />
+          // step.step (stepValue) repeats for fan-out children of the same step type
+          // (e.g. 4x 'ActivateSensor') — fold in the array index for a unique key.
+          <StepRow key={`${step.step}-${i}`} step={step} index={i} />
         ))}
       </div>
 
