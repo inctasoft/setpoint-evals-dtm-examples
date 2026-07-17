@@ -19,6 +19,7 @@
     "test:demo:iot": "playwright test --project=demo-videos -g 'IoT'",
     "test:demo:infra": "playwright test --project=demo-videos -g 'Infra'",
     "test:demo:multi": "playwright test --project=demo-videos -g 'Multi-Job'",
+    "test:demo:story": "playwright test --project=demo-videos -g 'STORY'",
     "test:report": "playwright show-report"
   },
   "devDependencies": {
