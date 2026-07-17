@@ -212,3 +212,7 @@ tools/**/*.zip
 # Playwright test artifacts
 **/test-results/
 **/playwright-report/
+
+# Raw demo recordings (webm) — post-production output lives in docs/media/,
+# see setpoint-evals-playwright/src/fixtures/demo-recording.fixture.ts
+**/demo-recordings/
