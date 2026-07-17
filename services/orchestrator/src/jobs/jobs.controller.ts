@@ -348,7 +348,8 @@ export class JobsController {
   @ApiResponse({ status: 200, description: 'Step activity retrieved successfully' })
   @ApiResponse({
     status: 404,
-    description: 'Job not found, or no step row (primary OR fan-out-child) with this name exists on it',
+    description:
+      'Job not found, or no step row (primary OR fan-out-child) with this name exists on it',
   })
   async getStepActivity(@Param('jobId') jobId: string, @Param('stepName') stepName: string) {
     const job = await this.jobRepo.findById(jobId, false);
