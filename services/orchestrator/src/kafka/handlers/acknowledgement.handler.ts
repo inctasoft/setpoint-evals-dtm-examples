@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { IMessageHandler } from '@dtm/kafka-consumer';
 import { EachMessagePayload } from 'kafkajs';
-import { StepRepository, StepStatus } from '@dtm/database';
+import { StepRepository } from '@dtm/database';
 import { OrchestrationService } from '../../orchestration/orchestration.service';
 import { CascadePublishService } from '../../orchestration/cascade-publish.service';
 import { FanOutService } from '../../orchestration/fan-out.service';
@@ -165,7 +165,7 @@ export class AcknowledgementHandler implements OnModuleInit, IMessageHandler {
 
     this.logger.log(`📥 Received ${cascadeName} acknowledgement for step ${stepId} (job ${jobId})`);
 
-    // Verify step exists and is in WAITING_FOR_ACK status
+    // Verify step exists
     const step = await this.stepRepository.findById(stepId);
     if (!step) {
       this.logger.error(`❌ Step ${stepId} not found for ${cascadeName} acknowledgement`, {
@@ -177,9 +177,22 @@ export class AcknowledgementHandler implements OnModuleInit, IMessageHandler {
       return;
     }
 
-    if (step.status !== StepStatus.WAITING_FOR_ACK) {
+    // Atomically claim the WAITING_FOR_ACK -> COMPLETED transition (UPDATE ... WHERE
+    // status = 'waiting_for_ack', mirrors StepRepository.claimForDelegation()'s
+    // claim-row pattern). A plain read-then-write here (fetch step, check
+    // step.status !== WAITING_FOR_ACK, then unconditionally update) is a TOCTOU race:
+    // if Kafka redelivers the same ACK, two concurrent deliveries can both read
+    // WAITING_FOR_ACK before either write commits, so both proceed into
+    // handleChildStepComplete() -> delegateNextChildChainStep() and each creates its
+    // own next-chain-step row — a fan-out double-emission (dtm-video-v2 Lane B.1:
+    // iot-sensor-pipeline DiscoverReadings/IngestReading/PublishReading rows doubled
+    // per sensor). The atomic claim below closes that window; only the delivery that
+    // wins the UPDATE proceeds with post-ACK side effects.
+    const claimed = await this.stepRepository.claimAckCompletion(stepId);
+    if (!claimed) {
       this.logger.warn(
-        `⚠️  Step ${stepId} is in ${step.status} status, not WAITING_FOR_ACK. Ignoring duplicate ack.`,
+        `⚠️  Step ${stepId} is in ${step.status} status, not WAITING_FOR_ACK (or lost the ` +
+          `atomic claim to a concurrent delivery). Ignoring duplicate ack.`,
         {
           jobId,
           stepId,
@@ -192,9 +205,6 @@ export class AcknowledgementHandler implements OnModuleInit, IMessageHandler {
     }
 
     try {
-      // Update step status from WAITING_FOR_ACK to COMPLETED
-      await this.stepRepository.updateStatus(stepId, StepStatus.COMPLETED);
-
       // Build acknowledgement metadata
       const ackMetadata = {
         ...(metadata || {}),

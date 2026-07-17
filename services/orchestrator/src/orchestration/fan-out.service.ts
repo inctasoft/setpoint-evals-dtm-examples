@@ -531,6 +531,28 @@ export class FanOutService {
       return false;
     }
 
+    // Idempotency guard: handleChildStepComplete() (and therefore this method) can be
+    // invoked more than once for the SAME completed child step — a redelivered Kafka
+    // ACK re-entering AcknowledgementHandler, or the StuckWaitingForChildrenTask
+    // maintenance sweep re-evaluating an already-terminal child. Without this check,
+    // every extra invocation created a full duplicate branch (fan-out double-emission —
+    // dtm-video-v2 Lane B.1: iot-sensor-pipeline DiscoverReadings/IngestReading/
+    // PublishReading rows doubled per sensor). (parentStepId, childItemId, stepValue)
+    // uniquely identifies "the next chain step for this fan-out branch".
+    const existingNextStep = await this.stepRepository.findChainStepByParentChildAndValue(
+      completedChildStep.parentStepId,
+      completedChildStep.childItemId,
+      nextStepType,
+    );
+    if (existingNextStep) {
+      this.logger.warn(
+        `Fan-out chain: ${nextStepType} for item ${completedChildStep.childItemId} already ` +
+          `exists (step ${existingNextStep.id}) — skipping duplicate creation (duplicate ` +
+          `handleChildStepComplete invocation for ${completedChildStep.id})`,
+      );
+      return true;
+    }
+
     // Create the next step in the chain
     const nextStepData = {
       jobId: job.id,

@@ -41,6 +41,11 @@ describe('AcknowledgementHandler', () => {
     const mockStepRepository = {
       findById: jest.fn(),
       updateStatus: jest.fn(),
+      // Atomic WAITING_FOR_ACK -> COMPLETED claim (replaces the old read-then-write
+      // updateStatus() call on the completion path — see claimAckCompletion() on the
+      // real repository). Defaults to "won the claim"; tests that need to simulate a
+      // duplicate/lost-race ACK override this to resolve false.
+      claimAckCompletion: jest.fn().mockResolvedValue(true),
       repo: {
         save: jest.fn(),
         createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
@@ -184,7 +189,7 @@ describe('AcknowledgementHandler', () => {
 
       // Assert
       expect(stepRepository.findById).toHaveBeenCalledWith(mockStepId);
-      expect(stepRepository.updateStatus).toHaveBeenCalledWith(mockStepId, StepStatus.COMPLETED);
+      expect(stepRepository.claimAckCompletion).toHaveBeenCalledWith(mockStepId);
       // ACK metadata is written via a targeted UPDATE query builder (not repo.save()) so
       // it doesn't clobber the output field if it's being written concurrently.
       expect(mockQueryBuilder.execute).toHaveBeenCalled();
@@ -298,7 +303,7 @@ describe('AcknowledgementHandler', () => {
 
       // Assert
       expect(stepRepository.findById).toHaveBeenCalledWith(mockStepId);
-      expect(stepRepository.updateStatus).toHaveBeenCalledWith(mockStepId, StepStatus.COMPLETED);
+      expect(stepRepository.claimAckCompletion).toHaveBeenCalledWith(mockStepId);
       expect(orchestrationService.continueJob).toHaveBeenCalledWith(mockJobId);
     });
 
@@ -464,13 +469,16 @@ describe('AcknowledgementHandler', () => {
       };
 
       stepRepository.findById.mockResolvedValue(mockStep as any);
+      // Step is already COMPLETED — the atomic claim's WHERE status='waiting_for_ack'
+      // wouldn't match this row, so the real repository would return false here.
+      stepRepository.claimAckCompletion.mockResolvedValue(false);
 
       // Act
       await handler.handleMessage(payload);
 
       // Assert
       expect(stepRepository.findById).toHaveBeenCalledWith(mockStepId);
-      expect(stepRepository.updateStatus).not.toHaveBeenCalled();
+      expect(stepRepository.claimAckCompletion).toHaveBeenCalledWith(mockStepId);
       expect(orchestrationService.continueJob).not.toHaveBeenCalled();
     });
 
@@ -517,7 +525,7 @@ describe('AcknowledgementHandler', () => {
       await handler.handleMessage(payload);
 
       // Assert
-      expect(stepRepository.updateStatus).toHaveBeenCalledWith(mockStepId, StepStatus.COMPLETED);
+      expect(stepRepository.claimAckCompletion).toHaveBeenCalledWith(mockStepId);
       // ACK metadata is written via .createQueryBuilder().update().set({...}) — verify the
       // values passed to .set() rather than a repo.save() payload (handler no longer calls save()).
       expect(mockQueryBuilder.set).toHaveBeenCalled();
@@ -569,7 +577,7 @@ describe('AcknowledgementHandler', () => {
       await handler.handleMessage(payload);
 
       // Assert
-      expect(stepRepository.updateStatus).toHaveBeenCalledWith(mockStepId, StepStatus.COMPLETED);
+      expect(stepRepository.claimAckCompletion).toHaveBeenCalledWith(mockStepId);
       expect(orchestrationService.continueJob).toHaveBeenCalledWith(mockJobId);
       // Should not throw despite orchestration failure
     });
@@ -730,13 +738,16 @@ describe('AcknowledgementHandler', () => {
       };
 
       stepRepository.findById.mockResolvedValue(mockStep as any);
+      // Step is FAILED, not WAITING_FOR_ACK — the atomic claim's WHERE clause
+      // wouldn't match, so the real repository would return false here.
+      stepRepository.claimAckCompletion.mockResolvedValue(false);
 
       // Act
       await handler.handleMessage(payload);
 
       // Assert
       expect(stepRepository.findById).toHaveBeenCalledWith(mockStepId);
-      expect(stepRepository.updateStatus).not.toHaveBeenCalled();
+      expect(stepRepository.claimAckCompletion).toHaveBeenCalledWith(mockStepId);
       expect(orchestrationService.continueJob).not.toHaveBeenCalled();
     });
   });
