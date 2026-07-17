@@ -318,15 +318,20 @@ export class JobsController {
    * already lived on dtm_steps (execution_history, ack timestamps, fan-out fields);
    * this is a pure read + reshape, no new persistence.
    *
-   * Resolution: only the "primary" (non-fan-out-child) row for stepName within this
-   * job resolves — a step name that exists ONLY as multiple fan-out CHILD instances
-   * (e.g. order-processing's ValidateLineItem, one row per line item, all sharing one
-   * parent_step_id) has no single activity record and 404s rather than arbitrarily
-   * picking one child. A discovery/parent step (e.g. DiscoverLineItems) always
-   * resolves and its `fanOut` block lists EVERY descendant row under it — which may
-   * span more than one step TYPE (e.g. both ValidateLineItem and SubmitLineItem
-   * instances share DiscoverLineItems as their parent_step_id in this engine's
-   * fan-out model) — each child entry carries its own `step` field to disambiguate.
+   * Resolution: the "primary" (non-fan-out-child) row for stepName within this job
+   * resolves first — a discovery/parent step (e.g. DiscoverLineItems) always has one
+   * and its `fanOut` block lists EVERY descendant row under it, which may span more
+   * than one step TYPE (e.g. both ValidateLineItem and SubmitLineItem instances share
+   * DiscoverLineItems as their parent_step_id in this engine's fan-out model) — each
+   * child entry carries its own `step` field to disambiguate.
+   *
+   * A step name that exists ONLY as fan-out CHILD instances (no primary row at all —
+   * e.g. order-processing's ValidateLineItem, one row per line item, all sharing one
+   * parent_step_id; or iot-sensor-pipeline's DOUBLE fan-out, where DiscoverReadings
+   * and IngestReading are themselves entirely children) falls back to an
+   * instance-aggregate shape (`aggregate: true`) instead of 404ing — there is no
+   * single record to report, but there IS a meaningful rollup across every instance.
+   * Only a step name with NEITHER a primary row NOR any child rows 404s.
    */
   @Get('jobs/:jobId/steps/:stepName/activity')
   @ApiOperation({
@@ -343,8 +348,7 @@ export class JobsController {
   @ApiResponse({ status: 200, description: 'Step activity retrieved successfully' })
   @ApiResponse({
     status: 404,
-    description:
-      'Job not found, or no primary (non-fan-out-child) step row with this name exists on it',
+    description: 'Job not found, or no step row (primary OR fan-out-child) with this name exists on it',
   })
   async getStepActivity(@Param('jobId') jobId: string, @Param('stepName') stepName: string) {
     const job = await this.jobRepo.findById(jobId, false);
@@ -354,9 +358,7 @@ export class JobsController {
 
     const step = await this.stepRepo.findPrimaryByJobIdAndStepValue(jobId, stepName);
     if (!step) {
-      throw new NotFoundException(
-        `Step '${stepName}' not found for job ${jobId} (no primary, non-fan-out-child row with this name)`,
-      );
+      return this.getFanOutOnlyStepActivity(jobId, stepName);
     }
 
     const childRows = await this.stepRepo.findByParentId(step.id);
@@ -400,6 +402,49 @@ export class JobsController {
           : null,
       input: step.input ?? null,
       output: step.output ?? null,
+    };
+  }
+
+  /**
+   * Fallback for /activity when stepName has NO primary (non-fan-out-child) row —
+   * only reachable from getStepActivity() above. Rolls up every fan-out CHILD
+   * instance for stepName within the job into an `aggregate: true` shape instead of
+   * arbitrarily picking one child or 404ing on data that does exist. 404s only when
+   * there are truly zero rows (primary or child) for this name on this job.
+   */
+  private async getFanOutOnlyStepActivity(jobId: string, stepName: string) {
+    const children = await this.stepRepo.findChildInstancesByJobIdAndStepValue(jobId, stepName);
+    if (children.length === 0) {
+      throw new NotFoundException(
+        `Step '${stepName}' not found for job ${jobId} (no primary or fan-out-child row with this name)`,
+      );
+    }
+
+    const parentIds = [
+      ...new Set(children.map((c) => c.parentStepId).filter((id): id is string => !!id)),
+    ];
+    const parents = await this.stepRepo.findByIds(parentIds);
+    const parentStepById = new Map(parents.map((p) => [p.id, p.stepValue]));
+
+    const statusDistribution: Record<string, number> = {};
+    for (const c of children) {
+      statusDistribution[c.status] = (statusDistribution[c.status] ?? 0) + 1;
+    }
+
+    return {
+      step: stepName,
+      aggregate: true,
+      instanceCount: children.length,
+      statusDistribution,
+      instances: children.map((c) => ({
+        childIndex: c.childIndex ?? null,
+        childItemId: c.childItemId ?? null,
+        parentStep: (c.parentStepId && parentStepById.get(c.parentStepId)) ?? null,
+        status: c.status,
+        durationMs: c.durationMs ?? null,
+        retryCount: c.retryCount,
+        attempts: c.executionHistory ?? [],
+      })),
     };
   }
 

@@ -17,6 +17,8 @@ describe('JobsController', () => {
     findByJobId: jest.fn(),
     findPrimaryByJobIdAndStepValue: jest.fn(),
     findByParentId: jest.fn(),
+    findChildInstancesByJobIdAndStepValue: jest.fn(),
+    findByIds: jest.fn(),
   };
 
   // The default-bound singleton (as if it were injected as the app's default workflow).
@@ -349,15 +351,120 @@ describe('JobsController', () => {
       expect(mockStepRepo.findPrimaryByJobIdAndStepValue).not.toHaveBeenCalled();
     });
 
-    it('should throw NotFoundException when no primary step row matches (unknown step, or fan-out-child-only name)', async () => {
+    it('should throw NotFoundException when NEITHER a primary row NOR any fan-out-child row matches (truly unknown step)', async () => {
       const jobId = 'job-4';
       mockJobRepo.findById.mockResolvedValue({ id: jobId });
       mockStepRepo.findPrimaryByJobIdAndStepValue.mockResolvedValue(null);
+      mockStepRepo.findChildInstancesByJobIdAndStepValue.mockResolvedValue([]);
 
       await expect(controller.getStepActivity(jobId, 'DoesNotExistStep')).rejects.toThrow(
         NotFoundException,
       );
       expect(mockStepRepo.findByParentId).not.toHaveBeenCalled();
+      expect(mockStepRepo.findChildInstancesByJobIdAndStepValue).toHaveBeenCalledWith(
+        jobId,
+        'DoesNotExistStep',
+      );
+      expect(mockStepRepo.findByIds).not.toHaveBeenCalled();
+    });
+
+    it('should return an instance-aggregate (200, not 404) when stepName has NO primary row but DOES have fan-out-child rows (e.g. iot double fan-out DiscoverReadings/IngestReading)', async () => {
+      const jobId = 'job-5';
+      mockJobRepo.findById.mockResolvedValue({ id: jobId });
+      mockStepRepo.findPrimaryByJobIdAndStepValue.mockResolvedValue(null);
+      mockStepRepo.findChildInstancesByJobIdAndStepValue.mockResolvedValue([
+        {
+          id: 'child-1',
+          stepValue: 'DiscoverReadings',
+          parentStepId: 'sensor-parent',
+          childIndex: 0,
+          childItemId: 'SENS-GH3-TEMP',
+          status: 'completed',
+          durationMs: 120,
+          retryCount: 0,
+          executionHistory: [{ attemptNumber: 1, status: 'success', attemptedAt: 't1' }],
+        },
+        {
+          id: 'child-2',
+          stepValue: 'DiscoverReadings',
+          parentStepId: 'sensor-parent',
+          childIndex: 1,
+          childItemId: 'SENS-GH3-HUM',
+          status: 'failed',
+          durationMs: 80,
+          retryCount: 1,
+          executionHistory: [],
+        },
+      ]);
+      mockStepRepo.findByIds.mockResolvedValue([
+        { id: 'sensor-parent', stepValue: 'DiscoverSensors' },
+      ]);
+
+      const result = await controller.getStepActivity(jobId, 'DiscoverReadings');
+
+      expect(mockStepRepo.findChildInstancesByJobIdAndStepValue).toHaveBeenCalledWith(
+        jobId,
+        'DiscoverReadings',
+      );
+      expect(mockStepRepo.findByIds).toHaveBeenCalledWith(['sensor-parent']);
+      expect(result).toEqual({
+        step: 'DiscoverReadings',
+        aggregate: true,
+        instanceCount: 2,
+        statusDistribution: { completed: 1, failed: 1 },
+        instances: [
+          {
+            childIndex: 0,
+            childItemId: 'SENS-GH3-TEMP',
+            parentStep: 'DiscoverSensors',
+            status: 'completed',
+            durationMs: 120,
+            retryCount: 0,
+            attempts: [{ attemptNumber: 1, status: 'success', attemptedAt: 't1' }],
+          },
+          {
+            childIndex: 1,
+            childItemId: 'SENS-GH3-HUM',
+            parentStep: 'DiscoverSensors',
+            status: 'failed',
+            durationMs: 80,
+            retryCount: 1,
+            attempts: [],
+          },
+        ],
+      });
+    });
+
+    it('should NOT take the aggregate fallback when a primary row exists, even if same-named child rows also exist elsewhere on the job (primary shape wins, no regression)', async () => {
+      const jobId = 'job-6';
+      mockJobRepo.findById.mockResolvedValue({ id: jobId });
+      mockStepRepo.findPrimaryByJobIdAndStepValue.mockResolvedValue({
+        id: 'primary-step',
+        stepValue: 'DiscoverLineItems',
+        status: 'completed',
+        retryCount: 0,
+        maxRetryCount: 3,
+        executionHistory: [],
+        childCount: 1,
+      });
+      mockStepRepo.findByParentId.mockResolvedValue([
+        {
+          stepValue: 'ValidateLineItem',
+          childIndex: 0,
+          childItemId: '18',
+          status: 'completed',
+          durationMs: 100,
+          retryCount: 0,
+        },
+      ]);
+
+      const result = await controller.getStepActivity(jobId, 'DiscoverLineItems');
+
+      // Primary-row shape, unchanged — the aggregate fallback is never consulted.
+      expect(result.aggregate).toBeUndefined();
+      expect(result.fanOut).not.toBeNull();
+      expect(mockStepRepo.findChildInstancesByJobIdAndStepValue).not.toHaveBeenCalled();
+      expect(mockStepRepo.findByIds).not.toHaveBeenCalled();
     });
   });
 
