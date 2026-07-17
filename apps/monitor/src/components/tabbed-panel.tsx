@@ -10,6 +10,9 @@ export interface Tab {
 interface TabbedPanelProps {
   tabs: Tab[];
   storageKey?: string;
+  /** Overrides the storage-remembered tab on mount — demo mode's "pinned defaults" (§4.1: right
+   *  panel starts on Events so a take never opens on whatever tab a prior manual session left). */
+  initialTabId?: string;
 }
 
 /**
@@ -19,8 +22,9 @@ interface TabbedPanelProps {
  * for the session (sessionStorage — ephemeral UI state, not worth
  * persisting across days the way the workflow selection is).
  */
-export function TabbedPanel({ tabs, storageKey }: TabbedPanelProps) {
+export function TabbedPanel({ tabs, storageKey, initialTabId }: TabbedPanelProps) {
   const [activeId, setActiveId] = useState<string>(() => {
+    if (initialTabId && tabs.some((t) => t.id === initialTabId)) return initialTabId;
     if (storageKey) {
       const saved = sessionStorage.getItem(`dtm-monitor:tab:${storageKey}`);
       if (saved && tabs.some((t) => t.id === saved)) return saved;

@@ -33,6 +33,8 @@ export interface StepState {
   attempt?: number;
   /** Number of fan-out children (discovery/parent steps only). See SE-28-step-snapshot-childcount. */
   childCount?: number;
+  /** Why this step was SKIPPED (dependency-failure summary from the step_skipped event). */
+  reason?: string;
 }
 
 export interface JobResults {
@@ -66,7 +68,15 @@ export interface SqsQueueStatus {
 export interface EventLogEntry {
   timestamp: string;
   type: string;
+  /** Truncated (8 chars + '...') — display-only, matches the existing .log-job convention. */
   jobId: string;
+  /** Untruncated job id — the console-pairing filter (§3.3) matches on this, never on the
+   *  display-truncated `jobId` above (a truncation collision would silently over-match). */
+  jobIdFull: string;
+  /** Structured step name, parsed once here from the originating DtmEvent (§3.3) instead of
+   *  string-matching `detail` in the component every render. Undefined for job-scoped events
+   *  (job_created/job_completed/sqs_status) which carry no single step. */
+  step?: string;
   detail: string;
   correlationId?: string;
 }

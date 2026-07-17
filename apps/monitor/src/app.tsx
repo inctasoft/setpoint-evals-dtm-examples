@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import Session from 'supertokens-auth-react/recipe/session';
 import {
   canHandleRoute,
@@ -20,6 +20,7 @@ import { ThroughputPanel } from './components/throughput-panel';
 import { FlagsPanel } from './components/flags-panel';
 import { TabbedPanel } from './components/tabbed-panel';
 import { WorkflowDag } from './components/workflow-dag';
+import { DagFullscreen } from './components/dag-fullscreen';
 import { ConnectionStatus } from './components/connection-status';
 import { ScenariosView } from './components/scenarios/scenarios-view';
 
@@ -45,15 +46,41 @@ function persistWorkflow(workflow: string | null) {
   }
 }
 
+// Demo mode (ux-storyboards.md §4.1, "DX NOTE — making these demos repeatable on demand"):
+// ?demo=1 (a) scopes the job list to jobs created after page load — kills the "leftover job
+// from the previous demo" contradiction (critique F5) without DB surgery, (b) pins UI defaults
+// so a take never inherits a prior manual session's state, (c) suppresses the DLQ banner.
+// Nothing changes for real operators; generate-demo-media.sh is the only caller that sets it.
+function isDemoMode(): boolean {
+  try {
+    return new URLSearchParams(window.location.search).get('demo') === '1';
+  } catch {
+    return false;
+  }
+}
+
+function isTypingTarget(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
 export function App() {
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [view, setView] = useState<View>('dashboard');
+  const demoMode = useRef(isDemoMode()).current;
+  const pageLoadTime = useRef(Date.now()).current;
 
   const state = useWebSocket(WS_URL);
   const { workflows } = useWorkflows();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(loadPersistedWorkflow);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(() =>
+    demoMode ? null : loadPersistedWorkflow(),
+  );
+  const [dagFullscreen, setDagFullscreen] = useState(false);
+  const [eventFilterStep, setEventFilterStep] = useState<string | null>(null);
+  const [flashToken, setFlashToken] = useState<{ step: string; nonce: number } | null>(null);
 
   useEffect(() => {
     // Dev-only escape hatch, mirrors the backend's DISABLE_AUTH (auth.guard.ts) —
@@ -80,6 +107,26 @@ export function App() {
     });
   }, []);
 
+  // 'f' toggles the full-screen DAG while the Dashboard view is showing a workflow (§3.1 entry
+  // point 2) — ignored while a form field has focus so it can't hijack typing in the job picker
+  // or a search box.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'f' && e.key !== 'F') return;
+      if (isTypingTarget(document.activeElement)) return;
+      if (view !== 'dashboard' || !selectedWorkflow) return;
+      setDagFullscreen((v) => !v);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [view, selectedWorkflow]);
+
+  // Exiting full-screen (any of the three affordances) never survives a workflow change.
+  useEffect(() => {
+    setDagFullscreen(false);
+    setEventFilterStep(null);
+  }, [selectedWorkflow]);
+
   // SuperTokens auth routes
   if (window.location.pathname.startsWith('/auth')) {
     const preBuiltUIList = [ThirdPartyPreBuiltUI];
@@ -99,9 +146,12 @@ export function App() {
 
   if (!authenticated) return null;
 
-  const allJobs = Array.from(state.jobs.values()).sort((a, b) =>
+  const allJobsUnfiltered = Array.from(state.jobs.values()).sort((a, b) =>
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
+  const allJobs = demoMode
+    ? allJobsUnfiltered.filter((j) => new Date(j.createdAt).getTime() >= pageLoadTime)
+    : allJobsUnfiltered;
   const jobs = selectedWorkflow ? allJobs.filter((j) => j.workflow === selectedWorkflow) : allJobs;
 
   // Selection can point at a job that Just got filtered out by a workflow change —
@@ -121,107 +171,149 @@ export function App() {
     setView('dashboard');
   };
 
+  const handleRowStepClick = (step: string) => setFlashToken((prev) => ({ step, nonce: (prev?.nonce ?? 0) + 1 }));
+
+  const scopedEventLog = eventFilterStep ? state.eventLog.filter((e) => e.step === eventFilterStep) : state.eventLog;
+
   return (
-    <div class="dashboard">
-      <Header connected={state.connected} />
+    <>
+      <div class="dashboard">
+        <Header connected={state.connected} />
 
-      {/* Deliberately BELOW the header's own ~64px band — this toggle + the workflow selector
-          share the slim bar underneath. */}
-      <div class="view-tabs">
-        <button
-          class={`view-tab ${view === 'dashboard' ? 'active' : ''}`}
-          onClick={() => setView('dashboard')}
-        >
-          Dashboard
-        </button>
-        <button
-          class={`view-tab ${view === 'scenarios' ? 'active' : ''}`}
-          onClick={() => setView('scenarios')}
-        >
-          Scenarios
-        </button>
-        <WorkflowSelector
-          workflows={workflows}
-          selected={selectedWorkflow}
-          onSelect={handleSelectWorkflow}
-        />
-      </div>
+        {/* Deliberately BELOW the header's own ~64px band — this toggle + the workflow selector
+            share the slim bar underneath. */}
+        <div class="view-tabs">
+          <button
+            class={`view-tab ${view === 'dashboard' ? 'active' : ''}`}
+            onClick={() => setView('dashboard')}
+          >
+            Dashboard
+          </button>
+          <button
+            class={`view-tab ${view === 'scenarios' ? 'active' : ''}`}
+            onClick={() => setView('scenarios')}
+          >
+            Scenarios
+          </button>
+          <WorkflowSelector
+            workflows={workflows}
+            selected={selectedWorkflow}
+            onSelect={handleSelectWorkflow}
+          />
+        </div>
 
-      {view === 'scenarios' ? (
-        <ScenariosView onJobCreated={handleJobCreatedFromScenario} presetWorkflow={selectedWorkflow} />
-      ) : (
-        <>
-          {selectedWorkflow && (
-            <div class="dag-section">
-              <div class="panel-header">
-                {selectedWorkflow} — step graph
-                {selectedJob?.workflow === selectedWorkflow && (
-                  <span class="dag-legend">
-                    <span class="dag-legend-item dag-legend-done">done</span>
-                    <span class="dag-legend-item dag-legend-active">active</span>
-                    <span class="dag-legend-item dag-legend-failed">failed</span>
-                    <span class="dag-legend-item dag-legend-pending">pending</span>
+        {view === 'scenarios' ? (
+          <ScenariosView onJobCreated={handleJobCreatedFromScenario} presetWorkflow={selectedWorkflow} />
+        ) : (
+          <>
+            {selectedWorkflow && (
+              <div class="dag-section">
+                <div class="panel-header">
+                  {selectedWorkflow} — step graph
+                  <span class="dag-section-header-right">
+                    {selectedJob?.workflow === selectedWorkflow && (
+                      <span class="dag-legend">
+                        <span class="dag-legend-item dag-legend-done">done</span>
+                        <span class="dag-legend-item dag-legend-active">active</span>
+                        <span class="dag-legend-item dag-legend-failed">failed</span>
+                        <span class="dag-legend-item dag-legend-skipped">skipped</span>
+                        <span class="dag-legend-item dag-legend-partial">partial</span>
+                        <span class="dag-legend-item dag-legend-pending">pending</span>
+                      </span>
+                    )}
+                    <button
+                      class="dag-expand-btn"
+                      title="Full-screen the step graph (f)"
+                      onClick={() => setDagFullscreen(true)}
+                    >
+                      ⛶ Expand
+                    </button>
                   </span>
-                )}
+                </div>
+                {/* Whole strip is a "see it properly" affordance — click anywhere on the
+                    background to expand (ux-storyboards.md §3.1 entry point 3). */}
+                <div onClick={() => setDagFullscreen(true)}>
+                  <WorkflowDag workflowName={selectedWorkflow} selectedJob={selectedJob} flashToken={flashToken} />
+                </div>
               </div>
-              <WorkflowDag workflowName={selectedWorkflow} selectedJob={selectedJob} />
-            </div>
-          )}
+            )}
 
-          <div class="panels">
-            <div class="panel panel-left">
-              <div class="panel-header">
-                {selectedWorkflow ? `${selectedWorkflow} Jobs` : 'All Jobs'} ({jobs.length})
+            <div class="panels">
+              <div class="panel panel-left">
+                <div class="panel-header">
+                  {selectedWorkflow ? `${selectedWorkflow} Jobs` : 'All Jobs'} ({jobs.length})
+                </div>
+                <div class="panel-body">
+                  <JobList
+                    jobs={jobs}
+                    selectedId={selectedJob?.id ?? null}
+                    onSelect={setSelectedJobId}
+                  />
+                </div>
               </div>
-              <div class="panel-body">
-                <JobList
-                  jobs={jobs}
-                  selectedId={selectedJob?.id ?? null}
-                  onSelect={setSelectedJobId}
+
+              <div class="panel panel-center">
+                <div class="panel-header">Job Detail</div>
+                <div class="panel-body">
+                  <JobDetail job={selectedJob} />
+                </div>
+              </div>
+
+              <div class="panel panel-right">
+                <TabbedPanel
+                  storageKey={demoMode ? undefined : 'right-panel'}
+                  initialTabId={demoMode ? 'events' : undefined}
+                  tabs={[
+                    { id: 'sqs', label: 'SQS', content: <SqsPanel queues={state.queues} demoMode={demoMode} /> },
+                    { id: 'kafka', label: 'Kafka', content: <KafkaPanel /> },
+                    {
+                      id: 'events',
+                      label: 'Events',
+                      content: (
+                        <EventLog
+                          entries={scopedEventLog}
+                          hideHeader
+                          maxHeight="none"
+                          filter={eventFilterStep ? { step: eventFilterStep } : undefined}
+                          onClearFilter={() => setEventFilterStep(null)}
+                          onRowStepClick={selectedWorkflow ? handleRowStepClick : undefined}
+                        />
+                      ),
+                    },
+                    {
+                      id: 'payloads',
+                      label: 'Payloads',
+                      content: <PayloadsPanel selectedJobId={selectedJob?.id ?? null} />,
+                    },
+                    {
+                      id: 'throughput',
+                      label: 'Throughput',
+                      content: <ThroughputPanel workflow={selectedWorkflow} />,
+                    },
+                    { id: 'flags', label: 'Flags', content: <FlagsPanel workflow={selectedWorkflow} /> },
+                  ]}
                 />
               </div>
             </div>
+          </>
+        )}
 
-            <div class="panel panel-center">
-              <div class="panel-header">Job Detail</div>
-              <div class="panel-body">
-                <JobDetail job={selectedJob} />
-              </div>
-            </div>
-
-            <div class="panel panel-right">
-              <TabbedPanel
-                storageKey="right-panel"
-                tabs={[
-                  { id: 'sqs', label: 'SQS', content: <SqsPanel queues={state.queues} /> },
-                  { id: 'kafka', label: 'Kafka', content: <KafkaPanel /> },
-                  {
-                    id: 'events',
-                    label: 'Events',
-                    content: <EventLog entries={state.eventLog} hideHeader maxHeight="none" />,
-                  },
-                  {
-                    id: 'payloads',
-                    label: 'Payloads',
-                    content: <PayloadsPanel selectedJobId={selectedJob?.id ?? null} />,
-                  },
-                  {
-                    id: 'throughput',
-                    label: 'Throughput',
-                    content: <ThroughputPanel workflow={selectedWorkflow} />,
-                  },
-                  { id: 'flags', label: 'Flags', content: <FlagsPanel workflow={selectedWorkflow} /> },
-                ]}
-              />
-            </div>
-          </div>
-        </>
-      )}
-
-      <div class="bottom-bar">
-        <ConnectionStatus connected={state.connected} reconnecting={state.reconnecting} />
-        <span>Jobs: {jobs.length} | Events: {state.eventLog.length}</span>
+        <div class="bottom-bar">
+          <ConnectionStatus connected={state.connected} reconnecting={state.reconnecting} />
+          <span>Jobs: {jobs.length} | Events: {state.eventLog.length}</span>
+        </div>
       </div>
-    </div>
+
+      {dagFullscreen && selectedWorkflow && (
+        <DagFullscreen
+          workflowName={selectedWorkflow}
+          jobs={jobs}
+          selectedJob={selectedJob}
+          onSelectJob={setSelectedJobId}
+          onClose={() => setDagFullscreen(false)}
+          eventLog={state.eventLog}
+        />
+      )}
+    </>
   );
 }

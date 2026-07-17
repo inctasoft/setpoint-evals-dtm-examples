@@ -26,10 +26,18 @@ export function useWebSocket(url: string) {
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  const makeLogEntry = (type: string, jobId: string, detail: string, correlationId?: string): EventLogEntry => ({
+  const makeLogEntry = (
+    type: string,
+    jobId: string,
+    detail: string,
+    correlationId?: string,
+    step?: string,
+  ): EventLogEntry => ({
     timestamp: new Date().toLocaleTimeString('en-GB'),
     type,
     jobId: jobId.slice(0, 8) + '...',
+    jobIdFull: jobId,
+    step,
     detail,
     correlationId,
   });
@@ -84,7 +92,7 @@ export function useWebSocket(url: string) {
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_started', event.jobId, event.step, event.correlationId)) };
+          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_started', event.jobId, event.step, event.correlationId, event.step)) };
         }
 
         case 'step_completed': {
@@ -95,7 +103,7 @@ export function useWebSocket(url: string) {
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_completed', event.jobId, `${event.step} (${event.duration}ms)`, event.correlationId)) };
+          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_completed', event.jobId, `${event.step} (${event.duration}ms)`, event.correlationId, event.step)) };
         }
 
         case 'step_failed': {
@@ -106,7 +114,7 @@ export function useWebSocket(url: string) {
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_failed', event.jobId, `${event.step}: ${event.error}`, event.correlationId)) };
+          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_failed', event.jobId, `${event.step}: ${event.error}`, event.correlationId, event.step)) };
         }
 
         case 'step_retrying': {
@@ -117,7 +125,22 @@ export function useWebSocket(url: string) {
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_retrying', event.jobId, `${event.step} attempt #${event.attempt}`, event.correlationId)) };
+          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_retrying', event.jobId, `${event.step} attempt #${event.attempt}`, event.correlationId, event.step)) };
+        }
+
+        case 'step_skipped': {
+          // Was previously UNHANDLED here (fell to default) — a skipped step's live status
+          // never reached the dashboard, only a subsequent on-demand snapshot (the exact bug
+          // storyboard F1/infra-cascade's payoff depends on not regressing: SE-27 §27.2 proves
+          // the backend broadcasts this; this case is what makes the frontend actually apply it).
+          const job = jobs.get(event.jobId);
+          if (job) {
+            const steps = job.steps.map(s =>
+              s.step === event.step ? { ...s, status: 'skipped' as const, reason: event.reason } : s
+            );
+            jobs.set(event.jobId, { ...job, steps });
+          }
+          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_skipped', event.jobId, `${event.step}: ${event.reason}`, event.correlationId, event.step)) };
         }
 
         case 'step_ack_waiting': {
@@ -128,7 +151,7 @@ export function useWebSocket(url: string) {
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('ack_waiting', event.jobId, event.step, event.correlationId)) };
+          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('ack_waiting', event.jobId, event.step, event.correlationId, event.step)) };
         }
 
         case 'step_ack_received': {
@@ -139,7 +162,7 @@ export function useWebSocket(url: string) {
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('ack_received', event.jobId, event.step, event.correlationId)) };
+          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('ack_received', event.jobId, event.step, event.correlationId, event.step)) };
         }
 
         default:
@@ -196,6 +219,10 @@ export function useWebSocket(url: string) {
   // Keep connectedRef in sync with state
   connectedRef.current = state.connected;
 
+  // 10-value parity with @dtm/core's StepStatus (dtm-video-v2 capability-spec.md §3.4) — this
+  // REST-polling fallback path used to collapse SKIPPED into 'completed' and had no entries for
+  // WAITING_FOR_CHILDREN/PARTIAL_SUCCESS (silently falling to 'pending'), the same
+  // status-vocabulary drift the shared union was meant to kill, just on the leg nobody widened.
   const mapStepStatus = useCallback((status: string): StepStatus => {
     const map: Record<string, StepStatus> = {
       PENDING: 'pending',
@@ -203,9 +230,11 @@ export function useWebSocket(url: string) {
       IN_PROGRESS: 'in_progress',
       IN_PROGRESS_RETRYING: 'in_progress_retrying',
       WAITING_FOR_ACK: 'waiting_for_ack',
+      WAITING_FOR_CHILDREN: 'waiting_for_children',
       COMPLETED: 'completed',
       FAILED: 'failed',
-      SKIPPED: 'completed',
+      SKIPPED: 'skipped',
+      PARTIAL_SUCCESS: 'partial_success',
     };
     return map[status?.toUpperCase()] ?? 'pending';
   }, []);
