@@ -92,16 +92,75 @@ FO_CHILD_COUNT=$(echo "$FANOUT_ROW" | cut -d'|' -f3)
 log_info "3. fan-out scenario: job=${FO_JOB_ID} step=${FO_STEP} child_count=${FO_CHILD_COUNT}"
 
 FO_STEP_ID=$(psql_q "SELECT id FROM dtm_steps WHERE job_id='${FO_JOB_ID}' AND step_value='${FO_STEP}' AND parent_step_id IS NULL;")
-DB_CHILD_ROWS=$(psql_q "SELECT count(*) FROM dtm_steps WHERE parent_step_id='${FO_STEP_ID}';")
+# NOTE: the correct DB baseline for fanOut.children is one row per DISTINCT
+# childItemId under this parent — NOT the raw row count. A fan-out parent whose
+# childStepChain has length > 1 (e.g. order-processing's DiscoverLineItems ->
+# [ValidateLineItem, SubmitLineItem], or iot-sensor-pipeline's DiscoverSensors ->
+# [CalibrateSensor, ActivateSensor, DiscoverReadings, ComputeAggregate,
+# PublishAggregate]) has MULTIPLE dtm_steps rows sharing one parent_step_id per
+# item — one per chain step — so raw COUNT(*) over-counts by the chain length.
+# Scenario 3b below pins this distinction explicitly with a deterministic
+# chained-fanout example (was previously asserted against raw row count here,
+# which silently encoded the badge-scope bug as "correct").
+DB_DISTINCT_ITEMS=$(psql_q "SELECT count(DISTINCT child_item_id) FROM dtm_steps WHERE parent_step_id='${FO_STEP_ID}';")
 
 RESP3=$(curl -s -m 15 "${API}/jobs/${FO_JOB_ID}/steps/${FO_STEP}/activity")
 API_CHILD_COUNT=$(echo "$RESP3" | jq '.fanOut.childCount' 2>/dev/null)
 API_CHILDREN_LEN=$(echo "$RESP3" | jq '.fanOut.children | length' 2>/dev/null)
 API_CHILDREN_HAVE_FIELDS=$(echo "$RESP3" | jq '(.fanOut.children // []) as $c | ([$c[] | select(has("childIndex") and has("childItemId") and has("status"))] | length) == ($c | length) and ($c | length) > 0' 2>/dev/null || echo false)
+API_CHILDREN_UNIQUE_ITEMS=$(echo "$RESP3" | jq '(.fanOut.children // []) as $c | (($c | map(.childItemId) | unique | length) == ($c | length))' 2>/dev/null || echo false)
 
 ck_eq "3. fanOut.childCount matches DB child_count (${FO_CHILD_COUNT})" "$API_CHILD_COUNT" "$FO_CHILD_COUNT"
-ck_eq "3. fanOut.children length matches real DB child rows (${DB_CHILD_ROWS})" "$API_CHILDREN_LEN" "$DB_CHILD_ROWS"
+ck_eq "3. fanOut.children length matches distinct childItemId count under this parent (${DB_DISTINCT_ITEMS}), not the raw chain-row count" "$API_CHILDREN_LEN" "$DB_DISTINCT_ITEMS"
 ck_eq "3. every fanOut.children[] entry carries childIndex/childItemId/status" "$API_CHILDREN_HAVE_FIELDS" "true"
+ck_eq "3. fanOut.children[] has no duplicate childItemId (one row per immediate fan-out item)" "$API_CHILDREN_UNIQUE_ITEMS" "true"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 3b. Chained fan-out parent (childStepChain length > 1) — the badge-scope bug
+#     class. GIVEN a discovery/parent step whose children span MORE THAN ONE
+#     distinct step_value (proof it has a multi-step childStepChain, e.g.
+#     iot-sensor-pipeline's DiscoverSensors -> [CalibrateSensor, ActivateSensor,
+#     DiscoverReadings, ComputeAggregate, PublishAggregate]) THEN
+#     fanOut.childCount/children must still equal the DECLARED child count (one
+#     per fan-out item), never the raw chain-step row count. Prefers
+#     DiscoverSensors (the concrete case that motivated this fix — reported live
+#     as a "18/3" DAG badge) but falls back to any qualifying chained parent so
+#     this never SKIPs on a stack that only ran order-processing.
+# ═══════════════════════════════════════════════════════════════════════════
+CHAINED_ROW=$(psql_q "
+  SELECT p.job_id, p.step_value, p.child_count
+  FROM dtm_steps p
+  WHERE p.parent_step_id IS NULL
+    AND p.child_count IS NOT NULL AND p.child_count > 0
+    AND (SELECT count(DISTINCT c.step_value) FROM dtm_steps c WHERE c.parent_step_id = p.id) > 1
+  ORDER BY (p.step_value = 'DiscoverSensors') DESC, p.started_at DESC
+  LIMIT 1;
+")
+if [ -z "$CHAINED_ROW" ]; then
+  se_skip "no chained fan-out parent step (>1 distinct child step_value sharing one parent_step_id) exists in dtm_steps — run workflows/iot-sensor-pipeline/setpoint-evals/SE-03-double-fan-out first, then re-run this SE"
+fi
+CH_JOB_ID=$(echo "$CHAINED_ROW" | cut -d'|' -f1)
+CH_STEP=$(echo "$CHAINED_ROW" | cut -d'|' -f2)
+CH_CHILD_COUNT=$(echo "$CHAINED_ROW" | cut -d'|' -f3)
+log_info "3b. chained fan-out scenario: job=${CH_JOB_ID} step=${CH_STEP} child_count=${CH_CHILD_COUNT}"
+
+CH_STEP_ID=$(psql_q "SELECT id FROM dtm_steps WHERE job_id='${CH_JOB_ID}' AND step_value='${CH_STEP}' AND parent_step_id IS NULL;")
+CH_RAW_ROWS=$(psql_q "SELECT count(*) FROM dtm_steps WHERE parent_step_id='${CH_STEP_ID}';")
+CH_CHAIN_STEP_VALUES_JSON=$(psql_q "SELECT jsonb_agg(DISTINCT step_value)::text FROM dtm_steps WHERE parent_step_id='${CH_STEP_ID}';")
+
+RESP3B=$(curl -s -m 15 "${API}/jobs/${CH_JOB_ID}/steps/${CH_STEP}/activity")
+API_CH_CHILD_COUNT=$(echo "$RESP3B" | jq '.fanOut.childCount' 2>/dev/null)
+API_CH_CHILDREN_LEN=$(echo "$RESP3B" | jq '.fanOut.children | length' 2>/dev/null)
+API_CH_CHILDREN_UNIQUE_ITEMS=$(echo "$RESP3B" | jq '(.fanOut.children // []) as $c | (($c | map(.childItemId) | unique | length) == ($c | length))' 2>/dev/null || echo false)
+API_CH_NO_NESTED_LEAK=$(echo "$RESP3B" | jq --argjson allowed "$CH_CHAIN_STEP_VALUES_JSON" \
+  '(.fanOut.children // []) as $c | ([$c[] | select(.step as $s | ($allowed // []) | index($s) | not)] | length) == 0' 2>/dev/null || echo false)
+
+ck "3b. sanity: this parent's raw child-row count (${CH_RAW_ROWS}) exceeds its declared childCount (${CH_CHILD_COUNT}) — confirms it IS a chained fan-out, not a false-positive scenario pick" \
+  test "$CH_RAW_ROWS" -gt "$CH_CHILD_COUNT"
+ck_eq "3b. fanOut.childCount equals the declared child_count (${CH_CHILD_COUNT}), not the raw chain-row count (${CH_RAW_ROWS})" "$API_CH_CHILD_COUNT" "$CH_CHILD_COUNT"
+ck_eq "3b. fanOut.children length equals the declared childCount (${CH_CHILD_COUNT}), not the raw chain-row count (${CH_RAW_ROWS}) — the badge-scope bug under test" "$API_CH_CHILDREN_LEN" "$CH_CHILD_COUNT"
+ck_eq "3b. fanOut.children[] has no duplicate childItemId (one row per immediate fan-out item, not one per chain step)" "$API_CH_CHILDREN_UNIQUE_ITEMS" "true"
+ck_eq "3b. every fanOut.children[].step is one of this parent's own childStepChain types (no nested-descendant leakage from a deeper fan-out level)" "$API_CH_NO_NESTED_LEAK" "true"
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 4. 404 semantics — never 500, never empty-200

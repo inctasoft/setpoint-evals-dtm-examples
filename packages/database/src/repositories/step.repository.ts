@@ -102,12 +102,57 @@ export class StepRepository {
   /**
    * Find all child steps for a parent step (fan-out pattern)
    * Returns steps ordered by childIndex for consistent ordering
+   *
+   * NOTE: for a discovery step whose `childStepChain` has length > 1 (e.g.
+   * order-processing's DiscoverLineItems -> [ValidateLineItem, SubmitLineItem],
+   * or iot-sensor-pipeline's DiscoverSensors -> [CalibrateSensor, ActivateSensor,
+   * DiscoverReadings, ComputeAggregate, PublishAggregate] — see
+   * FanOutService.delegateNextChildChainStep()'s "Same parent" chaining), this
+   * returns ONE ROW PER CHAIN STEP PER ITEM, not one row per item — i.e. it is the
+   * full parent-scoped row set, used internally for completion bookkeeping
+   * (checkChildrenCompletion, buildFkMapFromSuccessfulChildren) where every chain
+   * row matters. Callers that want one representative row per fan-out ITEM
+   * (e.g. the /activity drill-down's fanOut.children rollup) must use
+   * findImmediateFanOutChildren() instead — using this method there over-counts
+   * by the chain length (dtm-video-v2 Lane B.1 follow-up, PR #36 body: the DAG
+   * badge reporting "18/3" instead of "3/3").
    */
   async findByParentId(parentStepId: string): Promise<Step[]> {
     return this.repo.find({
       where: { parentStepId },
       order: { childIndex: "ASC" },
     });
+  }
+
+  /**
+   * Find one representative row per fan-out ITEM under a parent step — the
+   * "immediate fan-out branch" (dtm-video-v2 Lane B.1 follow-up, PR #36 body).
+   *
+   * A discovery step's children are NOT one row per item: when the step's
+   * `childStepChain` has length > 1, every chain step for a given item shares
+   * the SAME parent_step_id (FanOutService.delegateNextChildChainStep() sets
+   * `parentStepId: completedChildStep.parentStepId // Same parent`), so
+   * findByParentId() returns childCount * chainLength rows. This method
+   * collapses that to exactly one row per distinct child_item_id — the row with
+   * the latest started_at, i.e. the item's current/most-advanced chain step —
+   * via Postgres `DISTINCT ON`. Ordered by childIndex/childItemId afterward for
+   * stable, deterministic output (DISTINCT ON's own ordering is dictated by the
+   * distinct column, not display order).
+   *
+   * Nested descendants (e.g. a DiscoverReadings INSTANCE's own IngestReading/
+   * PublishReading children) are never included — those rows have
+   * parent_step_id pointing at the DiscoverReadings instance's id, not at this
+   * step's id, so they were already out of scope before this method existed.
+   */
+  async findImmediateFanOutChildren(parentStepId: string): Promise<Step[]> {
+    const rows = await this.repo
+      .createQueryBuilder("step")
+      .distinctOn(["step.childItemId"])
+      .where("step.parentStepId = :parentStepId", { parentStepId })
+      .orderBy("step.childItemId", "ASC")
+      .addOrderBy("step.startedAt", "DESC")
+      .getMany();
+    return rows.sort((a, b) => (a.childIndex ?? 0) - (b.childIndex ?? 0));
   }
 
   /**

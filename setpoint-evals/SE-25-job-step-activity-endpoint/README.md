@@ -24,11 +24,26 @@ Feature: GET /api/v1/jobs/:jobId/steps/:stepName/activity is the per-step drill-
     Then ack.ackWaitMs equals ack_received_at - kafka_published_at (±5ms) and
       ack.ackMetadata is non-null
 
-  Scenario: a fan-out parent step exposes its children rollup
+  Scenario: a fan-out parent step exposes its children rollup, one entry per item
     Given a discovery/parent step (parent_step_id IS NULL) with child_count > 0
     When fetched
     Then fanOut.childCount matches the DB child_count and fanOut.children has one
-      entry per real child row, each carrying childIndex/childItemId/status
+      entry per distinct child_item_id under that parent (never one row per raw
+      dtm_steps child row), each carrying childIndex/childItemId/status, with no
+      duplicate childItemId
+
+  Scenario: a CHAINED fan-out parent (childStepChain length > 1) still reports
+      childCount-consistent sums — the badge-scope bug (dtm-video-v2 Lane B.1
+      follow-up, PR #36)
+    Given a discovery/parent step whose childStepChain has more than one step
+      (e.g. iot-sensor-pipeline's DiscoverSensors -> [CalibrateSensor,
+      ActivateSensor, DiscoverReadings, ComputeAggregate, PublishAggregate]) —
+      every chain step for one item shares that item's parent_step_id, so raw
+      dtm_steps rows under the parent number childCount * chainLength
+    When fetched
+    Then fanOut.childCount AND fanOut.children.length both equal the DECLARED
+      child count (one per fan-out item), never the raw chain-row count, with no
+      duplicate childItemId and no leaked nested-descendant step types
 
   Scenario: unknown job or step name never 500s or empty-200s
     When fetched with a jobId that doesn't exist, or a stepName that doesn't exist
@@ -61,7 +76,8 @@ sequenceDiagram
     DB-->>T: jobId, stepName, expected values
     T->>O: GET /jobs/:jobId/steps/:stepName/activity
     O->>R: findByJobId(jobId) then filter stepValue + parentStepId IS NULL
-    R-->>O: primary Step row (+ findByParentId for fan-out children)
+    R-->>O: primary Step row (+ findImmediateFanOutChildren for fan-out children —
+      DISTINCT ON child_item_id, collapsing chained fan-out rows to one per item)
     O-->>T: { step, status, attempts[], ack{}, fanOut{}, input, output }
     T->>T: diff API response fields against the DB row read directly
     T->>O: GET .../steps/UnknownStep/activity  (real job, bad step name)
@@ -151,8 +167,13 @@ curl -s "${ORCHESTRATOR_HOST}/api/${API_VERSION}/jobs/${JOB_ID}/steps/${STEP_NAM
 - [ ] `ack.ackWaitMs == ack_received_at - kafka_published_at` (±5ms tolerance)
 - [ ] `ack.ackMetadata` is non-null for an ACK-bearing step
 - [ ] `fanOut.childCount` matches the DB `child_count` on the discovery/parent row
-- [ ] `fanOut.children` length matches the real child-row count in `dtm_steps`
+- [ ] `fanOut.children` length matches the distinct `child_item_id` count under that parent, not the raw chain-row count
 - [ ] every `fanOut.children[]` entry carries `childIndex`/`childItemId`/`status`
+- [ ] `fanOut.children[]` has no duplicate `childItemId`
+- [ ] a chained fan-out parent (>1 distinct child `step_value` sharing one parent): `fanOut.childCount` equals the declared `child_count`, not the raw chain-row count
+- [ ] a chained fan-out parent: `fanOut.children` length equals the declared `child_count`, not the raw chain-row count (the badge-scope bug)
+- [ ] a chained fan-out parent: `fanOut.children[]` has no duplicate `childItemId`
+- [ ] a chained fan-out parent: every `fanOut.children[].step` is one of that parent's own `childStepChain` types (no nested-descendant leakage)
 - [ ] unknown `jobId` returns 404 (never 500, never empty-200)
 - [ ] unknown `stepName` on a real job returns 404 (never 500, never empty-200)
 - [ ] a fan-out-CHILD-ONLY step (no primary row) returns HTTP 200, not 404

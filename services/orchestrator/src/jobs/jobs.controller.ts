@@ -362,7 +362,13 @@ export class JobsController {
       return this.getFanOutOnlyStepActivity(jobId, stepName);
     }
 
-    const childRows = await this.stepRepo.findByParentId(step.id);
+    // findImmediateFanOutChildren (not findByParentId): a discovery step whose
+    // childStepChain has length > 1 stores one row PER CHAIN STEP PER ITEM under
+    // the same parent_step_id — findByParentId returns all of them (childCount *
+    // chainLength rows), which is what produced the "18/3" DAG badge (dtm-video-v2
+    // Lane B.1 follow-up, PR #36 body). This collapses to one representative row
+    // per fan-out item.
+    const childRows = await this.stepRepo.findImmediateFanOutChildren(step.id);
     const ackWaitMs =
       step.kafkaPublishedAt && step.ackReceivedAt
         ? step.ackReceivedAt.getTime() - step.kafkaPublishedAt.getTime()

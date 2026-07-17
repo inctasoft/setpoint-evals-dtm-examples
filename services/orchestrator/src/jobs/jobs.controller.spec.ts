@@ -17,6 +17,7 @@ describe('JobsController', () => {
     findByJobId: jest.fn(),
     findPrimaryByJobIdAndStepValue: jest.fn(),
     findByParentId: jest.fn(),
+    findImmediateFanOutChildren: jest.fn(),
     findChildInstancesByJobIdAndStepValue: jest.fn(),
     findByIds: jest.fn(),
   };
@@ -252,7 +253,7 @@ describe('JobsController', () => {
         input: { a: 1 },
         output: null,
       });
-      mockStepRepo.findByParentId.mockResolvedValue([]);
+      mockStepRepo.findImmediateFanOutChildren.mockResolvedValue([]);
 
       const result = await controller.getStepActivity(jobId, 'ValidateCustomer');
 
@@ -287,7 +288,7 @@ describe('JobsController', () => {
         ackReceivedAt: new Date('2026-01-01T00:00:02.000Z'),
         ackMetadata: { foo: 'bar' },
       });
-      mockStepRepo.findByParentId.mockResolvedValue([]);
+      mockStepRepo.findImmediateFanOutChildren.mockResolvedValue([]);
 
       const result = await controller.getStepActivity(jobId, 'SubmitOrder');
 
@@ -295,7 +296,7 @@ describe('JobsController', () => {
       expect(result.ack.ackMetadata).toEqual({ foo: 'bar' });
     });
 
-    it('should populate fanOut for a discovery/parent step with children', async () => {
+    it('should populate fanOut for a discovery/parent step with children, one entry per fan-out item', async () => {
       const jobId = 'job-3';
       mockJobRepo.findById.mockResolvedValue({ id: jobId });
       mockStepRepo.findPrimaryByJobIdAndStepValue.mockResolvedValue({
@@ -307,19 +308,25 @@ describe('JobsController', () => {
         executionHistory: [],
         childCount: 2,
       });
-      mockStepRepo.findByParentId.mockResolvedValue([
+      // findImmediateFanOutChildren already collapses a chained fan-out's rows
+      // (e.g. order-processing's DiscoverLineItems -> [ValidateLineItem,
+      // SubmitLineItem]) to ONE representative row per distinct childItemId — the
+      // controller trusts that contract rather than re-deduping itself. Two
+      // DIFFERENT items here, each on a different chain step, to prove the
+      // controller doesn't assume every child shares one step type.
+      mockStepRepo.findImmediateFanOutChildren.mockResolvedValue([
         {
           stepValue: 'ValidateLineItem',
           childIndex: 0,
           childItemId: '18',
-          status: 'completed',
-          durationMs: 100,
+          status: 'in_progress',
+          durationMs: null,
           retryCount: 0,
         },
         {
           stepValue: 'SubmitLineItem',
-          childIndex: 0,
-          childItemId: '18',
+          childIndex: 1,
+          childItemId: '19',
           status: 'completed',
           durationMs: 150,
           retryCount: 0,
@@ -328,17 +335,20 @@ describe('JobsController', () => {
 
       const result = await controller.getStepActivity(jobId, 'DiscoverLineItems');
 
-      expect(mockStepRepo.findByParentId).toHaveBeenCalledWith('parent-step');
+      expect(mockStepRepo.findImmediateFanOutChildren).toHaveBeenCalledWith('parent-step');
       expect(result.fanOut).not.toBeNull();
       expect(result.fanOut.childCount).toBe(2);
       expect(result.fanOut.children).toHaveLength(2);
-      // Fan-out children can span MORE THAN ONE step type sharing the same parent
-      // (order-processing's DiscoverLineItems parents both ValidateLineItem and
-      // SubmitLineItem instances) — each child entry must disambiguate via its own
-      // `step` field, never assume the parent's children are all one type.
-      expect(result.fanOut.children.map((c: { step: string }) => c.step)).toEqual([
-        'ValidateLineItem',
-        'SubmitLineItem',
+      // Each child entry disambiguates via its own `step` field — never assume
+      // the parent's children are all one type or all the same chain position.
+      expect(
+        result.fanOut.children.map((c: { step: string; childItemId: string }) => [
+          c.step,
+          c.childItemId,
+        ]),
+      ).toEqual([
+        ['ValidateLineItem', '18'],
+        ['SubmitLineItem', '19'],
       ]);
     });
 
@@ -360,7 +370,7 @@ describe('JobsController', () => {
       await expect(controller.getStepActivity(jobId, 'DoesNotExistStep')).rejects.toThrow(
         NotFoundException,
       );
-      expect(mockStepRepo.findByParentId).not.toHaveBeenCalled();
+      expect(mockStepRepo.findImmediateFanOutChildren).not.toHaveBeenCalled();
       expect(mockStepRepo.findChildInstancesByJobIdAndStepValue).toHaveBeenCalledWith(
         jobId,
         'DoesNotExistStep',
@@ -447,7 +457,7 @@ describe('JobsController', () => {
         executionHistory: [],
         childCount: 1,
       });
-      mockStepRepo.findByParentId.mockResolvedValue([
+      mockStepRepo.findImmediateFanOutChildren.mockResolvedValue([
         {
           stepValue: 'ValidateLineItem',
           childIndex: 0,
