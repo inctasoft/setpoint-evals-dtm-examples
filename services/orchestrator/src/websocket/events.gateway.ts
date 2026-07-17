@@ -89,7 +89,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const stepSnapshots: StepSnapshot[] = steps.map((s, i) => ({
         step: s.stepValue,
         description: s.description ?? '',
-        status: s.status.toLowerCase() as StepSnapshot['status'],
+        // No cast: Step.status (@dtm/database, re-exported from @dtm/core) and
+        // StepSnapshot['status'] (`${CoreStepStatus}`) now derive from the SAME
+        // canonical 10-value source, so this assignment is structurally sound —
+        // previously an unsound `as StepSnapshot['status']` cast smuggled
+        // skipped/waiting_for_children/partial_success past a 7-value WS type
+        // (dtm-video-v2 capability-spec.md §2d; setpoint-evals/SE-27-*).
+        status: s.status,
         stepNumber: i + 1,
         error: s.error ?? undefined,
         duration:
@@ -97,6 +103,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             ? new Date(s.completedAt).getTime() - new Date(s.startedAt).getTime()
             : undefined,
         attempt: s.retryCount ?? undefined,
+        childCount: s.childCount ?? undefined,
       }));
 
       snapshots.push({

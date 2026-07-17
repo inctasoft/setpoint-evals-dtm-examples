@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { IsNull, Repository } from "typeorm";
 import { Step, StepStatus } from "../entities/step.entity";
 
 /**
@@ -108,6 +108,50 @@ export class StepRepository {
       where: { parentStepId },
       order: { childIndex: "ASC" },
     });
+  }
+
+  /**
+   * Find the "primary" (non-fan-out-child) row for a step name within a job — the
+   * resolution the /activity drill-down endpoint uses (dtm-video-v2 capability-spec.md
+   * §3.2a). Fan-out CHILD instances (parentStepId IS NOT NULL) are deliberately
+   * excluded: a step name that exists ONLY as multiple child rows sharing one parent
+   * (e.g. order-processing's ValidateLineItem, one row per discovered line item) has
+   * no single "primary" activity record to report — the caller 404s in that case
+   * rather than arbitrarily picking one child row. A discovery/parent step itself
+   * (e.g. DiscoverLineItems) always has parentStepId IS NULL and resolves here.
+   */
+  async findPrimaryByJobIdAndStepValue(
+    jobId: string,
+    stepValue: string,
+  ): Promise<Step | null> {
+    return this.repo.findOne({
+      where: { job: { id: jobId }, stepValue, parentStepId: IsNull() },
+    });
+  }
+
+  /**
+   * Cross-job history for a step name within a workflow — powers the drill-down
+   * drawer's "recent runs of this step" sparkline/table (dtm-video-v2
+   * capability-spec.md §3.2b). Joins through dtm_jobs.workflow_name for isolation: a
+   * step_value-only filter would leak rows from a DIFFERENT workflow that happens to
+   * reuse the same step name. Only "primary" (non-fan-out-child) rows — same
+   * restriction as findPrimaryByJobIdAndStepValue, for the same reason (one row per
+   * job, not N per fan-out item).
+   */
+  async findCrossJobHistory(
+    workflowName: string,
+    stepValue: string,
+    limit: number,
+  ): Promise<Step[]> {
+    return this.repo
+      .createQueryBuilder("step")
+      .innerJoinAndSelect("step.job", "job")
+      .where("job.workflowName = :workflowName", { workflowName })
+      .andWhere("step.stepValue = :stepValue", { stepValue })
+      .andWhere("step.parentStepId IS NULL")
+      .orderBy("job.submittedAt", "DESC")
+      .take(limit)
+      .getMany();
   }
 
   /**

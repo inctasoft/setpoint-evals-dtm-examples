@@ -311,6 +311,99 @@ export class JobsController {
   }
 
   /**
+   * Get per-step drill-down activity (attempts, ACK wait, fan-out rollup)
+   * GET /api/v1/jobs/{jobId}/steps/{stepName}/activity
+   *
+   * The DAG node-click endpoint (dtm-video-v2 capability-spec.md §3.2a) — every field
+   * already lived on dtm_steps (execution_history, ack timestamps, fan-out fields);
+   * this is a pure read + reshape, no new persistence.
+   *
+   * Resolution: only the "primary" (non-fan-out-child) row for stepName within this
+   * job resolves — a step name that exists ONLY as multiple fan-out CHILD instances
+   * (e.g. order-processing's ValidateLineItem, one row per line item, all sharing one
+   * parent_step_id) has no single activity record and 404s rather than arbitrarily
+   * picking one child. A discovery/parent step (e.g. DiscoverLineItems) always
+   * resolves and its `fanOut` block lists EVERY descendant row under it — which may
+   * span more than one step TYPE (e.g. both ValidateLineItem and SubmitLineItem
+   * instances share DiscoverLineItems as their parent_step_id in this engine's
+   * fan-out model) — each child entry carries its own `step` field to disambiguate.
+   */
+  @Get('jobs/:jobId/steps/:stepName/activity')
+  @ApiOperation({
+    summary: 'Get per-step drill-down activity',
+    description:
+      'Attempt timeline, ACK-wait duration, and fan-out children rollup for one step ' +
+      'within one job — powers the DAG node-click drill-down drawer.',
+  })
+  @ApiParam({ name: 'jobId', description: 'Job ID (UUID)' })
+  @ApiParam({
+    name: 'stepName',
+    description: 'Step name (dtm_steps.step_value, e.g. "ValidateCustomer")',
+  })
+  @ApiResponse({ status: 200, description: 'Step activity retrieved successfully' })
+  @ApiResponse({
+    status: 404,
+    description:
+      'Job not found, or no primary (non-fan-out-child) step row with this name exists on it',
+  })
+  async getStepActivity(@Param('jobId') jobId: string, @Param('stepName') stepName: string) {
+    const job = await this.jobRepo.findById(jobId, false);
+    if (!job) {
+      throw new NotFoundException(`Job ${jobId} not found`);
+    }
+
+    const step = await this.stepRepo.findPrimaryByJobIdAndStepValue(jobId, stepName);
+    if (!step) {
+      throw new NotFoundException(
+        `Step '${stepName}' not found for job ${jobId} (no primary, non-fan-out-child row with this name)`,
+      );
+    }
+
+    const childRows = await this.stepRepo.findByParentId(step.id);
+    const ackWaitMs =
+      step.kafkaPublishedAt && step.ackReceivedAt
+        ? step.ackReceivedAt.getTime() - step.kafkaPublishedAt.getTime()
+        : null;
+
+    return {
+      step: step.stepValue,
+      status: step.status,
+      durationMs: step.durationMs ?? null,
+      retryCount: step.retryCount,
+      maxRetryCount: step.maxRetryCount,
+      firstAttemptAt: step.firstAttemptAt ?? null,
+      lastAttemptAt: step.lastAttemptAt ?? null,
+      attempts: step.executionHistory ?? [],
+      delegation: {
+        lambdaFunctionName: step.lambdaFunctionName ?? null,
+        sqsMessageId: step.sqsMessageId ?? null,
+      },
+      ack: {
+        kafkaPublishedAt: step.kafkaPublishedAt ?? null,
+        ackReceivedAt: step.ackReceivedAt ?? null,
+        ackWaitMs,
+        ackMetadata: step.ackMetadata ?? null,
+      },
+      fanOut:
+        childRows.length > 0
+          ? {
+              childCount: step.childCount ?? childRows.length,
+              children: childRows.map((c) => ({
+                step: c.stepValue,
+                childIndex: c.childIndex ?? null,
+                childItemId: c.childItemId ?? null,
+                status: c.status,
+                durationMs: c.durationMs ?? null,
+                retryCount: c.retryCount,
+              })),
+            }
+          : null,
+      input: step.input ?? null,
+      output: step.output ?? null,
+    };
+  }
+
+  /**
    * List all jobs
    * GET /api/v1/jobs
    */

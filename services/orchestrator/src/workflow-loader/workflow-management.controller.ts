@@ -4,13 +4,22 @@ import {
   Post,
   Logger,
   Param,
+  Query,
   NotFoundException,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { StepRepository } from '@dtm/database';
 import { WorkflowRegistryService } from './workflow-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
+
+/** Cross-job step history — server-side cap regardless of what the caller requests
+ * (dtm-video-v2 capability-spec.md §2e-5: no supporting index leading with step_value,
+ * fine at demo scale, don't pre-optimize, but don't let a caller ask for an unbounded
+ * scan either). */
+const STEP_HISTORY_DEFAULT_LIMIT = 20;
+const STEP_HISTORY_MAX_LIMIT = 50;
 
 /**
  * Workflow Management Controller
@@ -32,6 +41,7 @@ export class WorkflowManagementController {
   constructor(
     private readonly workflowRegistry: WorkflowRegistryService,
     private readonly featureFlagService: FeatureFlagService,
+    private readonly stepRepo: StepRepository,
   ) {}
 
   /**
@@ -222,6 +232,81 @@ export class WorkflowManagementController {
       clientOverridable,
       requestOverridesEnabled: process.env.ENABLE_REQUEST_FEATURE_FLAGS === 'true',
     };
+  }
+
+  /**
+   * Cross-job history for one step within one workflow (Monitor drill-down drawer's
+   * "recent runs of this step" sparkline/table)
+   * GET /api/v1/workflows/:workflowName/steps/:stepName/history?limit=N
+   *
+   * dtm-video-v2 capability-spec.md §3.2b. Only "primary" (non-fan-out-child) rows —
+   * see StepRepository.findCrossJobHistory / findPrimaryByJobIdAndStepValue for why.
+   * A registered workflow with zero matching rows returns 200 + [], never 404 — only
+   * an UNREGISTERED workflow name 404s (same convention as the sibling endpoints on
+   * this controller).
+   */
+  @Get(':workflowName/steps/:stepName/history')
+  @ApiOperation({
+    summary: 'Get cross-job history for a step',
+    description:
+      'Recent runs of one step across jobs on this workflow, most-recent-first — ' +
+      "powers the DAG drill-down drawer's cross-job strip. A registered workflow " +
+      'with no matching runs returns an empty array, not a 404.',
+  })
+  @ApiParam({
+    name: 'workflowName',
+    required: true,
+    description: 'Name of the workflow',
+    schema: { type: 'string', example: 'order-processing' },
+  })
+  @ApiParam({
+    name: 'stepName',
+    required: true,
+    description: 'Step name (dtm_steps.step_value)',
+    schema: { type: 'string', example: 'ValidateCustomer' },
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: `Max rows to return (default ${STEP_HISTORY_DEFAULT_LIMIT}, capped at ${STEP_HISTORY_MAX_LIMIT})`,
+    schema: { type: 'integer', example: 20 },
+  })
+  @ApiResponse({ status: 200, description: 'Cross-job step history (most-recent-first)' })
+  @ApiResponse({ status: 404, description: 'Workflow not registered' })
+  async getStepHistory(
+    @Param('workflowName') workflowName: string,
+    @Param('stepName') stepName: string,
+    @Query('limit') limitParam?: string,
+  ) {
+    if (!this.workflowRegistry.has(workflowName)) {
+      throw new NotFoundException(`Workflow '${workflowName}' not found`);
+    }
+
+    let limit = STEP_HISTORY_DEFAULT_LIMIT;
+    if (limitParam !== undefined) {
+      const parsed = parseInt(limitParam, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        limit = parsed;
+      }
+    }
+    limit = Math.min(limit, STEP_HISTORY_MAX_LIMIT);
+
+    const rows = await this.stepRepo.findCrossJobHistory(workflowName, stepName, limit);
+
+    this.logger.log(
+      `Cross-job history for ${workflowName}/${stepName}: ${rows.length} row(s) (limit=${limit})`,
+    );
+
+    return rows.map((step) => ({
+      jobId: step.job.id,
+      jobStatus: step.job.status,
+      stepStatus: step.status,
+      durationMs: step.durationMs ?? null,
+      retryCount: step.retryCount,
+      attempts: step.executionHistory ?? [],
+      error: step.error ?? null,
+      completedAt: step.completedAt ?? null,
+    }));
   }
 
   /**
