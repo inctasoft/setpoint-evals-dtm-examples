@@ -96,12 +96,16 @@ See `docs/guides/DEPLOYMENT-MODES.md` for full details.
 
 ### Port Mapping & ORCHESTRATOR_URL
 The orchestrator listens on port 3000 inside its container, mapped to **port 3002** on the host.
-SE scripts default to `ORCHESTRATOR_URL="http://localhost:3000/api/v1"` (in helpers.sh).
-When running SEs from the **host** (outside Docker), override the URL:
+Workflow SE `helpers.sh` already defaults to the host-mapped port —
+`ORCHESTRATOR_URL="${ORCHESTRATOR_URL:-http://localhost:${ORCHESTRATOR_PORT_HOST:-3002}/api/v1}"` —
+so running from the **host** (outside Docker) needs **no override**; this is what
+`./setpoint-evals/run-all.sh --all-workflows` and a standalone
+`bash workflows/order-processing/setpoint-evals/run-all.sh` both do by default (verified 2026-07-17).
+Only override `ORCHESTRATOR_URL` if you've remapped the host port in `docker-compose.yml`:
 ```bash
-ORCHESTRATOR_URL="http://localhost:3002/api/v1" bash workflows/order-processing/setpoint-evals/run-all.sh
+ORCHESTRATOR_URL="http://localhost:<your-port>/api/v1" bash workflows/order-processing/setpoint-evals/run-all.sh
 ```
-**Common pitfall**: SEs failing with HTTP 000 or connection refused usually means wrong port.
+**Common pitfall**: SEs failing with HTTP 000 or connection refused usually means the stack isn't up, not a port mismatch.
 
 ## Key Configuration Files
 
