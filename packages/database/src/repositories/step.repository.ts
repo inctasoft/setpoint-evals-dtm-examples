@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { IsNull, Repository } from "typeorm";
+import { In, IsNull, Not, Repository } from "typeorm";
 import { Step, StepStatus } from "../entities/step.entity";
 
 /**
@@ -127,6 +127,40 @@ export class StepRepository {
     return this.repo.findOne({
       where: { job: { id: jobId }, stepValue, parentStepId: IsNull() },
     });
+  }
+
+  /**
+   * Find every fan-out CHILD row for a step name within a job — the fallback the
+   * /activity drill-down endpoint uses when findPrimaryByJobIdAndStepValue comes up
+   * empty (dtm-video-v2 capability-spec.md §3.2a follow-up). Some workflows (e.g.
+   * iot-sensor-pipeline's double fan-out) have step names that exist ONLY as fan-out
+   * children — every row for that step_value has parent_step_id IS NOT NULL, so there
+   * is no single "primary" row to report. Ordered by childIndex for a stable,
+   * deterministic instance list (note: multiple child rows CAN share a childIndex
+   * under double fan-out — e.g. DiscoverReadings runs once per sensor, each yielding
+   * its own row at index 0/1/2 — childItemId, not childIndex alone, is what makes a
+   * row unique here).
+   */
+  async findChildInstancesByJobIdAndStepValue(
+    jobId: string,
+    stepValue: string,
+  ): Promise<Step[]> {
+    return this.repo.find({
+      where: { job: { id: jobId }, stepValue, parentStepId: Not(IsNull()) },
+      order: { childIndex: "ASC" },
+    });
+  }
+
+  /**
+   * Batch-fetch steps by id — used to resolve each fan-out child instance's
+   * immediate parent row (for the instance-aggregate response's `parentStep` field)
+   * without an N+1 query per child.
+   */
+  async findByIds(ids: string[]): Promise<Step[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    return this.repo.find({ where: { id: In(ids) } });
   }
 
   /**

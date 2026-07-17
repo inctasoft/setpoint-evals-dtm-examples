@@ -112,4 +112,65 @@ ck_eq "4. unknown jobId returns 404 (never 500, never empty-200)" "$UNKNOWN_JOB_
 UNKNOWN_STEP_HTTP=$(curl -s -o /dev/null -w '%{http_code}' -m 10 "${API}/jobs/${RETRY_JOB_ID}/steps/DoesNotExistStep/activity")
 ck_eq "4. unknown stepName on a real job returns 404 (never 500, never empty-200)" "$UNKNOWN_STEP_HTTP" "404"
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 5. Fan-out-CHILD-ONLY step — a step name that exists ONLY as fan-out children,
+#    with NO primary (parent_step_id IS NULL) row at all. iot-sensor-pipeline's
+#    double fan-out is the canonical case: DiscoverReadings and IngestReading are
+#    themselves entirely children (of DiscoverSensors and of a DiscoverReadings
+#    instance respectively) — every row for that step_value has a parent. Prior to
+#    this SE case, the endpoint 404'd here; it must now return an instance-aggregate
+#    (200, `aggregate: true`) instead. Prefers DiscoverReadings when present (the
+#    concrete case that motivated this fix) but falls back to any qualifying
+#    fan-out-child-only step name so the scenario never SKIPs on an unrelated stack.
+# ═══════════════════════════════════════════════════════════════════════════
+FOCHILD_ROW=$(psql_q "
+  SELECT s.job_id, s.step_value
+  FROM dtm_steps s
+  WHERE s.parent_step_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM dtm_steps p
+    WHERE p.job_id = s.job_id AND p.step_value = s.step_value AND p.parent_step_id IS NULL
+  )
+  GROUP BY s.job_id, s.step_value
+  ORDER BY (s.step_value = 'DiscoverReadings') DESC, s.job_id DESC
+  LIMIT 1;
+")
+if [ -z "$FOCHILD_ROW" ]; then
+  se_skip "no fan-out-child-only step (a step_value with ONLY parent_step_id IS NOT NULL rows) exists in dtm_steps — run workflows/iot-sensor-pipeline/setpoint-evals/SE-03-double-fan-out first, then re-run this SE"
+fi
+FOCHILD_JOB_ID="${FOCHILD_ROW%%|*}"
+FOCHILD_STEP="${FOCHILD_ROW##*|}"
+log_info "5. fan-out-child-only scenario: job=${FOCHILD_JOB_ID} step=${FOCHILD_STEP}"
+
+DB_INSTANCE_COUNT=$(psql_q "SELECT count(*) FROM dtm_steps WHERE job_id='${FOCHILD_JOB_ID}' AND step_value='${FOCHILD_STEP}' AND parent_step_id IS NOT NULL;")
+DB_PAIRS_JSON=$(psql_q "
+  SELECT jsonb_agg(jsonb_build_array(t.child_index, t.child_item_id, t.parent_step_value) ORDER BY t.child_index, t.child_item_id, t.parent_step_value)::text
+  FROM (
+    SELECT c.child_index, c.child_item_id, p.step_value AS parent_step_value
+    FROM dtm_steps c
+    LEFT JOIN dtm_steps p ON p.id = c.parent_step_id
+    WHERE c.job_id='${FOCHILD_JOB_ID}' AND c.step_value='${FOCHILD_STEP}' AND c.parent_step_id IS NOT NULL
+  ) t;
+")
+
+RESP5=$(curl -s -w '\n%{http_code}' -m 15 "${API}/jobs/${FOCHILD_JOB_ID}/steps/${FOCHILD_STEP}/activity")
+HTTP5=$(echo "$RESP5" | tail -n1)
+BODY5=$(echo "$RESP5" | sed '$d')
+
+ck_eq "5. fan-out-child-only step returns HTTP 200 (not 404 — the fix under test)" "$HTTP5" "200"
+API_AGGREGATE_FLAG=$(echo "$BODY5" | jq '.aggregate' 2>/dev/null)
+ck_eq "5. response has aggregate:true" "$API_AGGREGATE_FLAG" "true"
+API_INSTANCE_COUNT=$(echo "$BODY5" | jq '.instanceCount' 2>/dev/null)
+ck_eq "5. instanceCount matches real DB child-row count (${DB_INSTANCE_COUNT})" "$API_INSTANCE_COUNT" "$DB_INSTANCE_COUNT"
+
+API_DIST_SUM=$(echo "$BODY5" | jq '[.statusDistribution[]?] | add' 2>/dev/null)
+ck_eq "5. statusDistribution values sum to instanceCount" "$API_DIST_SUM" "$DB_INSTANCE_COUNT"
+
+API_FIELDS_OK=$(echo "$BODY5" | jq '(.instances // []) as $i | ([$i[] | select(has("childIndex") and has("childItemId") and has("parentStep") and has("status") and has("durationMs") and has("retryCount") and has("attempts"))] | length) == ($i | length) and ($i | length) > 0' 2>/dev/null || echo false)
+ck_eq "5. every instances[] entry carries childIndex/childItemId/parentStep/status/durationMs/retryCount/attempts" "$API_FIELDS_OK" "true"
+
+API_PAIRS_JSON=$(echo "$BODY5" | jq -c '[.instances[] | [.childIndex, .childItemId, .parentStep]] | sort' 2>/dev/null)
+DB_PAIRS_NORM=$(echo "$DB_PAIRS_JSON" | jq -c 'sort' 2>/dev/null)
+ck_eq "5. instances[] (childIndex,childItemId,parentStep) set matches DB child rows exactly (order-independent)" "$API_PAIRS_JSON" "$DB_PAIRS_NORM"
+
 se_summary

@@ -34,6 +34,19 @@ Feature: GET /api/v1/jobs/:jobId/steps/:stepName/activity is the per-step drill-
     When fetched with a jobId that doesn't exist, or a stepName that doesn't exist
       on a real job
     Then the response is 404 both times
+
+  Scenario: a step that exists ONLY as fan-out children (no primary row at all)
+      returns an instance-aggregate, not a 404
+    Given a step_value with EVERY row parent_step_id IS NOT NULL — no primary row to
+      report (e.g. iot-sensor-pipeline's double fan-out: DiscoverReadings is itself a
+      child of DiscoverSensors, and IngestReading a child of a DiscoverReadings
+      instance — order-processing's ValidateLineItem is the single-fan-out analog)
+    When fetched
+    Then the response is HTTP 200 (not 404) with `aggregate: true`, `instanceCount`
+      matching the real DB child-row count, `statusDistribution` values summing to
+      `instanceCount`, and `instances[]` — one entry per child row, each carrying
+      childIndex/childItemId/parentStep/status/durationMs/retryCount/attempts —
+      matching the DB rows exactly (order-independent)
 ```
 
 ## Architecture
@@ -55,6 +68,10 @@ sequenceDiagram
     O-->>T: 404
     T->>O: GET /jobs/<all-zero-uuid>/steps/AnyStep/activity  (bad jobId)
     O-->>T: 404
+    T->>O: GET .../steps/DiscoverReadings/activity  (fan-out-CHILD-ONLY step, no primary row)
+    O->>R: findPrimaryByJobIdAndStepValue → null
+    R-->>O: findChildInstancesByJobIdAndStepValue + findByIds (parent stepValue lookup)
+    O-->>T: 200 { step, aggregate:true, instanceCount, statusDistribution, instances[] }
 ```
 
 ## Test Data
@@ -67,6 +84,12 @@ SE exists to pin the **endpoint's shape**, not the retry/ACK/fan-out mechanics
 themselves. If the dev stack has no such row yet (e.g. a freshly-provisioned stack with
 zero prior SE runs), each scenario SKIPs loudly with the exact SE to run first — it
 never fake-greens on absent data.
+
+Scenario 5 (fan-out-child-only aggregate) picks any `step_value` whose rows are ALL
+`parent_step_id IS NOT NULL`, preferring `DiscoverReadings` when present (iot-sensor-
+pipeline's `SE-03-double-fan-out`) but falling back to any qualifying step name (e.g.
+order-processing's `ValidateLineItem`) so it never SKIPs on a stack that only ran
+single-fan-out workflows.
 
 ## Artifacts
 
@@ -98,6 +121,27 @@ curl -s "${ORCHESTRATOR_HOST}/api/${API_VERSION}/jobs/${JOB_ID}/steps/${STEP_NAM
 }
 ```
 
+### Expected output — fan-out-CHILD-ONLY step (aggregate shape, no primary row exists)
+```json
+{
+  "step": "DiscoverReadings",
+  "aggregate": true,
+  "instanceCount": 6,
+  "statusDistribution": { "completed": 6 },
+  "instances": [
+    {
+      "childIndex": 0,
+      "childItemId": "SENS-GH3-TEMP",
+      "parentStep": "DiscoverSensors",
+      "status": "completed",
+      "durationMs": 340,
+      "retryCount": 0,
+      "attempts": []
+    }
+  ]
+}
+```
+
 ## Assertions
 <!-- one checkbox per ck()/ck_eq() gate in test.sh, in execution order -->
 - [ ] GET .../activity returns HTTP 200 for a retried step
@@ -111,6 +155,12 @@ curl -s "${ORCHESTRATOR_HOST}/api/${API_VERSION}/jobs/${JOB_ID}/steps/${STEP_NAM
 - [ ] every `fanOut.children[]` entry carries `childIndex`/`childItemId`/`status`
 - [ ] unknown `jobId` returns 404 (never 500, never empty-200)
 - [ ] unknown `stepName` on a real job returns 404 (never 500, never empty-200)
+- [ ] a fan-out-CHILD-ONLY step (no primary row) returns HTTP 200, not 404
+- [ ] its response has `aggregate: true`
+- [ ] `instanceCount` matches the real DB child-row count
+- [ ] `statusDistribution` values sum to `instanceCount`
+- [ ] every `instances[]` entry carries `childIndex`/`childItemId`/`parentStep`/`status`/`durationMs`/`retryCount`/`attempts`
+- [ ] `instances[]` (childIndex, childItemId, parentStep) set matches the DB child rows exactly (order-independent)
 
 ## Run
 ```bash
@@ -124,11 +174,18 @@ bash setpoint-evals/run-all.sh --se 25
 (ACK), or `workflows/iot-sensor-pipeline/setpoint-evals/SE-03-double-fan-out` first, then
 re-run this SE — it reads whatever is already in `dtm_steps`.
 
-**Fan-out scenario picks a step you didn't expect** — the query intentionally filters
-`parent_step_id IS NULL` (the discovery/parent row), never a fan-out CHILD instance —
-a step name that only exists as multiple `parent_step_id IS NOT NULL` rows (e.g.
-order-processing's `ValidateLineItem`) has no single "primary" activity record; the
-endpoint 404s for those by design (see PR body / capability-spec.md §3.2 design note).
+**Fan-out scenario (3) picks a step you didn't expect** — that query intentionally
+filters `parent_step_id IS NULL` (the discovery/parent row), never a fan-out CHILD
+instance, because it's pinning the PRIMARY-row shape (`fanOut.children[]`).
+
+**Fan-out-child-only scenario (5) picks a step you didn't expect** — a step name that
+only exists as multiple `parent_step_id IS NOT NULL` rows (e.g. order-processing's
+`ValidateLineItem`, or iot-sensor-pipeline's `DiscoverReadings`/`IngestReading` under
+its double fan-out) has no single "primary" activity record to report, so the endpoint
+returns the `aggregate: true` instance-rollup shape instead — it no longer 404s for
+these (fixed dtm-video-v2 Lane A.1; it 404'd through PR #33 merge, by design at the
+time — see that PR body / capability-spec.md §3.2 design note for the original
+reasoning this fix supersedes). Only a step name with ZERO rows of either kind 404s.
 
 Related: `server-config/plans/dtm-video-v2/capability-spec.md` §3.2a (sibling repo, not
 linkable from here).
