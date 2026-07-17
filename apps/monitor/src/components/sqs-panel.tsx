@@ -2,9 +2,13 @@ import type { SqsQueueStatus } from '../types/events';
 
 interface SqsPanelProps {
   queues: SqsQueueStatus[];
+  /** Demo mode only (§4.1): suppresses the "Dead Letter Queues" banner — ambient noise from
+   *  prior runs that reads as "something is broken" on camera. Per-row DLQ counts still show;
+   *  only the closing warning banner is hidden. Never set for real operators. */
+  demoMode?: boolean;
 }
 
-export function SqsPanel({ queues }: SqsPanelProps) {
+export function SqsPanel({ queues, demoMode = false }: SqsPanelProps) {
   if (queues.length === 0) {
     return (
       <div class="empty-state">
@@ -68,7 +72,7 @@ export function SqsPanel({ queues }: SqsPanelProps) {
           <td class={totalDlq > 0 ? 'dlq-active' : ''}>{totalDlq}</td>
         </tr>
       </tbody>
-      {totalDlq > 0 && (
+      {totalDlq > 0 && !demoMode && (
         <tfoot>
           <tr>
             <td colspan={4} style="color: var(--red); font-size: 11px; padding-top: 8px">

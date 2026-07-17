@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { EvalSummary } from '../../types/evals';
 import { renderMarkdown } from '../../lib/markdown';
 import { renderMermaidDiagrams } from '../../lib/mermaid';
+import { splitReadmeSections } from '../../lib/readme-sections';
 import { runEval } from '../../hooks/use-evals';
 
 interface EvalDetailProps {
@@ -51,7 +52,12 @@ export function EvalDetail({ evalItem, onJobCreated }: EvalDetailProps) {
     }
   };
 
-  const renderedReadme = evalItem.readme ? renderMarkdown(evalItem.readme) : null;
+  // D4 hygiene (ux-storyboards.md §3.5): Artifacts + Run stay out of the default-visible flow —
+  // Assertions (between them in most READMEs) is deliberately NOT pulled in; it's the styled
+  // checklist that's meant to be the closing beat.
+  const sections = evalItem.readme ? splitReadmeSections(evalItem.readme) : null;
+  const renderedMain = sections ? renderMarkdown(sections.main) : null;
+  const renderedTechnical = sections?.hasTechnical ? renderMarkdown(sections.technical) : null;
 
   return (
     <div class="scenarios-detail">
@@ -98,10 +104,17 @@ export function EvalDetail({ evalItem, onJobCreated }: EvalDetailProps) {
           </div>
         )}
 
-        {renderedReadme ? (
-          <div class="readme-body" dangerouslySetInnerHTML={{ __html: renderedReadme }} />
+        {renderedMain ? (
+          <div class="readme-body" dangerouslySetInnerHTML={{ __html: renderedMain }} />
         ) : (
           <div class="eval-list-empty">No README.md for this eval.</div>
+        )}
+
+        {renderedTechnical && (
+          <details class="readme-technical-disclosure">
+            <summary>Technical verification ▸</summary>
+            <div class="readme-body" dangerouslySetInnerHTML={{ __html: renderedTechnical }} />
+          </details>
         )}
       </div>
     </div>
