@@ -5,14 +5,21 @@
  * for real-time operations monitoring.
  */
 
-export type StepStatus =
-  | 'pending'
-  | 'delegated'
-  | 'in_progress'
-  | 'in_progress_retrying'
-  | 'waiting_for_ack'
-  | 'completed'
-  | 'failed';
+import type { StepStatus as CoreStepStatus } from '@dtm/core';
+
+/**
+ * WS-facing step status — derived from @dtm/core's StepStatus enum (the DB-canonical
+ * 10-value source), NOT a hand-maintained duplicate. This USED TO be a hand-typed
+ * 7-value union (missing skipped/waiting_for_children/partial_success) while the DB
+ * enum had 10 — the 3-way status-vocabulary drift (dtm-video-v2 capability-spec.md
+ * §1.5/§2d) that let events.gateway.ts's sendSnapshot() smuggle those 3 statuses
+ * through an unsound `as StepSnapshot['status']` cast. Deriving via a template-literal
+ * type over the enum means a future value added to @dtm/core's StepStatus and NOT
+ * handled by a consumer (e.g. the monitor's STATUS_CLASS map) becomes a compile error,
+ * not a silently-unstyled DAG node. setpoint-evals/SE-27-dag-overlay-status-parity
+ * pins this — do not replace this with a hand-written string union.
+ */
+export type StepStatus = `${CoreStepStatus}`;
 
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'partial_success';
 
@@ -24,6 +31,12 @@ export interface StepSnapshot {
   error?: string;
   duration?: number;
   attempt?: number;
+  /**
+   * Number of fan-out children this step spawned (discovery/parent steps only —
+   * e.g. DiscoverLineItems, DiscoverSensors). Absent/undefined for non-fan-out steps.
+   * Mirrors dtm_steps.child_count (Step.childCount) — see SE-28-step-snapshot-childcount.
+   */
+  childCount?: number;
 }
 
 export interface JobResults {
@@ -72,6 +85,7 @@ export type DtmEvent =
   | (BaseEvent & { type: 'step_completed'; jobId: string; step: string; duration: number })
   | (BaseEvent & { type: 'step_failed'; jobId: string; step: string; error: string })
   | (BaseEvent & { type: 'step_retrying'; jobId: string; step: string; attempt: number })
+  | (BaseEvent & { type: 'step_skipped'; jobId: string; step: string; reason: string })
   | (BaseEvent & { type: 'step_ack_waiting'; jobId: string; step: string })
   | (BaseEvent & { type: 'step_ack_received'; jobId: string; step: string })
   | (BaseEvent & { type: 'sqs_status'; queues: SqsQueueStatus[] })

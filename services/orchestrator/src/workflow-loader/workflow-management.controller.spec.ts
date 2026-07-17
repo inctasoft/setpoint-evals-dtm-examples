@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
+import { StepRepository } from '@dtm/database';
 import { WorkflowManagementController } from './workflow-management.controller';
 import { WorkflowRegistryService } from './workflow-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
@@ -18,6 +19,7 @@ describe('WorkflowManagementController', () => {
       | 'getWorkflowSummaries'
     >
   >;
+  let stepRepo: { findCrossJobHistory: jest.Mock };
 
   const mockWorkflowConfig = {
     getWorkflow: jest.fn().mockReturnValue({
@@ -98,6 +100,8 @@ describe('WorkflowManagementController', () => {
       getWorkflowSummaries: jest.fn(),
     };
 
+    const mockStepRepo = { findCrossJobHistory: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [WorkflowManagementController],
       // FeatureFlagService is real (stateless, pure resolveFlags logic) — no reason to mock it,
@@ -105,11 +109,13 @@ describe('WorkflowManagementController', () => {
       providers: [
         { provide: WorkflowRegistryService, useValue: mockWorkflowRegistry },
         FeatureFlagService,
+        { provide: StepRepository, useValue: mockStepRepo },
       ],
     }).compile();
 
     controller = module.get<WorkflowManagementController>(WorkflowManagementController);
     workflowRegistry = module.get(WorkflowRegistryService);
+    stepRepo = module.get(StepRepository);
   });
 
   afterEach(() => {
@@ -254,6 +260,97 @@ describe('WorkflowManagementController', () => {
 
       // Act & Assert
       expect(() => controller.getWorkflowFlags('unknown')).toThrow(NotFoundException);
+    });
+  });
+
+  describe('getStepHistory', () => {
+    it('should return cross-job history rows for a known workflow/step', async () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      const job1 = { id: 'job-1', status: 'completed' };
+      const job2 = { id: 'job-2', status: 'failed' };
+      stepRepo.findCrossJobHistory.mockResolvedValue([
+        {
+          job: job1,
+          status: 'completed',
+          durationMs: 1200,
+          retryCount: 0,
+          executionHistory: [{ attemptNumber: 1, status: 'success', attemptedAt: 't1' }],
+          error: null,
+          completedAt: new Date('2026-07-17T00:00:00.000Z'),
+        },
+        {
+          job: job2,
+          status: 'failed',
+          durationMs: 3400,
+          retryCount: 3,
+          executionHistory: [],
+          error: 'boom',
+          completedAt: null,
+        },
+      ]);
+
+      // Act
+      const result = await controller.getStepHistory('order-processing', 'ValidateCustomer');
+
+      // Assert
+      expect(stepRepo.findCrossJobHistory).toHaveBeenCalledWith(
+        'order-processing',
+        'ValidateCustomer',
+        20, // default limit
+      );
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({
+        jobId: 'job-1',
+        jobStatus: 'completed',
+        stepStatus: 'completed',
+        durationMs: 1200,
+        retryCount: 0,
+        attempts: [{ attemptNumber: 1, status: 'success', attemptedAt: 't1' }],
+        error: null,
+        completedAt: new Date('2026-07-17T00:00:00.000Z'),
+      });
+      expect(result[1].jobId).toBe('job-2');
+      expect(result[1].completedAt).toBeNull();
+    });
+
+    it('should pass the requested limit through, capped at 50', async () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      stepRepo.findCrossJobHistory.mockResolvedValue([]);
+
+      // Act
+      await controller.getStepHistory('order-processing', 'ValidateCustomer', '999');
+
+      // Assert — server-side cap, never the caller's raw value
+      expect(stepRepo.findCrossJobHistory).toHaveBeenCalledWith(
+        'order-processing',
+        'ValidateCustomer',
+        50,
+      );
+    });
+
+    it('should return an empty array for a registered workflow with zero matching runs (not a 404)', async () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      stepRepo.findCrossJobHistory.mockResolvedValue([]);
+
+      // Act
+      const result = await controller.getStepHistory('plan-execution', 'AnyStep');
+
+      // Assert
+      expect(result).toEqual([]);
+    });
+
+    it('should throw NotFoundException for an unregistered workflow', async () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(false);
+
+      // Act & Assert
+      await expect(controller.getStepHistory('does-not-exist', 'AnyStep')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(stepRepo.findCrossJobHistory).not.toHaveBeenCalled();
     });
   });
 

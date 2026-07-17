@@ -9,31 +9,21 @@ import {
   Index,
 } from "typeorm";
 import type { Job } from "./job.entity";
+import { StepStatus } from "@dtm/core";
 
 /**
- * Step status enum for tracking step progress
- * Note: No workflow-specific statuses since we're not using Dapr Workflows
+ * Step status — re-exported from @dtm/core, the single canonical source (10 values;
+ * see @dtm/core's step-status.enum.ts for the full state-machine doc comment).
+ *
+ * This USED TO be an independently hand-declared duplicate of @dtm/core's enum —
+ * identical values, but a separate nominal type, which is exactly how the 3-way
+ * status-vocabulary drift (dtm-video-v2 capability-spec.md §2d) happened: this file
+ * had all 10 values, the WS event-types union had only 7, and nothing forced them to
+ * agree. Re-exporting instead of re-declaring makes that drift a compile error instead
+ * of a silent mismatch. Do NOT reintroduce a local `enum StepStatus { ... }` here —
+ * setpoint-evals/SE-27-dag-overlay-status-parity pins this.
  */
-export enum StepStatus {
-  PENDING = "pending",
-  DELEGATED = "delegated", // Step has been sent to Lambda via SQS
-  IN_PROGRESS = "in_progress", // Lambda is actively processing
-  IN_PROGRESS_RETRYING = "in_progress_retrying", // Failed but retrying via SQS
-  COMPLETED = "completed",
-  WAITING_FOR_ACK = "waiting_for_ack", // Waiting for Kafka acknowledgement
-  WAITING_FOR_CHILDREN = "waiting_for_children", // Discovery step waiting for fan-out children
-  FAILED = "failed",
-  SKIPPED = "skipped",
-  /**
-   * PARTIAL_SUCCESS - For fan-out parent steps where some children succeeded
-   * This status allows dependent steps to proceed with available data,
-   * enabling graceful degradation instead of all-or-nothing blocking.
-   *
-   * Example: If 2 of 3 discovered Sensors succeed, DiscoverReadings can
-   * still run and process Reading records linked to successful ones.
-   */
-  PARTIAL_SUCCESS = "partial_success",
-}
+export { StepStatus };
 
 /**
  * Execution attempt record - tracks each retry attempt for a step

@@ -15,6 +15,8 @@ describe('JobsController', () => {
 
   const mockStepRepo = {
     findByJobId: jest.fn(),
+    findPrimaryByJobIdAndStepValue: jest.fn(),
+    findByParentId: jest.fn(),
   };
 
   // The default-bound singleton (as if it were injected as the app's default workflow).
@@ -222,6 +224,140 @@ describe('JobsController', () => {
       expect(result.steps[0].output).toEqual({ valid: true });
       expect(result.steps[1].input).toBeNull();
       expect(result.steps[1].output).toBeNull();
+    });
+  });
+
+  describe('getStepActivity', () => {
+    it('should return attempts/ack/fanOut=null for a plain (non-fan-out) step', async () => {
+      const jobId = 'job-1';
+      mockJobRepo.findById.mockResolvedValue({ id: jobId });
+      mockStepRepo.findPrimaryByJobIdAndStepValue.mockResolvedValue({
+        id: 'step-1',
+        stepValue: 'ValidateCustomer',
+        status: 'failed',
+        durationMs: 63000,
+        retryCount: 3,
+        maxRetryCount: 3,
+        firstAttemptAt: new Date('2026-01-01T00:00:00.000Z'),
+        lastAttemptAt: new Date('2026-01-01T00:01:00.000Z'),
+        executionHistory: [{ attemptNumber: 1, status: 'failure', attemptedAt: 't1' }],
+        lambdaFunctionName: 'fn-a',
+        sqsMessageId: 'sqs-1',
+        kafkaPublishedAt: null,
+        ackReceivedAt: null,
+        ackMetadata: null,
+        childCount: null,
+        input: { a: 1 },
+        output: null,
+      });
+      mockStepRepo.findByParentId.mockResolvedValue([]);
+
+      const result = await controller.getStepActivity(jobId, 'ValidateCustomer');
+
+      expect(mockStepRepo.findPrimaryByJobIdAndStepValue).toHaveBeenCalledWith(
+        jobId,
+        'ValidateCustomer',
+      );
+      expect(result.step).toBe('ValidateCustomer');
+      expect(result.attempts).toHaveLength(1);
+      expect(result.ack).toEqual({
+        kafkaPublishedAt: null,
+        ackReceivedAt: null,
+        ackWaitMs: null,
+        ackMetadata: null,
+      });
+      expect(result.fanOut).toBeNull();
+      expect(result.input).toEqual({ a: 1 });
+      expect(result.output).toBeNull();
+    });
+
+    it('should compute ack.ackWaitMs from kafkaPublishedAt/ackReceivedAt', async () => {
+      const jobId = 'job-2';
+      mockJobRepo.findById.mockResolvedValue({ id: jobId });
+      mockStepRepo.findPrimaryByJobIdAndStepValue.mockResolvedValue({
+        id: 'step-2',
+        stepValue: 'SubmitOrder',
+        status: 'completed',
+        retryCount: 0,
+        maxRetryCount: 3,
+        executionHistory: [],
+        kafkaPublishedAt: new Date('2026-01-01T00:00:00.000Z'),
+        ackReceivedAt: new Date('2026-01-01T00:00:02.000Z'),
+        ackMetadata: { foo: 'bar' },
+      });
+      mockStepRepo.findByParentId.mockResolvedValue([]);
+
+      const result = await controller.getStepActivity(jobId, 'SubmitOrder');
+
+      expect(result.ack.ackWaitMs).toBe(2000);
+      expect(result.ack.ackMetadata).toEqual({ foo: 'bar' });
+    });
+
+    it('should populate fanOut for a discovery/parent step with children', async () => {
+      const jobId = 'job-3';
+      mockJobRepo.findById.mockResolvedValue({ id: jobId });
+      mockStepRepo.findPrimaryByJobIdAndStepValue.mockResolvedValue({
+        id: 'parent-step',
+        stepValue: 'DiscoverLineItems',
+        status: 'completed',
+        retryCount: 0,
+        maxRetryCount: 3,
+        executionHistory: [],
+        childCount: 2,
+      });
+      mockStepRepo.findByParentId.mockResolvedValue([
+        {
+          stepValue: 'ValidateLineItem',
+          childIndex: 0,
+          childItemId: '18',
+          status: 'completed',
+          durationMs: 100,
+          retryCount: 0,
+        },
+        {
+          stepValue: 'SubmitLineItem',
+          childIndex: 0,
+          childItemId: '18',
+          status: 'completed',
+          durationMs: 150,
+          retryCount: 0,
+        },
+      ]);
+
+      const result = await controller.getStepActivity(jobId, 'DiscoverLineItems');
+
+      expect(mockStepRepo.findByParentId).toHaveBeenCalledWith('parent-step');
+      expect(result.fanOut).not.toBeNull();
+      expect(result.fanOut.childCount).toBe(2);
+      expect(result.fanOut.children).toHaveLength(2);
+      // Fan-out children can span MORE THAN ONE step type sharing the same parent
+      // (order-processing's DiscoverLineItems parents both ValidateLineItem and
+      // SubmitLineItem instances) — each child entry must disambiguate via its own
+      // `step` field, never assume the parent's children are all one type.
+      expect(result.fanOut.children.map((c: { step: string }) => c.step)).toEqual([
+        'ValidateLineItem',
+        'SubmitLineItem',
+      ]);
+    });
+
+    it('should throw NotFoundException when the job does not exist', async () => {
+      mockJobRepo.findById.mockResolvedValue(null);
+
+      await expect(controller.getStepActivity('missing-job', 'AnyStep')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockStepRepo.findPrimaryByJobIdAndStepValue).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when no primary step row matches (unknown step, or fan-out-child-only name)', async () => {
+      const jobId = 'job-4';
+      mockJobRepo.findById.mockResolvedValue({ id: jobId });
+      mockStepRepo.findPrimaryByJobIdAndStepValue.mockResolvedValue(null);
+
+      await expect(controller.getStepActivity(jobId, 'DoesNotExistStep')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockStepRepo.findByParentId).not.toHaveBeenCalled();
     });
   });
 

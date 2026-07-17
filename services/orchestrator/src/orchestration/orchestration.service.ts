@@ -705,11 +705,24 @@ export class OrchestrationService {
               this.logger.log(
                 `⏭️ Skipping step ${step.stepValue}: feature flag ${def.featureGate} is disabled`,
               );
+              const skipReason = `Skipped: feature flag ${def.featureGate} is disabled`;
               await this.stepRepository.updateFromCallback(step.id, {
                 status: StepStatus.SKIPPED,
-                error: `Skipped: feature flag ${def.featureGate} is disabled`,
+                error: skipReason,
               });
               step.status = StepStatus.SKIPPED;
+              // Broadcast the skip LIVE — previously the on-demand/reconnect snapshot
+              // was the only carrier (dtm-video-v2 capability-spec.md §3.4, SE-27-*):
+              // a dashboard already connected when a feature-gated step got skipped
+              // never saw it until its next request_snapshot round-trip.
+              this.eventsGateway.broadcast({
+                type: 'step_skipped',
+                jobId,
+                step: step.stepValue,
+                reason: skipReason,
+                timestamp: new Date().toISOString(),
+                correlationId: this.correlationService.getCorrelationId(),
+              });
             }
           }
         }
@@ -1224,6 +1237,18 @@ export class OrchestrationService {
             recordsFailed: 0,
           });
           this.logger.debug(`Marked step ${step.id} (${step.stepValue}) as SKIPPED`);
+          // Broadcast the skip LIVE — previously the on-demand/reconnect snapshot was
+          // the only carrier (dtm-video-v2 capability-spec.md §3.4, SE-27-*): a
+          // dashboard already connected when a step got skipped never saw it until
+          // its next request_snapshot round-trip.
+          this.eventsGateway.broadcast({
+            type: 'step_skipped',
+            jobId,
+            step: step.stepValue,
+            reason: `Skipped: ${failedStepSummary}`,
+            timestamp: new Date().toISOString(),
+            correlationId: this.correlationService.getCorrelationId(),
+          });
         } catch (error) {
           this.logger.error(
             `Failed to mark step ${step.id} as SKIPPED: ${error instanceof Error ? error.message : String(error)}`,
