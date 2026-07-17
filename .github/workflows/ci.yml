@@ -36,6 +36,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # lint:check is type-aware (@typescript-eslint/no-unsafe-*) and packages/database
+      # now imports types from @dtm/core (dag-drilldown-backend PR #33) — without a
+      # build, @dtm/core's unbuilt dist/index.d.ts resolves to an `error` type and
+      # every StepStatus.XXX access becomes a false-positive "unsafe member access".
+      # format:check (prettier, not type-aware) doesn't need this.
+      - name: Build workspace packages (required for type-aware lint)
+        run: pnpm run build:packages
+
       - name: Format check
         run: pnpm run format:check
 
