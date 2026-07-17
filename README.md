@@ -88,6 +88,15 @@ pnpm run build
 > The dev-ack-simulator and orchestrator bind-mount `workflows/*/dist` and `tools/*/dist` from
 > the host, so an unbuilt tree means a crashloop. `local-env.sh start` will rebuild on demand,
 > but running `pnpm run build` first is faster and easier to debug.
+>
+> `postinstall` only ever CREATES `.env` — it never refreshes one that already exists, so an
+> aged checkout (an old `.env` that predates newly-added keys in `.env.example`) can silently
+> boot with missing config. `local-env.sh start` self-heals this on every run: it diffs `.env`
+> against `.env.example`, warns loudly about any missing keys, and auto-appends them (dev
+> defaults, verbatim from `.env.example`) before starting anything. If a service is already
+> running when this fires, recreate it explicitly — a bare `docker restart` does NOT re-read
+> `.env` (`docker compose --env-file .env -f docker-compose.yml --profile db --profile
+> orchestrator up -d --force-recreate orchestrator`).
 
 ### Deployment Modes
 

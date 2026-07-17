@@ -123,7 +123,16 @@ qdelay() {
 # Configuration
 # ═══════════════════════════════════════════════════════════════════════════
 
-export ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-3002}"
+# Prefer the host-mapped port (ORCHESTRATOR_PORT_HOST, set in .env — see docker-compose.yml's
+# published port) over ORCHESTRATOR_PORT (the container-INTERNAL listen port, 3000, also set in
+# .env). Without this, a checkout with no .env.local (the README Quick Start never creates one —
+# see .env.local.example) silently exports ORCHESTRATOR_PORT=3000 from the .env fallback above,
+# clobbering this default and pointing every core SE that uses ORCHESTRATOR_HOST at whatever else
+# happens to be listening on host port 3000 — on a shared dev host that's a landmine, not a
+# connection-refused: it can silently hit a totally unrelated service (reproduced 2026-07-17: SE-15
+# got a real HTTP 404 from an unrelated project's container on :3000, not the orchestrator).
+# Matches the pattern workflow SE helpers.sh already use correctly.
+export ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT_HOST:-${ORCHESTRATOR_PORT:-3002}}"
 export ORCHESTRATOR_BASE_URL="${ORCHESTRATOR_BASE_URL:-http://localhost:${ORCHESTRATOR_PORT}}"
 export ORCHESTRATOR_API_BASE_PATH="${ORCHESTRATOR_API_BASE_PATH:-/api/v1}"
 export API_BASE_URL="${API_BASE_URL:-${ORCHESTRATOR_BASE_URL}${ORCHESTRATOR_API_BASE_PATH}}"

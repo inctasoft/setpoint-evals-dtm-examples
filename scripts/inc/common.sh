@@ -45,6 +45,52 @@ print_header() {
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 }
 
+# Self-heal an aged .env that predates newly-added keys in .env.example.
+# postinstall (scripts/setup-env.cjs) only ever creates .env when it's
+# MISSING — a checkout whose .env survives across many `pnpm install` runs
+# (the common case for a long-lived main checkout, vs. a throwaway worktree)
+# never gets new keys added to .env.example after it was first created. Bit
+# the Fix-4c bring-up: DISABLE_AUTH/ENABLE_EVAL_RUN_API were added to
+# .env.example after this checkout's .env was generated, so the orchestrator
+# booted auth-walled and every SE 401ed (0% pass) with no indication why.
+# Called at the top of local-env.sh's start_standalone/start_integrated —
+# every "start" run — so it can't silently ship a wall of 401s again.
+check_env_freshness() {
+    local project_root example_file env_file
+    project_root="$(get_project_root)"
+    env_file="$project_root/.env"
+    example_file="$project_root/.env.example"
+
+    # Nothing to diff against, or .env not created yet (postinstall's job) —
+    # not this function's concern.
+    [ -f "$env_file" ] || return 0
+    [ -f "$example_file" ] || return 0
+
+    local missing=() key
+    while IFS='=' read -r key _; do
+        [ -z "$key" ] && continue
+        grep -qE "^${key}=" "$env_file" || missing+=("$key")
+    done < <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$example_file")
+
+    [ "${#missing[@]}" -eq 0 ] && return 0
+
+    print_warning "Your .env is missing ${#missing[@]} key(s) present in .env.example (aged checkout — new keys were added since your .env was created):"
+    for key in "${missing[@]}"; do
+        echo -e "    ${YELLOW}-${NC} $key"
+    done
+    print_info "Auto-appending the missing keys (with .env.example's dev defaults) to .env ..."
+    {
+        echo ""
+        echo "# --- auto-appended by check_env_freshness (scripts/inc/common.sh) on $(date -u +%Y-%m-%dT%H:%M:%SZ) ---"
+        echo "# Missing from this .env, sourced verbatim from .env.example. Review before relying on them."
+        for key in "${missing[@]}"; do
+            grep -E "^${key}=" "$example_file"
+        done
+    } >> "$env_file"
+    print_warning "If any services are already running, a bare restart will NOT pick this up — recreate with the same --env-file/profiles this script uses (see DIFFICULTIES-LOG.md 'Stale .env')."
+    return 0
+}
+
 # Check if Docker is running
 check_docker() {
     if ! docker info &> /dev/null; then

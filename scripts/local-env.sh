@@ -163,7 +163,11 @@ EOF
 
 start_standalone() {
     print_header "${GREEN}🚀 Starting Standalone Environment${NC}"
-    
+
+    # Self-heal an aged .env missing keys added to .env.example since it was
+    # created (postinstall only creates .env once, never refreshes it).
+    check_env_freshness
+
     # Check Docker
     check_docker || exit 1
     
@@ -322,7 +326,11 @@ start_standalone() {
 
 start_integrated() {
     print_header "${GREEN}🚀 Starting Integrated Environment${NC}"
-    
+
+    # Self-heal an aged .env missing keys added to .env.example since it was
+    # created (postinstall only creates .env once, never refreshes it).
+    check_env_freshness
+
     # Check Docker
     check_docker || exit 1
     

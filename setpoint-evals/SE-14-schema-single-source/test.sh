@@ -67,6 +67,14 @@ ORDER BY 1;
 # comparing them would produce permanent false-RED noise. NOT NULL-ness is
 # already captured (deterministically) via information_schema.columns above.
 
+# dtm_jobs_exists — cheap liveness probe for the isolation guard below (uses
+# to_regclass, which returns NULL — not an error — for a missing relation).
+dtm_jobs_exists() {
+  local out
+  out="$(docker exec "$DB_CONTAINER" psql -U "$PGUSER" -d "$PGDB" -tAc "SELECT to_regclass('public.dtm_jobs');" 2>/dev/null)"
+  [ "$out" = "dtm_jobs" ]
+}
+
 tmp="$(mktemp -d)"
 cleanup() {
   docker exec "$DB_CONTAINER" psql -U "$PGUSER" -d postgres -c "DROP DATABASE IF EXISTS $VERIFY_DB;" >/dev/null 2>&1 || true
@@ -79,6 +87,29 @@ trap cleanup EXIT
 bash "$ROOT/scripts/init-clean-database.sh" >"$tmp/bootstrap.log" 2>&1
 BOOTSTRAP_RC=$?
 [ "$BOOTSTRAP_RC" -eq 0 ] || { log_fail "bootstrap path exited $BOOTSTRAP_RC — see $tmp/bootstrap.log"; tail -n 40 "$tmp/bootstrap.log"; }
+
+# --- ISOLATION GUARD ---------------------------------------------------------
+# A destructive SE (this one drops and rebuilds the ENTIRE schema) must never
+# leave the shared DB destroyed for every SE/workflow-suite that runs after
+# it — a bootstrap failure here previously cascaded into SE-15/17/19 and all
+# three workflow suites reporting unrelated "relation dtm_jobs does not exist"
+# / "no jobId returned" failures (Fix 4c, 2026-07-17). If dtm_jobs is missing
+# after Path A, replay the (now-idempotent, see SE-24) bootstrap ONCE more to
+# restore a known-good schema before this script does anything else. SE-14
+# itself still reports FAIL below for the original bootstrap failure — this
+# only protects DOWNSTREAM SEs, it does not paper over this SE's own verdict.
+if [ "$BOOTSTRAP_RC" -ne 0 ] && ! dtm_jobs_exists; then
+  log_warn "dtm_jobs missing after a failed bootstrap — restoring schema so downstream SEs aren't cascade-failed by this one"
+  bash "$ROOT/scripts/init-clean-database.sh" >"$tmp/restore.log" 2>&1
+  RESTORE_RC=$?
+  if [ "$RESTORE_RC" -eq 0 ] && dtm_jobs_exists; then
+    log_warn "restore succeeded — dtm_jobs exists again; downstream SEs can proceed"
+  else
+    log_fail "RESTORE FAILED (exit $RESTORE_RC) — dtm_jobs still missing, downstream SEs WILL cascade-fail — see $tmp/restore.log"
+    tail -n 40 "$tmp/restore.log"
+  fi
+fi
+
 docker exec "$DB_CONTAINER" psql -U "$PGUSER" -d "$PGDB" -tA -c "$DUMP_SQL" >"$tmp/bootstrap.schema" 2>"$tmp/bootstrap.err"
 
 # Path B: fresh empty database, migrated by the SAME migration:run TypeORM
@@ -112,6 +143,10 @@ ck   "fresh migration:run against empty DB ran cleanly"             test "$MIGRA
 ck   "bootstrap-path schema dump is non-empty (sanity)"             test -s "$tmp/bootstrap.schema"
 ck   "fresh-migrate schema dump is non-empty (sanity)"               test -s "$tmp/migrate.schema"
 ck   "information_schema diff (bootstrap vs fresh migrate) is EMPTY" test ! -s "$tmp/schema.diff"
+# Isolation guard (always checked, not just on the restore path): a bootstrap
+# failure must NEVER leave dtm_jobs missing on exit — this is what protects
+# every SE/workflow-suite that runs after SE-14 in the same run-all.sh pass.
+ck   "dtm_jobs exists on exit (isolation — a bootstrap failure never cascades downstream)" dtm_jobs_exists
 
 if [ -s "$tmp/schema.diff" ]; then
   echo "── schema drift detected ──────────────────────────────────────"

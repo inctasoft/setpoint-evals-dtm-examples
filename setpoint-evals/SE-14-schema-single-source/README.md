@@ -30,6 +30,13 @@ sequenceDiagram
     Boot->>DB: DROP SCHEMA public CASCADE, CREATE SCHEMA public
     Boot->>M: migration:run  (against "dtm")
     M->>DB: apply InitialSchema<ts> migration
+    alt bootstrap failed AND dtm_jobs missing (ISOLATION GUARD)
+        T->>Boot: bash scripts/init-clean-database.sh (restore replay)
+        Boot->>DB: DROP SCHEMA public CASCADE, CREATE SCHEMA public
+        Boot->>M: migration:run  (against "dtm")
+        M->>DB: apply InitialSchema<ts> migration
+        Note over T: SE-14 itself still reports FAIL for the original error —<br/>this only protects every SE/workflow-suite that runs AFTER it
+    end
     T->>DB: dump information_schema("dtm")  -> bootstrap.schema
 
     T->>DB: CREATE DATABASE dtm_se14_verify
@@ -39,8 +46,20 @@ sequenceDiagram
 
     T->>T: diff bootstrap.schema migrate.schema
     Note over T: diff must be EMPTY — same migration, two paths, one truth
+    T->>T: assert dtm_jobs exists on exit (isolation guard, unconditional)
     T->>DB: DROP DATABASE dtm_se14_verify (cleanup)
 ```
+
+### Isolation guard (added Fix 4c, 2026-07-17)
+This SE is destructive by design (drops and rebuilds the entire schema), so a
+mid-bootstrap failure used to leave `dtm_jobs` missing for the rest of the run —
+observed cascading into SE-15/17/19 and all three workflow suites reporting
+unrelated "relation dtm_jobs does not exist" / "no jobId returned" failures on
+a single SE-14 hiccup. `test.sh` now checks `dtm_jobs` immediately after Path A;
+if it's missing, it replays `init-clean-database.sh` ONCE more (now idempotent —
+see SE-24) to restore a known-good schema before doing anything else, and
+asserts `dtm_jobs` exists on exit UNCONDITIONALLY (not just on the restore
+path). SE-14's own verdict is unaffected — the original failure still fails it.
 
 ## Artifacts
 
@@ -86,8 +105,38 @@ is already covered deterministically via `information_schema.columns.is_nullable
 ✓ bootstrap-path schema dump is non-empty (sanity)
 ✓ fresh-migrate schema dump is non-empty (sanity)
 ✓ information_schema diff (bootstrap vs fresh migrate) is EMPTY
-── assertions: 5 pass, 0 fail
+✓ dtm_jobs exists on exit (isolation — a bootstrap failure never cascades downstream)
+── assertions: 6 pass, 0 fail
 ```
+
+### Isolation-guard proof (RED→restore→PASS-with-1-FAIL) — the restore path actually fires
+Temporarily added a one-shot fault injector to `scripts/init-clean-database.sh`
+(env-gated `SE14_INJECT_FAILURE=1`, exits right after the real `DROP SCHEMA`
+but before rebuild — a marker file makes it fire only on the FIRST invocation
+in a run, so the guard's own restore replay is unaffected) and ran this SE
+unmodified:
+```
+✗ bootstrap path exited 1 — see /tmp/tmp.HqrRduZOps/bootstrap.log
+🗑️  Dropping schema 'dtm' on dtm-db and recreating empty...
+✅ Schema reset complete
+💥 SE14_INJECT_FAILURE=1 (one-shot RED-proof marker) — exiting after schema drop, before rebuild
+⚠ dtm_jobs missing after a failed bootstrap — restoring schema so downstream SEs aren't cascade-failed by this one
+⚠ restore succeeded — dtm_jobs exists again; downstream SEs can proceed
+✗ bootstrap path (init-clean-database.sh) ran cleanly  (cmd: test 1 -eq 0)
+✓ fresh migration:run against empty DB ran cleanly
+✓ bootstrap-path schema dump is non-empty (sanity)
+✓ fresh-migrate schema dump is non-empty (sanity)
+✓ information_schema diff (bootstrap vs fresh migrate) is EMPTY
+✓ dtm_jobs exists on exit (isolation — a bootstrap failure never cascades downstream)
+── assertions: 5 pass, 1 fail
+```
+Verified directly against Postgres after this run: `SELECT to_regclass('public.dtm_jobs')`
+→ `dtm_jobs` (present). Exit code: `1` — **SE-14 itself correctly still fails**
+(the original bootstrap error is real and must be visible), but `dtm_jobs`
+exists again, so a downstream SE run in the same pass sees a working schema
+instead of cascading. The injector was removed immediately after capturing
+this transcript and the SE re-run to confirm GREEN again (6 pass, 0 fail,
+`git diff` on `scripts/init-clean-database.sh` clean) before committing.
 
 ### Negative-control proof (RED) — this SE can fail
 Manually planted drift: added one extra line to `scripts/init-clean-database.sh`
@@ -126,6 +175,7 @@ committing — `scripts/init-clean-database.sh` in this PR carries no such line.
 - [ ] bootstrap-path information_schema dump is non-empty (sanity — didn't silently no-op)
 - [ ] fresh-migrate information_schema dump is non-empty (sanity — didn't silently no-op)
 - [ ] information_schema diff between the two paths is EMPTY (tables/columns/indexes/enums/FKs identical)
+- [ ] `dtm_jobs` exists on exit — unconditionally, including after a bootstrap failure that triggered the restore-replay (isolation guard)
 
 ## Run
 ```bash
