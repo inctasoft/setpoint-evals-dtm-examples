@@ -27,21 +27,58 @@
  * be converted. `demo-recordings/` sits next to `test-results/`, not inside
  * it, so it survives across separate invocations and only ever gets
  * overwritten by an explicit re-run of that same demo.
+ *
+ * v2 (dtm-video-v2 Lane C) additions:
+ *   - `?demo=1` on the goto URL (ux-storyboards.md §4.1) — scopes the job list to
+ *     jobs created after page load and suppresses the DLQ banner, so a take never
+ *     opens on a contradiction left over from a previous recording (critique F5).
+ *   - `recordingStart` — a shared timestamp fixture both `dashboardPage` and `beat`
+ *     depend on, so a beat's `t` is relative to (approximately) when the video
+ *     itself starts, not to some other clock.
+ *   - `beat` — see helpers.ts's `captionBeat`/`BeatMark` doc comment. Writes
+ *     `<slug>.beats.json` next to the webm at teardown — the single source of
+ *     truth the ffmpeg speed-ramp step and frame-verification both read.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { chromium, type Page, type Browser } from '@playwright/test';
 import { test as dbTest } from './db-client.fixture';
+import type { BeatMark } from '../demos/helpers';
 
 const VIDEO_DIR = path.resolve(__dirname, '../../demo-recordings');
 
-export const test = dbTest.extend<{ dashboardPage: Page; demoSlug: string }>({
+export const test = dbTest.extend<{
+  dashboardPage: Page;
+  demoSlug: string;
+  recordingStart: { value: number };
+  beat: (label: string) => void;
+}>({
   // Fixture "option" — spec files override via test.use({ demoSlug: '...' }).
   // eslint-disable-next-line no-empty-pattern
   demoSlug: ['unnamed-demo', { option: true }],
 
-  dashboardPage: async ({ demoSlug }, use, testInfo) => {
+  // A MUTABLE BOX, not a plain number — `dashboardPage` overwrites `.value` with
+  // the TRUE video-start timestamp the instant recording begins (right after
+  // `context.newPage()` below, which is when Playwright's `recordVideo` starts
+  // capturing frames). A plain-number fixture resolved independently of
+  // `dashboardPage` would race: whichever fixture Playwright happens to resolve
+  // first wins, and `dashboardPage`'s own setup (browser launch + goto +
+  // waitForSelector, ~2-4s of real time) frequently resolves FIRST — a bare
+  // `Date.now()` captured in a separate, independently-resolved fixture then
+  // ends up several seconds LATE relative to true video start, so every
+  // `beat.t` in the manifest UNDERSTATES its real video-relative position by
+  // that fixed setup latency. Found live (dtm-video-v2 Lane C, 2026-07-17):
+  // frame-extracting a published mp4 at a beat's own recorded timestamp still
+  // showed the PREVIOUS beat's caption on screen. `beat` below explicitly
+  // depends on `dashboardPage` (not just this box) so it can never read the
+  // placeholder — see that fixture's comment.
+  // eslint-disable-next-line no-empty-pattern
+  recordingStart: async ({}, use) => {
+    await use({ value: 0 });
+  },
+
+  dashboardPage: async ({ demoSlug, recordingStart }, use, testInfo) => {
     fs.mkdirSync(VIDEO_DIR, { recursive: true });
     const dashboardUrl = process.env.DASHBOARD_URL ?? 'http://localhost:5173';
 
@@ -51,8 +88,15 @@ export const test = dbTest.extend<{ dashboardPage: Page; demoSlug: string }>({
       recordVideo: { dir: VIDEO_DIR, size: { width: 1280, height: 900 } },
     });
     const page = await context.newPage();
+    // TRUE video-start — recordVideo captures from context.newPage() above, so
+    // this is the earliest point in this function where "now" == "video t=0".
+    recordingStart.value = Date.now();
 
-    await page.goto(dashboardUrl, { waitUntil: 'networkidle', timeout: 15_000 });
+    // ?demo=1 (ux-storyboards.md §4.1) — see file header. Nothing changes for a real
+    // operator hitting the dashboard without the query param.
+    const url = new URL(dashboardUrl);
+    url.searchParams.set('demo', '1');
+    await page.goto(url.toString(), { waitUntil: 'networkidle', timeout: 15_000 });
     await page.waitForSelector('.header', { timeout: 10_000 });
 
     await use(page);
@@ -70,6 +114,24 @@ export const test = dbTest.extend<{ dashboardPage: Page; demoSlug: string }>({
       fs.renameSync(generatedPath, dest);
       await testInfo.attach('demo-video', { path: dest, contentType: 'video/webm' });
     }
+  },
+
+  // Depends on `dashboardPage` (not just `recordingStart`) — this is what forces
+  // Playwright to fully resolve `dashboardPage` (and thus its `recordingStart.value`
+  // overwrite) BEFORE `beat`'s own setup runs. Without this dependency the two
+  // fixtures resolve independently and the ordering guarantee above doesn't hold.
+  beat: async ({ demoSlug, recordingStart, dashboardPage }, use) => {
+    void dashboardPage;
+    const entries: BeatMark[] = [];
+    const mark = (label: string) => {
+      entries.push({ label, t: Number(((Date.now() - recordingStart.value) / 1000).toFixed(2)) });
+    };
+
+    await use(mark);
+
+    fs.mkdirSync(VIDEO_DIR, { recursive: true });
+    const dest = path.join(VIDEO_DIR, `${demoSlug}.beats.json`);
+    fs.writeFileSync(dest, JSON.stringify(entries, null, 2));
   },
 });
 
