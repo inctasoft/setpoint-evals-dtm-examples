@@ -43,7 +43,9 @@
     "se:playwright:demo:order": "pnpm --filter @dtm/setpoint-evals-playwright test:demo:order",
     "se:playwright:demo:iot": "pnpm --filter @dtm/setpoint-evals-playwright test:demo:iot",
     "se:playwright:demo:infra": "pnpm --filter @dtm/setpoint-evals-playwright test:demo:infra",
-    "se:playwright:demo:multi": "pnpm --filter @dtm/setpoint-evals-playwright test:demo:multi"
+    "se:playwright:demo:multi": "pnpm --filter @dtm/setpoint-evals-playwright test:demo:multi",
+    "demo:reset": "bash scripts/demo-reset.sh --yes",
+    "demo:media": "bash scripts/generate-demo-media.sh"
   },
   "devDependencies": {
     "husky": "^9.1.7",

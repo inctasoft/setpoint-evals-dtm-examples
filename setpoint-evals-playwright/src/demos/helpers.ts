@@ -89,6 +89,200 @@ export async function clearCaption(page: Page): Promise<void> {
 }
 
 /**
+ * Beat-synced captions (ux-storyboards.md §4 item 2 / DX NOTE item 3 — the F4 fix).
+ *
+ * v1's captions held for a fixed `holdMs` regardless of what the UI was actually
+ * doing underneath — the fatal case was a caption frozen for 40-56s over a progress
+ * bar with nothing narrating the retry/cascade drama that WAS the product. This
+ * replaces the fixed hold with: show the caption, wait a minimum dwell so a viewer
+ * can start reading it, then race a real UI-state condition (`waitFor`) against a
+ * hard ceiling (`maxMs`) so a selector that never appears (flaky run, changed
+ * timing) can never hang the recording — it just proceeds at the ceiling.
+ *
+ * Every call is logged to the beat recorder (if provided) so the same call site
+ * that drives the caption ALSO produces the beat->timestamp manifest the
+ * speed-ramp step and the PR body both consume — one source of truth, not a
+ * caption script that drifts from a separately-hand-timed ffmpeg map.
+ */
+export async function captionBeat(
+  page: Page,
+  text: string,
+  opts: {
+    /** Beat label for the manifest (see BeatLog). Omit for pure narration cues with no distinct UI beat. */
+    label?: string;
+    mark?: (label: string) => void;
+    /** Awaited AFTER the minimum dwell — typically page.waitForSelector(...).then(() => {}) or similar. */
+    waitFor?: () => Promise<unknown>;
+    /** Minimum time the caption is guaranteed to be on screen before racing waitFor. */
+    minMs?: number;
+    /** Hard ceiling — if waitFor hasn't resolved by here, proceed anyway (never hang a take). */
+    maxMs?: number;
+  } = {},
+): Promise<void> {
+  const { label, mark, waitFor, minMs = 1400, maxMs = 15_000 } = opts;
+  await ensureCaptionOverlay(page);
+  await setCaptionText(page, text);
+  if (label && mark) mark(label);
+  await page.waitForTimeout(minMs);
+  if (waitFor) {
+    // Race the real UI condition against the remaining ceiling — whichever comes first.
+    // waitFor() is caught HERE, unconditionally — a call site's own `page.waitForSelector(...)`
+    // (no wrapping .catch()) throws on ITS internal timeout, and an uncaught rejection inside
+    // Promise.race propagates and fails the whole test. Catching centrally means every call
+    // site gets "proceed at the ceiling" behavior for free — a call site CAN still add its own
+    // .catch() for a custom fallback, but forgetting to is never fatal (found live: the iot
+    // spec's first full-screen beat hit exactly this on a fast-completing job, dtm-video-v2
+    // Lane C 2026-07-17).
+    await Promise.race([
+      waitFor().catch(() => {}),
+      page.waitForTimeout(Math.max(0, maxMs - minMs)),
+    ]);
+  } else {
+    // No UI condition to race — this is a pure narration beat (e.g. the opening line
+    // before anything is on screen yet). Just hold long enough to read, capped by maxMs.
+    const readingHoldMs = Math.min(Math.max(0, maxMs - minMs), 2600);
+    await page.waitForTimeout(readingHoldMs);
+  }
+}
+
+/**
+ * Beat->timestamp manifest (ux-storyboards.md §4 item 5 — "ramp spans keyed to the
+ * same beat selectors, not hardcoded seconds"). `mark(label)` is cheap and
+ * synchronous; call it at every beat a downstream consumer (ffmpeg speed-ramp,
+ * frame-verification, the PR body) needs a timestamp for. The demo-recording
+ * fixture owns writing this to `<slug>.beats.json` at teardown, timed from the
+ * SAME `recordingStart` the video itself starts from (both fixtures share the
+ * `recordingStart` fixture — see demo-recording.fixture.ts).
+ */
+export interface BeatMark {
+  label: string;
+  t: number;
+}
+
+/**
+ * Fake on-screen cursor + click ripple (ux-storyboards.md §4 item 4 — the F2 fix:
+ * "the Run beat is a blink, not a performance"). Glides an injected cursor dot to
+ * the target element's center, holds a hover glow so a viewer can see WHAT is about
+ * to be clicked, then clicks and shows a brief ripple. One helper call replaces the
+ * v1 pattern of `page.locator(sel).click()` with zero visual evidence anything
+ * happened.
+ */
+const CURSOR_ID = 'dtm-demo-cursor';
+const CURSOR_STYLE_ID = 'dtm-demo-cursor-style';
+
+async function ensureCursorChrome(page: Page): Promise<void> {
+  await page.evaluate(
+    ({ cursorId, styleId }) => {
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+          #${cursorId} {
+            position: fixed;
+            width: 18px;
+            height: 18px;
+            margin-left: -9px;
+            margin-top: -9px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,204,51,0.95) 0%, rgba(255,204,51,0.55) 60%, rgba(255,204,51,0) 100%);
+            border: 2px solid #ffcc33;
+            box-shadow: 0 0 12px 2px rgba(255,204,51,0.85);
+            pointer-events: none;
+            z-index: 2147483646;
+            transition: left 0.55s cubic-bezier(0.22,1,0.36,1), top 0.55s cubic-bezier(0.22,1,0.36,1);
+            opacity: 0;
+          }
+          #${cursorId}.visible { opacity: 1; }
+          #${cursorId}.hovering {
+            box-shadow: 0 0 0 8px rgba(255,204,51,0.28), 0 0 16px 4px rgba(255,204,51,0.9);
+            animation: dtm-demo-hover-pulse 1.1s ease-in-out infinite;
+          }
+          @keyframes dtm-demo-hover-pulse {
+            0%, 100% { box-shadow: 0 0 0 6px rgba(255,204,51,0.22), 0 0 14px 4px rgba(255,204,51,0.85); }
+            50% { box-shadow: 0 0 0 12px rgba(255,204,51,0.14), 0 0 20px 6px rgba(255,204,51,0.95); }
+          }
+          .dtm-demo-ripple {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            margin-left: -5px;
+            margin-top: -5px;
+            border-radius: 50%;
+            border: 2px solid #ffcc33;
+            pointer-events: none;
+            z-index: 2147483646;
+            animation: dtm-demo-ripple-anim 0.55s ease-out forwards;
+          }
+          @keyframes dtm-demo-ripple-anim {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(6); opacity: 0; }
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      if (!document.getElementById(cursorId)) {
+        const dot = document.createElement('div');
+        dot.id = cursorId;
+        document.body.appendChild(dot);
+      }
+    },
+    { cursorId: CURSOR_ID, styleId: CURSOR_STYLE_ID },
+  );
+}
+
+/**
+ * Glide the fake cursor to (x,y), hover-glow, click the real element via
+ * page.mouse (so the app receives a genuine click, not a synthetic DOM dispatch),
+ * then ripple. `selector` is resolved fresh each call — pass a Locator-compatible
+ * CSS/text selector, not a pre-resolved handle, so this works equally for a plain
+ * button and an SVG `g.node[data-step=...]`.
+ */
+export async function spotlightClick(
+  page: Page,
+  selector: string,
+  opts: { hoverMs?: number; postClickMs?: number } = {},
+): Promise<void> {
+  const { hoverMs = 1500, postClickMs = 400 } = opts;
+  const target = page.locator(selector).first();
+  await target.scrollIntoViewIfNeeded();
+  const box = await target.boundingBox();
+  if (!box) throw new Error(`spotlightClick: no bounding box for selector "${selector}" — is it visible?`);
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+
+  await ensureCursorChrome(page);
+  await page.evaluate(
+    ({ cursorId, x, y }) => {
+      const dot = document.getElementById(cursorId);
+      if (!dot) return;
+      dot.classList.add('visible');
+      dot.style.left = `${x}px`;
+      dot.style.top = `${y}px`;
+    },
+    { cursorId: CURSOR_ID, x: cx, y: cy },
+  );
+  // Real pointer moves so :hover states on the underlying app also engage.
+  await page.mouse.move(cx, cy, { steps: 24 });
+  await page.evaluate((cursorId) => document.getElementById(cursorId)?.classList.add('hovering'), CURSOR_ID);
+  await page.waitForTimeout(hoverMs);
+
+  await page.evaluate(
+    ({ x, y }) => {
+      const ripple = document.createElement('div');
+      ripple.className = 'dtm-demo-ripple';
+      ripple.style.left = `${x}px`;
+      ripple.style.top = `${y}px`;
+      document.body.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 600);
+    },
+    { x: cx, y: cy },
+  );
+  await target.click();
+  await page.evaluate((cursorId) => document.getElementById(cursorId)?.classList.remove('hovering'), CURSOR_ID);
+  await page.waitForTimeout(postClickMs);
+}
+
+/**
  * Wait for a job card to appear in the dashboard's job list.
  * Looks for the job ID prefix in the UI.
  */
