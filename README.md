@@ -1,17 +1,83 @@
-# Setpoint Evals — A Working Example
+# Setpoint Evals — Watch a Workflow Engine Keep Its Promises
 
-> A real, runnable codebase built around **Setpoint Evals (SEs)** — shell-based end-to-end tests
-> that act as long-horizon acceptance criteria for AI coding agents. Clone, run, copy the pattern.
->
-> **Status:** clean-clone validated — `pnpm install && pnpm run build && ./scripts/local-env.sh start --standalone --orchestrator && ./scripts/local-env.sh deploy-workers && ./setpoint-evals/run-all.sh --all-workflows` runs **28/28 SEs to PASS** (13 core + 5 per workflow × 3 workflows) with zero manual intervention. Core engine: 9m33s.
->
+> Every scenario in this repo is a **plain-language contract** — a rule that business and
+> engineering read on the same page. Press one button and the engine runs the real thing,
+> live, then checks itself against the contract's own acceptance list. When a step is meant
+> to fail, you watch it fail *exactly where it should* — and nowhere else.
+
+![A live distributed-task run: the failure of one step spreads across the graph while unaffected branches stay green.](docs/media/hero.gif)
+
+The demo domain is **DTM — a Distributed Task Manager**: a workflow engine that fans work
+out, retries what's flaky, and reports precisely what happened. Three example workflows —
+**order processing**, an **IoT sensor pipeline**, and **infrastructure provisioning** —
+each stress a different edge: a partial failure, an explosive fan-out, a cascading collapse.
+Below, each one is filmed running its most revealing scenario end-to-end.
+
+## See it run
+
+Three short recordings, straight from the live dashboard. Click a poster to play the video.
+
+### 1. A payment fails — but the order survives
+
+Ada's Beans Cafe set one rule: *a failed payment must never sink the order.* Here the card
+never clears (it's a deliberately unresolvable payment). Watch the engine honour the rule in
+real time — the customer, the order, and the shipment all complete, while the payment step
+retries on its own, gives up honestly, and is marked failed. Only the work that genuinely
+depended on that payment is skipped. The job lands **PARTIAL_SUCCESS**: it broke where it was
+supposed to, and left everything else standing.
+
+<a href="docs/media/order-processing-partial-payment-failure.mp4">
+  <img src="docs/media/order-processing-partial-payment-failure-poster.png" width="100%"
+       alt="Order-processing demo: the full-screen graph with the payment step retrying, its live attempt timeline open, and the order still completing." />
+</a>
+
+> ▶ [Play the order-processing demo](docs/media/order-processing-partial-payment-failure.mp4) (~1 min)
+
+### 2. One health check becomes eighteen
+
+Nobody knows in advance how much work a single request will become. Greenhouse 3 has three
+sensors — and checking them fans out into eighteen individual readings, each tracked on its
+own row from discovery to completion. Run it and watch the map *grow* as the engine learns the
+fleet, then close itself once every branch has finished. The job lands **COMPLETED**, with
+dozens of tracked steps that began life as six.
+
+<a href="docs/media/iot-double-fan-out.mp4">
+  <img src="docs/media/iot-double-fan-out-poster.png" width="100%"
+       alt="IoT demo: a COMPLETED job whose six declared steps expanded into dozens of tracked readings across a nested fan-out." />
+</a>
+
+> ▶ [Play the IoT double-fan-out demo](docs/media/iot-double-fan-out.mp4) (~50 sec)
+
+### 3. One failure, a contained blast radius
+
+Break something on purpose and *watch* the blast radius instead of guessing it. Here the
+compute stage is rigged to fail. The engine retries every instance before condemning it, then
+the failure travels the map: storage, DNS, and the load balancer are skipped because they sat
+on top of compute; the certificate falls two hops further down; and network and environment —
+which never needed compute — stand untouched and green. The job lands **FAILED**, with a
+picture of exactly what that means.
+
+<a href="docs/media/infra-cascade-failure.mp4">
+  <img src="docs/media/infra-cascade-failure-poster.png" width="100%"
+       alt="Infra-provisioning demo: a FAILED job whose compute failure is skipped down the dependency chain while two independent branches survive." />
+</a>
+
+> ▶ [Play the infra cascade-failure demo](docs/media/infra-cascade-failure.mp4) (~1.5 min)
+
+---
+
+Every scenario above is also an executable test. **Setpoint Evals (SEs)** are shell-based,
+end-to-end acceptance criteria — they post real requests to the running engine, poll for
+state changes, and assert the end-to-end behaviour on the live stack, not on mocks. The same
+contract a stakeholder reads is the setpoint an AI coding agent is held to.
+
 > Companion article: [Setpoint Evals: Giving AI Coding Agents a Long Horizon](https://inctasoft.com/blog/setpoint-evals).
 > Theory: [The Setpoint Problem](https://inctasoft.com/blog/setpoint-problem).
 
-The example domain is **DTM — a Distributed Task Manager** with three pluggable workflows
-(`order-processing`, `iot-sensor-pipeline`, `infra-provisioning`). Together they showcase
-fan-out processing, cascade FK injection, conditional steps, retries, dead-letter queues,
-and end-to-end acknowledgement.
+The rest of this README is the practitioner's guide: clone it, run it, and copy the pattern.
+The three workflows (`order-processing`, `iot-sensor-pipeline`, `infra-provisioning`) together
+showcase fan-out processing, cascade FK injection, conditional steps, retries, dead-letter
+queues, and end-to-end acknowledgement.
 
 ## Architecture
 
