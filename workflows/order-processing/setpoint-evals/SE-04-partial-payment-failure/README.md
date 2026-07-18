@@ -18,6 +18,8 @@ Feature: order-processing PARTIAL_SUCCESS when an optional cascade fails
     And ValidatePayment fails (no payment row matches order_id=99999)
     And SubmitPayment is SKIPPED (its dependency ValidatePayment failed)
     And ValidateShipment and SubmitShipment both complete
+    And ArchiveProcessedOrder is SKIPPED too (SubmitPayment is one of its
+      hard dependencies, and a SKIPPED dependency never satisfies one)
     And the "partial-success-optional-failed" outcome rule fires
     And the job reaches PARTIAL_SUCCESS status
 ```
@@ -44,10 +46,10 @@ flowchart TD
     SO -- ack --> SSh["SubmitShipment"]
     VSh --> SSh
 
-    SC -- ack --> Arch["ArchiveProcessedOrder"]
+    SC -- ack --> Arch["ArchiveProcessedOrder<br/>SKIPPED"]
     SO -- ack --> Arch
     DLI --> Arch
-    SPay -. SKIPPED still unblocks Archive .-> Arch
+    SPay -. SKIPPED — hard dependency,<br/>blocks Archive too .-> Arch
     SSh -- ack --> Arch
 
     Arch --> Rule["partial-success-optional-failed<br/>outcome rule: critical cascades OK,<br/>optional cascade payment failed"]
@@ -58,9 +60,9 @@ flowchart TD
     classDef skip fill:#424242,stroke:#616161,color:#eee,stroke-dasharray: 4 3
     classDef entry fill:#0d47a1,stroke:#1565c0,color:#fff
     classDef partial fill:#e65100,stroke:#ef6c00,color:#fff
-    class VC,VP,SC,VO,SO,DLI,VLI1,VLI2,SLI1,SLI2,VSh,SSh,Arch ok
+    class VC,VP,SC,VO,SO,DLI,VLI1,VLI2,SLI1,SLI2,VSh,SSh ok
     class VPay,FailMark fail
-    class SPay skip
+    class SPay,Arch skip
     class Rule,Done partial
     class Start entry
 ```
@@ -141,6 +143,7 @@ verify_step_status "$JOB_ID" "ValidateOrder" "COMPLETED"
 verify_step_status "$JOB_ID" "SubmitOrder" "COMPLETED"
 verify_step_status "$JOB_ID" "ValidatePayment" "FAILED"
 verify_step_status "$JOB_ID" "SubmitPayment" "SKIPPED"
+verify_step_status "$JOB_ID" "ArchiveProcessedOrder" "SKIPPED"
 ```
 
 ## Assertions
@@ -152,6 +155,7 @@ verify_step_status "$JOB_ID" "SubmitPayment" "SKIPPED"
 - [ ] SubmitOrder is COMPLETED
 - [ ] ValidatePayment is FAILED (non-existent paymentId)
 - [ ] SubmitPayment is SKIPPED (dependency ValidatePayment failed)
+- [ ] ArchiveProcessedOrder is SKIPPED (SubmitPayment is a hard dependency)
 
 ## Run
 ```bash

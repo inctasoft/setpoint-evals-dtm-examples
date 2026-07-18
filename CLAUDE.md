@@ -279,24 +279,27 @@ autodiscovered — no hand-maintained eval lists. Core SEs carry per-SE README m
 README (the pre-v2 legacy workflow-SE estate) degrades to defaults rather than erroring.
 Full contract: `server-config/docs/setpoint-eval-conventions.md`.
 
-### Core SEs (`setpoint-evals/`) -- 19 tests
+### Core SEs (`setpoint-evals/`) -- 28 tests
 Test generic engine capabilities (retry, DLQ, deduplication, concurrency, maintenance tasks,
-Setpoint Evals discovery/run API). Count was already stale at 13 pre-Phase-4a (actual was 15,
-SE-14/SE-15); this PR adds SE-16..19 (evals-module coverage), landing at 19.
+leader election, schema integrity, Setpoint Evals discovery/run API, DAG/activity endpoints).
+Count grows with the engine — treat any number in prose as a snapshot, not a contract; the
+directory listing is the source of truth (`ls setpoint-evals/ | grep ^SE-`).
 ```bash
-./setpoint-evals/run-all.sh                        # Run all 19 core SEs
+./setpoint-evals/run-all.sh                        # Run all core SEs
 ./setpoint-evals/run-all.sh --all-workflows        # Run core + all workflow SEs
 ```
 
-### Workflow SEs (`workflows/<name>/setpoint-evals/`) -- per-workflow tests
+### Workflow SEs (`workflows/<name>/setpoint-evals/`) -- per-workflow tests, 9 each (27 total)
 Test workflow-specific functionality (entity extraction, FK cascade, fan-out). Each suite's
 `run-all.sh` is a 3-line delegator to the SAME core runner (`--dir` pointed at itself) —
 no forked runner logic. Defaults to `--in-band` (sequential): these SEs share the core
 `dtm_jobs`/`dtm_steps` tables with every other suite and were never verified concurrently.
+Per-workflow SE catalogs (name, purpose, expected status) live in each workflow's own
+README.md, not duplicated here.
 ```bash
-./workflows/order-processing/setpoint-evals/run-all.sh        # order-processing SEs (5 tests)
-./workflows/iot-sensor-pipeline/setpoint-evals/run-all.sh     # iot-sensor-pipeline SEs (5 tests)
-./workflows/infra-provisioning/setpoint-evals/run-all.sh      # infra-provisioning SEs (6 tests)
+./workflows/order-processing/setpoint-evals/run-all.sh        # order-processing SEs
+./workflows/iot-sensor-pipeline/setpoint-evals/run-all.sh     # iot-sensor-pipeline SEs
+./workflows/infra-provisioning/setpoint-evals/run-all.sh      # infra-provisioning SEs
 ```
 
 ### Helper Architecture (Two-Layer Chain)
@@ -331,6 +334,28 @@ green `XFAIL`, unexpectedly passing is a red `UPASS` and fails the run).
 ./setpoint-evals/run-parallel-sweep.sh --values "4 6 8 10 0"  # Test specific values
 ./setpoint-evals/run-parallel-sweep.sh --runs-per-value 3      # Multiple runs per value
 ```
+
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs 4 real jobs on every PR + push to `master`, plus one
+scheduled placeholder:
+
+| Job | What it checks | Local equivalent |
+|-----|-----------------|-------------------|
+| `format-lint` | Prettier + type-aware ESLint (builds `packages/*` first — an unbuilt `@dtm/core` resolves `StepStatus.*` to `error` and produces false-positive unsafe-access lint failures) | `pnpm run build:packages && pnpm run format:check && pnpm run lint:check` |
+| `unit-tests` | Orchestrator Jest suite | `cd services/orchestrator && npx jest` |
+| `hygiene` | Public-repo vocabulary denylist scan, diff-scoped on PR/push (self-tests it can actually fail first) | `bash scripts/hygiene/scan.sh --self-test` then pipe a diff through `scripts/hygiene/scan.sh` |
+| `se-structure` | SE README/mermaid layout, diff-scoped | `bash scripts/validate-se-readmes.sh --base <sha>` (or `--all` for the whole estate) |
+| `se-full-stack-quick` | **Placeholder only** — echoes why it can't run (GitHub-hosted runners can't reliably host Kafka + 4x Postgres + LocalStack + Lambda). It intentionally claims nothing. | — |
+
+**The real SE gate is NOT CI** — no GitHub-hosted job actually boots the stack and runs
+the 55-eval estate. Per `docs/setpoint-eval-conventions.md`, that evidence is local
+execution output pasted into the PR body: run
+`./scripts/local-env.sh start --standalone --orchestrator`,
+`./scripts/local-env.sh deploy-workers`, then
+`./setpoint-evals/run-all.sh --all-workflows --quick` (or a workflow-scoped subset),
+and paste the summary table. A PR with 4/4 CI jobs green but no pasted SE evidence has
+NOT been verified — CI alone proves lint/build/unit/hygiene, not orchestration behavior.
 
 ## Scripts
 
@@ -413,7 +438,7 @@ Restarting LocalStack wipes ALL state. Recovery:
 - **Workflow config**: `workflows/order-processing/workflow.config.ts`
 - **Workers**: `workflows/order-processing/workers/` (12 handlers)
 - **Source DB**: `workflows/order-processing/source-db/` (6 entities, port 5449)
-- **SEs**: `workflows/order-processing/setpoint-evals/` (5 tests)
+- **SEs**: `workflows/order-processing/setpoint-evals/` (9 tests)
 - **Showcases**: Parallel root steps, single fan-out, optional cascades, multiple variants (default + quick-order)
 
 ### iot-sensor-pipeline
@@ -421,7 +446,7 @@ Restarting LocalStack wipes ALL state. Recovery:
 - **Workflow config**: `workflows/iot-sensor-pipeline/workflow.config.ts`
 - **Workers**: `workflows/iot-sensor-pipeline/workers/` (12 handlers)
 - **Source DB**: `workflows/iot-sensor-pipeline/source-db/` (5 entities, port 5450)
-- **SEs**: `workflows/iot-sensor-pipeline/setpoint-evals/` (5 tests)
+- **SEs**: `workflows/iot-sensor-pipeline/setpoint-evals/` (9 tests)
 - **Showcases**: Double/nested fan-out, feature flags, conditional steps, empty discovery handling
 
 ### infra-provisioning
@@ -429,7 +454,7 @@ Restarting LocalStack wipes ALL state. Recovery:
 - **Workflow config**: `workflows/infra-provisioning/workflow.config.ts`
 - **Workers**: `workflows/infra-provisioning/workers/` (15 handlers)
 - **Source DB**: `workflows/infra-provisioning/source-db/` (7 entities, port 5451)
-- **SEs**: `workflows/infra-provisioning/setpoint-evals/` (6 tests — 5 behavioral + seed-data-integrity)
+- **SEs**: `workflows/infra-provisioning/setpoint-evals/` (9 tests)
 - **Showcases**: Deep cascade FK chains (5 levels), long ACK timeouts (10min), wide parallel branches, cascade failure -> SKIPPED propagation
 
 ## Adding a New Workflow (Integration Checklist)

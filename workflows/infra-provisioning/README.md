@@ -274,7 +274,10 @@ genuinely per-SE isolated (addressed by explicit payload IDs).
 | 03 | Compute Fan-Out              | DiscoverCompute spawns N PlanCompute/ApplyCompute child pairs in parallel        | COMPLETED         |
 | 04 | Cascade Failure Propagation  | DNS fails -> Certificate SKIPPED, but Storage succeeds -> PARTIAL_SUCCESS       | PARTIAL_SUCCESS   |
 | 05 | Long ACK Wait                | ApplyCompute enters WAITING_FOR_ACK, ACK arrives after 5s delay                 | COMPLETED         |
-| 06 | Seed Data Integrity          | `validate-seed-data.sh` passes against the real seed and catches a deleted row  | PASS (validator)  |
+| 06 | Seed Data Integrity          | Proves the seed validator itself is load-bearing (deletes a row from a clone, requires RED) | PASS (validator) |
+| 07 | Cascade FK Every Hop         | `externalId` threads through all 5 hops of the deepest cascade chain via `_fkInjections` | COMPLETED |
+| 08 | Skipped Propagation Breadth  | A step with THREE direct dependents fails — pins breadth + depth together (SE-04 pins depth alone) | PARTIAL_SUCCESS / FAILED |
+| 09 | Long-But-Legit ACK Wait vs Genuinely Stuck ACK | Proves the stuck-ACK maintenance task's discriminator is time-based, not "any pending ACK gets reaped" | COMPLETED (legit) / FAILED (reaped) |
 
 ### Running SEs
 
@@ -282,12 +285,9 @@ genuinely per-SE isolated (addressed by explicit payload IDs).
 # Run all infra-provisioning SEs sequentially
 ./workflows/infra-provisioning/setpoint-evals/run-all.sh
 
-# Run a specific SE
+# Run a specific SE (id or name substring; --se is an alias for --eval)
 ./workflows/infra-provisioning/setpoint-evals/run-all.sh --se 01
-./workflows/infra-provisioning/setpoint-evals/run-all.sh --se 02
-./workflows/infra-provisioning/setpoint-evals/run-all.sh --se 03
-./workflows/infra-provisioning/setpoint-evals/run-all.sh --se 04
-./workflows/infra-provisioning/setpoint-evals/run-all.sh --se 05
+./workflows/infra-provisioning/setpoint-evals/run-all.sh --se 07
 ```
 
 ## Running Locally

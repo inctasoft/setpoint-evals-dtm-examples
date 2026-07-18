@@ -5,6 +5,11 @@ Optional UI tool configurations for local development.
 ## pgAdmin
 
 `pgadmin-servers.json` — Pre-configured server definitions for all DTM databases.
+It's user-provided (gitignored, like `.env.local`) — copy the committed example first:
+
+```bash
+cp uitools/pgadmin-servers.json.example uitools/pgadmin-servers.json
+```
 
 To use with pgAdmin:
 
@@ -21,4 +26,7 @@ docker run -d \
 ```
 
 Then open http://localhost:5050 and log in with `admin@local.dev` / `admin`.
-All 4 DTM databases will be pre-configured (orchestrator DB + 3 workflow source DBs).
+All 4 DTM databases will be pre-configured (orchestrator DB + 3 workflow source DBs) —
+`pgadmin-servers.json` only pre-fills host/port/user (never a password); pgAdmin still
+prompts for each database's password on first connect (see `.env.example`'s
+`DTM_DB_PASSWORD`, same value for all 4 in dev).

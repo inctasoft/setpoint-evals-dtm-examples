@@ -283,20 +283,23 @@ export async function spotlightClick(
 }
 
 /**
- * Wait for a job card to appear in the dashboard's job list.
- * Looks for the job ID prefix in the UI.
+ * Wait for a job row to appear in the dashboard's job list.
+ * The job list is a `<table class="job-table">` of `tr.job-row` (Phase 4b); the
+ * full job ID lives in the row's `title` attribute (visible cells show
+ * workflow/variant/outcome/steps/duration, never the raw ID), so rows are
+ * matched by an attribute selector rather than visible text.
  */
 export async function waitForJobInUI(page: Page, jobId: string, timeoutMs = 20_000): Promise<void> {
   const prefix = jobId.slice(0, 12);
-  await page.waitForSelector(`.job-item:has-text("${prefix}")`, { timeout: timeoutMs });
+  await page.waitForSelector(`tr.job-row[title*="${prefix}"]`, { timeout: timeoutMs });
 }
 
 /**
- * Click on a job card in the job list to select it.
+ * Click on a job row in the job list to select it.
  */
 export async function selectJobInUI(page: Page, jobId: string): Promise<void> {
   const prefix = jobId.slice(0, 12);
-  await page.click(`.job-item:has-text("${prefix}")`);
+  await page.click(`tr.job-row[title*="${prefix}"]`);
 }
 
 /**

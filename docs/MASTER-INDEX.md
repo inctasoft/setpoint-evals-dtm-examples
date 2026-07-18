@@ -49,6 +49,20 @@ Quick navigation to all DTM documentation, organized by use case.
 - All workflows: `./setpoint-evals/run-all.sh --all-workflows`
 - **[guides/DEMO-VIDEOS.md](guides/DEMO-VIDEOS.md)** - Recording demo videos of the dashboard with Playwright
 
+### I want to browse or run SEs from the dashboard (no shell)
+
+- The Monitor Dashboard's **Scenarios** tab lists every discovered SE, suite-tabbed, rendering
+  each one's gherkin Scenario + mermaid diagram + Payload + Assertions checklist straight from
+  its README (sanitized markdown, no `dangerouslySetInnerHTML`); a gated **Run** button re-issues
+  the README's own Payload through the existing job API — it never shells out. See "Monitor
+  Dashboard" in `../CLAUDE.md` and `ENABLE_EVAL_RUN_API` in `.env.example`.
+
+### I want to understand the CI pipeline / what "green" actually proves
+
+- `../CLAUDE.md` → "Continuous Integration" — the 4 real jobs (lint, unit tests, hygiene scan,
+  SE-README structure) vs. the scheduled placeholder that intentionally runs nothing; and why the
+  real SE-execution gate is local evidence pasted into the PR body, not a CI job.
+
 ### I want to configure the environment
 
 - **[guides/ENV-FILES-USAGE.md](guides/ENV-FILES-USAGE.md)** - Environment files guide
@@ -81,6 +95,7 @@ Quick navigation to all DTM documentation, organized by use case.
 ### `docs/guides/` (27 guides)
 
 **Architecture & Orchestration:**
+- **[architecture-c4.md](guides/architecture-c4.md)** - C4 context + container diagrams (system boundary, monitor, evals module)
 - **[system-architecture.md](guides/system-architecture.md)** - Complete 9-section architecture (2270 lines)
 - **[request-lifecycle.md](guides/request-lifecycle.md)** - End-to-end request trace
 - **[orchestration-decision-logic.md](guides/orchestration-decision-logic.md)** - continueJob() decision tree
@@ -113,6 +128,7 @@ Quick navigation to all DTM documentation, organized by use case.
 - **[quick-start-api-testing.md](guides/quick-start-api-testing.md)** - API testing examples
 - **[quick-start-kafka-consumer.md](guides/quick-start-kafka-consumer.md)** - Kafka consumer setup
 - **[DEMO-VIDEOS.md](guides/DEMO-VIDEOS.md)** - Playwright demo video recording
+- **[monitor-dashboard.md](guides/monitor-dashboard.md)** - Monitor Dashboard (Dashboard + Scenarios tabs, WebSocket/REST)
 
 ### `docs/diagrams/` (13 diagrams)
 - **[architecture.mermaid](diagrams/architecture.mermaid)** - Quick overview
@@ -143,15 +159,18 @@ Located in `../.cursor/`:
 
 | Category | Location | Count |
 |----------|----------|-------|
-| Core Guides | `docs/guides/` | 27 files |
+| Core Guides | `docs/guides/` | 28 files |
 | Core Diagrams | `docs/diagrams/` | 13 mermaid files |
-| Core SEs | `setpoint-evals/` | 13 tests |
-| Workflow SEs | `workflows/*/setpoint-evals/` | 15 tests (5+5+5) |
+| Core SEs | `setpoint-evals/` | 28 tests |
+| Workflow SEs | `workflows/*/setpoint-evals/` | 27 tests (9+9+9) |
 | AI Rules (core) | `.cursor/` | 14 .mdc files |
 | AI Rules (workflow) | `workflows/*/.cursor/` | Per-workflow agent guides |
 | AI Agent Guide | `CLAUDE.md` | Primary agent knowledge base |
 
+Counts are a snapshot, not a contract — the SE estate grows with the engine. Treat the
+filesystem (`ls setpoint-evals/ | grep ^SE-`) as the source of truth.
+
 ---
 
-**Last Updated:** March 2026
+**Last Updated:** 2026-07-18 (Phase 6 documentation closeout)
 **Organization:** Use-case-based navigation

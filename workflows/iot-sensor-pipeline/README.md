@@ -195,6 +195,10 @@ CREATE TABLE dbo.aggregates (
 | 03 | Double Fan-Out | 3 sensors x N readings each, verify nested fan-out | COMPLETED |
 | 04 | Feature Flag: Disable Alerts | Set `ENABLE_ALERT_GENERATION: false`, verify alert steps skipped | COMPLETED |
 | 05 | Empty Discovery | Sensor with 0 readings, DiscoverReadings returns empty array | COMPLETED |
+| 06 | Seed Data Integrity | Proves the seed validator itself is load-bearing (deletes a row from a clone, requires RED) | PASS (validator) |
+| 07 | Feature Flag Three-Layer Resolution | `ENABLE_ALERT_GENERATION` default < env var < per-request (gated by `clientOverridable`) against the live gating path, not just the documented contract | multiple (destructive, 2 orchestrator recreates) |
+| 08 | Nested Fan-Out Partial Failure | IngestReading (grandchild-level) forced to fail every attempt — proves failure aggregates through BOTH fan-out levels | PARTIAL_SUCCESS / FAILED |
+| 09 | Inner-Empty Discovery (mixed sensor set) | One sensor has zero readings, its sibling has real data — empty result must not affect the sibling or fail the pipeline | COMPLETED |
 
 ### Running SEs
 
@@ -202,8 +206,11 @@ CREATE TABLE dbo.aggregates (
 # Run all iot-sensor-pipeline SEs
 ./workflows/iot-sensor-pipeline/setpoint-evals/run-all.sh
 
-# Run a specific test
-bash ./workflows/iot-sensor-pipeline/setpoint-evals/01-happy-path/test.sh
+# Run a specific SE (id or name substring; --se is an alias for --eval)
+./workflows/iot-sensor-pipeline/setpoint-evals/run-all.sh --se 01
+
+# Or invoke a test.sh directly
+bash ./workflows/iot-sensor-pipeline/setpoint-evals/SE-01-happy-path/test.sh
 ```
 
 ## Project Structure
