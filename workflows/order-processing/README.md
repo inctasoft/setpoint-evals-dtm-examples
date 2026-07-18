@@ -193,13 +193,17 @@ obviously-fictional demo persona. Full row->SE ownership map:
 
 ## SE Catalog
 
-| #  | Name                       | Description                                                                 | Expected Status   |
-|----|----------------------------|-----------------------------------------------------------------------------|-------------------|
-| 01 | Happy Path                 | Standard successful job with default variant, all steps complete            | COMPLETED         |
-| 02 | Customer Not Found         | Non-existent customer triggers critical entity failure                       | FAILED            |
-| 03 | Fan-Out Line Items         | DiscoverLineItems spawns N child ValidateLineItem/SubmitLineItem pairs      | COMPLETED         |
-| 04 | Partial Payment Failure    | SubmitPayment fails permanently; payment is optional                        | PARTIAL_SUCCESS   |
-| 05 | Quick-Order Variant        | Simplified quick-order variant with only 4 steps, no fan-out               | COMPLETED         |
+| #  | Name                              | Description                                                                          | Expected Status              |
+|----|------------------------------------|---------------------------------------------------------------------------------------|-------------------------------|
+| 01 | Happy Path                         | Standard successful job with default variant, all steps complete                      | COMPLETED                     |
+| 02 | Customer Not Found                 | Non-existent customer triggers critical entity failure                                | FAILED                        |
+| 03 | Fan-Out Line Items                 | DiscoverLineItems spawns N child ValidateLineItem/SubmitLineItem pairs                | COMPLETED                     |
+| 04 | Partial Payment Failure            | SubmitPayment fails permanently (payment is optional); ArchiveProcessedOrder cascades to SKIPPED too | PARTIAL_SUCCESS |
+| 05 | Batch Import Variant               | Quick-order variant, only 4 steps, no fan-out                                          | COMPLETED                     |
+| 06 | Seed Data Integrity                | Proves the seed validator itself is load-bearing (deletes a row from a clone, requires RED) | PASS (validator)         |
+| 07 | Variant Selection + Outcome Rules  | `workflow.controller.ts` variant-resolution mechanics (explicit/default/invalid variant names) | multiple (see README)    |
+| 08 | Request Deduplication              | Per-request `testOptions.enableDeduplication` override, independent of the global env flag | COMPLETED / dedup detected |
+| 09 | Optional vs Required Cascade Boundary | Pins `CRITICALITY_RULES`/`OUTCOME_RULES` via forced failures (not the not-found-sentinel trick) | PARTIAL_SUCCESS / FAILED |
 
 ### Running SEs
 
@@ -207,12 +211,12 @@ obviously-fictional demo persona. Full row->SE ownership map:
 # Run all order-processing SEs sequentially
 ./workflows/order-processing/setpoint-evals/run-all.sh
 
-# Run a specific SE
-bash ./workflows/order-processing/setpoint-evals/01-happy-path/test.sh
-bash ./workflows/order-processing/setpoint-evals/02-customer-not-found/test.sh
-bash ./workflows/order-processing/setpoint-evals/03-fan-out-order-items/test.sh
-bash ./workflows/order-processing/setpoint-evals/04-partial-payment-failure/test.sh
-bash ./workflows/order-processing/setpoint-evals/05-quick-order-variant/test.sh
+# Run a specific SE (id or name substring; --se is an alias for --eval)
+./workflows/order-processing/setpoint-evals/run-all.sh --se 01
+./workflows/order-processing/setpoint-evals/run-all.sh --se 04
+
+# Or invoke a test.sh directly
+bash ./workflows/order-processing/setpoint-evals/SE-01-happy-path/test.sh
 ```
 
 ## Running Locally

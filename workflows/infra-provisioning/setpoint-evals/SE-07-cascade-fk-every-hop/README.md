@@ -1,22 +1,22 @@
-# SE-07: cascade FK every hop [QUARANTINED — SKIP]
+# SE-07: cascade FK every hop
 
 ## Setpoint Eval Metadata
 
 **Category**: cascade-fk
-**Duration**: ~40-60s
+**Duration**: ~10s
 **Timeout**: 900s
 **Isolation**: parallel-safe
 
-**QUARANTINED (2026-07-16, `se_skip`, exit 77):** this SE surfaced a real,
-reproducible (~50% of runs) engine race — see Artifacts below and
-`DIFFICULTIES-LOG.md`. It is NOT skipped because of a missing environment
-dependency (the usual reason for `se_skip`); it is skipped because the bug
-it found is out of scope to fix in this SE-authoring lane (unconfirmed root
-cause, shared cascade/ACK code across all 3 workflows, needs statistical
-verification a single PR turnaround can't cheaply provide). Kept in the
-estate (not deleted) so it stays auto-discovered and visible in every
-`run-all.sh` summary as `SKIP` until someone fixes the underlying race and
-removes the `se_skip` call.
+**UN-QUARANTINED (2026-07-16):** this SE originally surfaced a real,
+reproducible (~50% of runs) engine race in the cascade/ACK path shared by
+all 3 workflows — `AcknowledgementHandler.hasDependentCascades()` resolved
+the DI-default `WorkflowConfigService` (order-processing, the
+first-registered workflow) instead of the ACKed step's own workflow config,
+so infra-provisioning and iot-sensor-pipeline never got their deferred
+ACK-dependent publishes re-checked. Root-caused and fixed (RC5, see
+`docs/guides/race-condition-prevention.md`); this SE was re-verified 10/10
+consecutive PASS on the fixed build and its `se_skip` quarantine removed —
+it now runs on every `run-all.sh` invocation like any other SE.
 
 ## Scenario
 ```gherkin

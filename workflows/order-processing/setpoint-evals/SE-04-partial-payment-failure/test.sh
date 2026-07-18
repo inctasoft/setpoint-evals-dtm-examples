@@ -154,6 +154,16 @@ else
   FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 
+# Test 5: ArchiveProcessedOrder should ALSO be SKIPPED — SubmitPayment is one
+# of its hard dependencies (workflow.config.ts), and a SKIPPED dependency
+# never satisfies a downstream step. Pins the README mermaid diagram's claim
+# (previously wrong — it showed Archive unblocked) to executable behavior.
+if verify_step_status "$JOB_ID" "ArchiveProcessedOrder" "SKIPPED"; then
+  PASS_COUNT=$((PASS_COUNT + 1))
+else
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Exit with Summary
 # ═══════════════════════════════════════════════════════════════════════════

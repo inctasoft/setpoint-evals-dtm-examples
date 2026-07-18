@@ -30,7 +30,7 @@ test.describe('Demo: Multi-Job Concurrent', () => {
 
       dtmApi.initiateJob({
         variant: 'default',
-        payload: { entityId: 'DEV-001', deviceId: 'DEV-001' },
+        payload: { entityId: 'greenhouse-1', deviceId: 'greenhouse-1' },
         enableDeduplication: false,
         testOptions: {
           RegisterDevice: { simDelay: 1500 },
@@ -51,13 +51,13 @@ test.describe('Demo: Multi-Job Concurrent', () => {
       dtmApi.initiateJob({
         variant: 'default',
         payload: {
-          entityId: 'ENV-DEV',
-          environmentId: 'ENV-DEV',
-          networkId: 'NET-DEV-1',
-          instanceId: 'INST-DEV-1',
-          dnsRecordId: 'DNS-DEV-1',
-          certificateId: 'CERT-DEV-1',
-          loadBalancerId: 'LB-DEV-1',
+          entityId: 'staging-eu',
+          environmentId: 'staging-eu',
+          networkId: 'NET-STAGING-EU-1',
+          instanceId: 'INST-STAGING-EU-1',
+          dnsRecordId: 'DNS-STAGING-EU-1',
+          certificateId: 'CERT-STAGING-EU-1',
+          loadBalancerId: 'LB-STAGING-EU-1',
         },
         enableDeduplication: false,
         testOptions: {
