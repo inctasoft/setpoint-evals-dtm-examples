@@ -1,6 +1,3 @@
-> **Router:** [AGENT_ROUTER.md](../AGENT_ROUTER.md) | **Load:** `/docs-load dtm` | **Ecosystem:** DTM
-> **Related:** [voice-assistant](../voice-assistant/CLAUDE.md) (chunk integration), [plans/dtm-chunk-integration.md](../server-config/plans/dtm-chunk-integration.md)
-
 # DTM - Distributed Task Manager - Claude Code Project Guide
 
 ## Project Overview

@@ -121,6 +121,3 @@ are `RegisterDevice`, `ProvisionDevice`, ... no `ValidateCustomer`). The point i
 that: if the endpoint's SQL forgot the `dtm_jobs.workflow_name` join and filtered only on
 `step_value`, this query would incorrectly return order-processing's rows — this SE
 catches that class of bug without needing two workflows to literally share a step name.
-
-Related: `server-config/plans/dtm-video-v2/capability-spec.md` §3.2b (sibling repo, not
-linkable from here).

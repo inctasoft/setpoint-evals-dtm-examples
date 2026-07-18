@@ -13,7 +13,7 @@ import { QueueTransport, TaskSendResult, QueueStats } from './queue-transport.in
  *   GCP_PROJECT          — GCP project ID (e.g. valko-prod)
  *   GCP_LOCATION         — Cloud Tasks region (e.g. us-central1)
  *   DTM_WORKER_ENDPOINT  — Base URL for worker HTTP endpoint
- *                          (e.g. https://voice-assistant-<hash>.run.app)
+ *                          (e.g. https://your-worker-<hash>.run.app)
  *   CLOUD_TASKS_ENDPOINT — Optional emulator endpoint (e.g. http://cloud-tasks-emulator:8123)
  */
 @Injectable()

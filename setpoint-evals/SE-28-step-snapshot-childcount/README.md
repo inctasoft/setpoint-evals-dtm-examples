@@ -107,6 +107,3 @@ bash setpoint-evals/run-all.sh --se 28
 from concurrent SE runs pushing this one out of `findRecentJobs(20)`'s window between
 submission and the snapshot request; re-run, or check `docker logs dtm-orchestrator`
 for the job's actual completion.
-
-Related: `server-config/plans/dtm-video-v2/capability-spec.md` §3.4 (sibling repo, not
-linkable from here).
