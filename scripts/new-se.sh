@@ -6,7 +6,7 @@
 # standard test harness.
 #
 # Usage:  new-se.sh <suite> <NN> <kebab-name> [--root <repo-or-worktree>] [--infix <ABBR>]
-#   e.g.  new-se.sh doc-upload 03 rejects-oversize-pdf --root /home/akrsmv/projects/voice-assistant-fix-x
+#   e.g.  new-se.sh doc-upload 03 rejects-oversize-pdf --root /path/to/your/worktree
 #   e.g.  new-se.sh tab-watcher 04 two-real-tabs-survive --infix TW   # -> SE-TW-04-two-real-tabs-survive
 # Default --root = current directory (cd into your worktree first).
 #

@@ -207,6 +207,3 @@ returns the `aggregate: true` instance-rollup shape instead — it no longer 404
 these (fixed dtm-video-v2 Lane A.1; it 404'd through PR #33 merge, by design at the
 time — see that PR body / capability-spec.md §3.2 design note for the original
 reasoning this fix supersedes). Only a step name with ZERO rows of either kind 404s.
-
-Related: `server-config/plans/dtm-video-v2/capability-spec.md` §3.2a (sibling repo, not
-linkable from here).

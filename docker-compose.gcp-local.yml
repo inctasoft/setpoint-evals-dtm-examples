@@ -30,7 +30,7 @@ services:
     environment:
       - QUEUE_TRANSPORT=cloud-tasks
       - CLOUD_TASKS_ENDPOINT=http://cloud-tasks-emulator:8123
-      # Worker endpoint: voice-assistant backend (or set via .env for standalone testing)
+      # Worker endpoint: your worker's HTTP callback base URL (or set via .env for standalone testing)
       - DTM_WORKER_ENDPOINT=${DTM_WORKER_ENDPOINT:-http://host.docker.internal:3060}
       - GCP_PROJECT=${GCP_PROJECT:-valko-local}
       - GCP_LOCATION=${GCP_LOCATION:-local}

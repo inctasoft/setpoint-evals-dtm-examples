@@ -5,7 +5,8 @@ export default defineConfig({
   plugins: [preact()],
   server: {
     port: 5173,
-    allowedHosts: ['dtm.akrsmv.net', 'dtm.akrsmv.local'],
+    // If you reverse-proxy the dev server behind a custom hostname, add it here
+    // (Vite's default host check only allows localhost): allowedHosts: ['your.dev.hostname'],
     proxy: {
       '/ws': {
         target: 'ws://localhost:3002',

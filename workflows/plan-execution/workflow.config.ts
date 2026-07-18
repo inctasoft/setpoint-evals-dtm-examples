@@ -1,24 +1,23 @@
 /**
  * Plan Execution — Workflow Definition
  *
- * Dynamic workflow for executing voice-assistant plan chunks via DTM orchestrator.
- *
- * Unlike other workflows with static step definitions, plan-execution uses
- * DYNAMIC STEPS: the step DAG is submitted per-job in the payload.stepDefinitions
- * field. Each step represents one plan chunk to be executed by the voice-assistant's
- * ChunkWorkerService via SQS.
+ * Reference implementation of a DYNAMIC-STEPS workflow (see
+ * `WorkflowDefinition.dynamicSteps` in `@dtm/core`): unlike other workflows
+ * with static step definitions, the step DAG here is submitted per-job in
+ * the payload's `stepDefinitions` field. Each step represents one unit of
+ * externally-defined work (a "chunk") executed by an external worker over SQS.
  *
  * Architecture:
- *   Voice Assistant → POST /workflows/plan-execution/jobs (with stepDefinitions[])
+ *   Caller → POST /workflows/plan-execution/jobs (with stepDefinitions[])
  *     → DTM creates steps from payload
  *     → Delegates via SQS to plan-execute-chunk queue
- *     → ChunkWorkerService polls SQS, executes via Claude SDK (Sonnet)
+ *     → External worker polls SQS, executes the chunk, reports results
  *     → HTTP callback to DTM with results
  *     → DTM continues DAG (parallel branches, dependency tracking)
  *     → HIGH risk chunks → WAITING_FOR_ACK (human review via Kafka)
  *
  * Single SQS queue: plan-execute-chunk (all chunks, regardless of type)
- * Single worker: ChunkWorkerService in voice-assistant backend
+ * Single worker role: any process implementing the chunk-execution contract
  */
 
 import type {
@@ -141,7 +140,7 @@ const CRITICALITY_RULES: CascadeCriticalityRule[] = [];
 export const planExecutionWorkflow: WorkflowDefinition = {
   name: 'plan-execution',
   description:
-    'Dynamic workflow for executing voice-assistant plan chunks. ' +
+    'Dynamic workflow for executing externally-defined plan chunks. ' +
     'Steps are submitted per-job via payload.stepDefinitions (not static config).',
 
   variants: {

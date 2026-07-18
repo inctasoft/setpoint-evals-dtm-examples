@@ -80,7 +80,7 @@ QUEUES=(
   iot-compute-aggregate
   iot-publish-aggregate
   iot-archive-processed-pipeline
-  # plan-execution workflow (voice-assistant chunk execution via DTM)
+  # plan-execution workflow (dynamic per-job step DAG, chunk execution via DTM)
   plan-execute-chunk
 )
 

@@ -135,6 +135,3 @@ does NOT gate on the overall exit code, only on whether the probe's OWN filename
 `PUBLISH_EVENTS_TO_KAFKA`/dev-ack-simulator aren't required for this path (alert-gate
 skip happens before any Kafka/ACK involvement); check
 `docker logs dtm-orchestrator | grep -i "feature flag"`.
-
-Related: `server-config/plans/dtm-video-v2/capability-spec.md` §2d, §3.4, §4 SE-27
-(sibling repo, not linkable from here).

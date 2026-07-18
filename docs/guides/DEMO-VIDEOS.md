@@ -12,19 +12,19 @@ each scenario keeps or breaks — never the mechanics (no queue/topic/enum jargo
 UI itself already shows the status codes).
 
 A fourth, unnarrated demo (`multi-job-demo.spec.ts`, all 3 workflows fired at once)
-predates this rework and is untouched — it is not part of the story set below, and
-note it still uses the pre-Phase-4b `.job-item` selector convention (job-list.tsx
-was rewritten to a `<table class="job-table">`/`tr.job-row` in Phase 4b — the story
-demos never hit this because they deep-link via the Scenarios "Run" result, not by
-clicking a job-list row; `multi-job-demo.spec.ts`'s own `waitForJobInUI`/
-`selectJobInUI` helper calls are consequently stale selectors — a pre-existing bug,
-out of this rework's scope since that demo isn't one of the three story videos).
+predates this rework — it is not part of the story set below, and job-list.tsx was
+rewritten to a `<table class="job-table">`/`tr.job-row` in Phase 4b (the story demos
+never hit this because they deep-link via the Scenarios "Run" result, not by
+clicking a job-list row). This was a stale-selector bug out of this rework's scope
+at the time; it (and a second, related bug — the spec's iot/infra payloads used
+seed IDs that no longer existed post-Phase-2b story seeding) were fixed in a later
+Phase 6 documentation pass — see `waitForJobInUI`/`selectJobInUI` in
+`setpoint-evals-playwright/src/demos/helpers.ts`.
 
 ## v2 rework (dtm-video-v2 Lane C) — what changed and why
 
 The v1 recordings (see `git log` for the Phase 5 originals) had five structural
-failures documented in `server-config/plans/dtm-video-v2/ux-storyboards.md` §1:
-the contract diagram was never actually on screen (an off-viewport SVG passed
+failures: the contract diagram was never actually on screen (an off-viewport SVG passed
 `toBeVisible()`), the Run click was an invisible programmatic click, the DAG was a
 ~250px illegible strip, captions froze for 40-56s over a progress bar during the
 real retry/cascade wait, and every video opened on a leftover job from a prior
