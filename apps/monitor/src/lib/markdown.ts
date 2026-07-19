@@ -51,7 +51,14 @@ export function renderMarkdown(source: string): string {
   return DOMPurify.sanitize(rawHtml, {
     // mermaid fences render separately (lib/mermaid.ts) via a dedicated
     // <pre class="mermaid"> element the caller inserts — no extra allowlist
-    // needed here beyond DOMPurify's own safe HTML default.
-    ALLOWED_ATTR: ['href', 'title', 'class', 'id', 'target', 'rel'],
+    // needed here beyond DOMPurify's own safe HTML default. 'target' is
+    // deliberately ABSENT: with it allowed, a raw-HTML `<a target="_blank">` in a README
+    // survives without any enforced rel=noopener (reverse tabnabbing); README links open
+    // in-tab instead. 'rel' stays (harmless without target, useful for nofollow etc.).
+    ALLOWED_ATTR: ['href', 'title', 'class', 'id', 'rel'],
+    // <style> survives DOMPurify's defaults via the MathML smuggle
+    // (<math><mtext><style>…) — a repo-committed README could otherwise inject CSS into
+    // the whole monitor view. Rendered READMEs carry no styles from content, ever.
+    FORBID_TAGS: ['style'],
   });
 }
