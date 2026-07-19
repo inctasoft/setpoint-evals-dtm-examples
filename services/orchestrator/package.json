@@ -62,7 +62,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "supertokens-node": "^24.0.2",
-    "typeorm": "^0.3.27",
+    "typeorm": "^0.3.29",
     "uuid": "^13.0.0",
     "ws": "^8.18.3"
   },
