@@ -13,6 +13,13 @@ on:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC
   workflow_dispatch: {}
 
+# A2: cancel superseded runs of the same ref (PR push, or a newer push to master).
+# All jobs run on ubuntu-latest and stand up no shared/host state, so cancel-in-progress
+# is safe. Keyed on github.ref so different PRs / branches never cancel each other.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   NODE_VERSION: "22"
 
