@@ -1,0 +1,68 @@
+name: Dependabot auto-merge
+
+# Auto-merges Dependabot patch/minor PRs ONLY after every other check on the PR
+# head commit has concluded green. Majors are never touched here (they arrive as
+# individual PRs, left for human review). GitHub Free private repos cannot use
+# branch protection / required checks, so `gh pr merge --auto` cannot gate on CI;
+# instead this workflow polls the head commit's check-runs (stable REST endpoint)
+# and merges with a plain squash. The merge/wait/skip decision lives in
+# .github/scripts/dependabot-merge-decision.sh so it can be unit-tested (RED/GREEN)
+# independently of CI timing.
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  dependabot-auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for the decision script)
+        uses: actions/checkout@v4
+
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Gate on green CI, then squash-merge patch/minor
+        if: contains(fromJSON('["version-update:semver-patch","version-update:semver-minor"]'), steps.meta.outputs.update-type)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # Grace window: CI check-runs register asynchronously on the same
+          # pull_request event; sampling too early sees an empty set and would
+          # merge before CI even appears.
+          sleep 60
+          deadline=$(( $(date +%s) + 1800 ))   # hard cap 30 min
+          while :; do
+            runs="$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+                      --jq '.check_runs' 2>/dev/null || echo '[]')"
+            [ -n "$runs" ] || runs='[]'
+            verdict="$(printf '%s' "$runs" | bash .github/scripts/dependabot-merge-decision.sh 'dependabot-auto-merge')"
+            case "$verdict" in
+              MERGE)
+                echo "Gate: MERGE — all non-self check-runs green (or none)."
+                gh pr merge "$PR" --squash --delete-branch
+                exit 0 ;;
+              SKIP)
+                echo "Gate: SKIP — a check-run failed/cancelled; leaving PR for human review."
+                exit 0 ;;
+              WAIT)
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  echo "Gate: timeout waiting for check-runs; leaving PR for human review."
+                  exit 0
+                fi
+                echo "Gate: WAIT — check-runs still pending; re-poll in 30s."
+                sleep 30 ;;
+            esac
+          done

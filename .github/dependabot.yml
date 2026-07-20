@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      # All patch + minor npm updates land in ONE weekly PR (the anti-flood lever).
+      # Majors are intentionally NOT grouped -> Dependabot raises each major as its
+      # own individual PR for human review (docs: grouped update-types leave majors
+      # as individual PRs). No wildcard semver-major `ignore` — that would suppress
+      # majors entirely, which is the opposite of "reviewed individually".
+      npm-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
