@@ -1,0 +1,133 @@
+/**
+ * Phase 0 residual — real module-graph BOOT under the sqs profile.
+ *
+ * `transport-capabilities.spec.ts` proves the SqsStatusService DI honesty with a
+ * MOCK `QueueTransport` token — it never boots the real `TransportModule`, so it
+ * cannot catch a break in the profile-selected wiring
+ * (`WebSocketModule → TransportModule → SqsTransport → AwsModule/SqsService`).
+ * This spec closes that gap: it instantiates the REAL Nest module graph under the
+ * sqs profile and asserts the concrete classes resolve and are wired through the
+ * `QueueTransport` abstraction (not the concrete `SqsService`).
+ *
+ * Two hard parts (named in the Phase-0 residual) are solved here:
+ *
+ *  1. env-at-import — `TransportModule` reads `process.env.QUEUE_TRANSPORT` in a
+ *     MODULE-LEVEL const at import time, so setting the env after import is a
+ *     no-op. Ambient `QUEUE_TRANSPORT` is unset today (the `|| 'sqs'` fallback),
+ *     but any environment that exports `cloud-tasks` would silently flip the graph
+ *     and construct a `CloudTasksClient`. We force the profile by setting the env
+ *     and re-`require`ing the graph inside `jest.isolateModulesAsync`, so the const
+ *     is re-evaluated against our value — deterministic regardless of ambient env.
+ *
+ *  2. module-identity + the WorkflowRegistryService/repository leaves — because the
+ *     graph is required FRESH inside the isolate block, the injection tokens
+ *     (`WorkflowRegistryService`, `ConfigService`, `JobRepository`, `StepRepository`)
+ *     and the reference classes used for `instanceof` must come from that SAME
+ *     registry, or Nest fails to resolve / `instanceof` silently returns false.
+ *     Every `require` below therefore lives inside the isolate block. The four
+ *     external leaves (normally provided by the @Global WorkflowLoaderModule /
+ *     DatabaseModule and a `ConfigModule.forRoot`) are supplied by a small @Global
+ *     stub module so the boot stays hermetic — no DB, no workflow loader, no
+ *     network. `.compile()` (not `.init()`) instantiates the singletons to prove
+ *     wiring without booting the WS server or the @Interval poller.
+ */
+
+describe('SE-BOOT — real module graph boots under the sqs profile', () => {
+  const ORIGINAL_QT = process.env.QUEUE_TRANSPORT;
+
+  afterEach(() => {
+    if (ORIGINAL_QT === undefined) delete process.env.QUEUE_TRANSPORT;
+    else process.env.QUEUE_TRANSPORT = ORIGINAL_QT;
+    jest.resetModules();
+  });
+
+  it('SE-BOOT-sqs: WebSocketModule → TransportModule resolves a native SqsTransport wired through the QueueTransport abstraction', async () => {
+    process.env.QUEUE_TRANSPORT = 'sqs';
+
+    let moduleRef: any;
+    let SqsTransport: any;
+    let SqsService: any;
+    let SqsStatusService: any;
+    let QueueTransport: any;
+
+    await jest.isolateModulesAsync(async () => {
+      // Everything below MUST be required inside the isolate block so the tokens
+      // and reference classes share identity with the freshly-loaded graph.
+      const { Test } = require('@nestjs/testing');
+      const { ConfigService } = require('@nestjs/config');
+      const { WorkflowRegistryService } = require('../workflow-loader');
+      const { JobRepository, StepRepository } = require('@dtm/database');
+
+      ({ SqsTransport } = require('./sqs-transport.service'));
+      ({ SqsService } = require('../aws/sqs.service'));
+      ({ QueueTransport } = require('./queue-transport.interface'));
+      ({ SqsStatusService } = require('../websocket/sqs-status.service'));
+      const { WebSocketModule } = require('../websocket');
+
+      // @Global stub for the external leaves — keeps the boot hermetic (no DB,
+      // no workflow loader). A DynamicModule literal sidesteps decorator-in-
+      // callback awkwardness and keeps the token identity inside this registry.
+      const BootStubModule = {
+        module: class BootStubModule {},
+        global: true,
+        providers: [
+          { provide: WorkflowRegistryService, useValue: { getAllQueueNames: () => [] } },
+          { provide: ConfigService, useValue: { get: () => undefined } },
+          { provide: JobRepository, useValue: {} },
+          { provide: StepRepository, useValue: {} },
+        ],
+        exports: [WorkflowRegistryService, ConfigService, JobRepository, StepRepository],
+      };
+
+      moduleRef = await Test.createTestingModule({
+        imports: [BootStubModule, WebSocketModule],
+      }).compile();
+    });
+
+    // The profile-selected transport is the REAL SqsTransport (not a test mock).
+    const transport = moduleRef.get(QueueTransport);
+    expect(transport).toBeInstanceOf(SqsTransport);
+    expect(transport.capabilities.stats).toBe('native');
+
+    // The websocket panel feed (SqsStatusService) got that SAME transport injected
+    // through the QueueTransport abstraction — the exact seam the mock spec cannot
+    // exercise, and the whole point of the bus-agnosticism decoupling.
+    const status = moduleRef.get(SqsStatusService);
+    expect(status).toBeInstanceOf(SqsStatusService);
+    expect(status.transport).toBe(transport);
+
+    // AwsModule is wired under the sqs profile: the real SqsTransport wraps a real
+    // SqsService (proving the AwsModule import in TransportModule's sqs branch).
+    expect(transport.sqsService).toBeInstanceOf(SqsService);
+
+    await moduleRef.close();
+  });
+
+  it('SE-BOOT-profile-select: QUEUE_TRANSPORT drives provider selection at import time (env-at-import), no GCP client constructed', async () => {
+    // sqs profile: TransportModule wires the SqsTransport concrete.
+    process.env.QUEUE_TRANSPORT = 'sqs';
+    await jest.isolateModulesAsync(async () => {
+      const { SqsTransport } = require('./sqs-transport.service');
+      const { CloudTasksTransport } = require('./cloud-tasks-transport.service');
+      const { TransportModule } = require('./transport.module');
+
+      const providers = Reflect.getMetadata('providers', TransportModule);
+      expect(providers).toEqual(expect.arrayContaining([SqsTransport]));
+      expect(providers).not.toEqual(expect.arrayContaining([CloudTasksTransport]));
+    });
+
+    // cloud-tasks profile: selection FLIPS at import time. We only read the module
+    // metadata — no `.compile()`, so CloudTasksClient is never constructed (this
+    // spec must not depend on live GCP credentials or the cloud-tasks wiring lane).
+    process.env.QUEUE_TRANSPORT = 'cloud-tasks';
+    await jest.isolateModulesAsync(async () => {
+      const { SqsTransport } = require('./sqs-transport.service');
+      const { CloudTasksTransport } = require('./cloud-tasks-transport.service');
+      const { TransportModule } = require('./transport.module');
+
+      const providers = Reflect.getMetadata('providers', TransportModule);
+      expect(providers).toEqual(expect.arrayContaining([CloudTasksTransport]));
+      expect(providers).not.toEqual(expect.arrayContaining([SqsTransport]));
+    });
+  });
+});
