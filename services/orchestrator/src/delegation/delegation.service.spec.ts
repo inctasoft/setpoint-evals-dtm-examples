@@ -16,9 +16,9 @@ describe('DelegationService', () => {
   beforeEach(async () => {
     // Create mock implementations
     const mockTransport = {
+      capabilities: { stats: 'native' as const },
       sendTask: jest.fn(),
-      sendBulkTasks: jest.fn(),
-      getQueueStats: jest.fn(),
+      getQueueStatuses: jest.fn(),
       getWorkerEndpointUrl: jest.fn(),
       healthCheck: jest.fn(),
     };
