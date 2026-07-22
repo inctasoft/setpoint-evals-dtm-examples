@@ -1,7 +1,12 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { CloudTasksClient } from '@google-cloud/tasks';
 import { LambdaStepPayload } from '../aws/sqs.service';
-import { QueueTransport, TaskSendResult, QueueStats } from './queue-transport.interface';
+import {
+  QueueTransport,
+  TaskSendResult,
+  QueueStatusRow,
+  TaskTransportCapabilities,
+} from './queue-transport.interface';
 
 /**
  * GCP Cloud Tasks transport.
@@ -18,6 +23,10 @@ import { QueueTransport, TaskSendResult, QueueStats } from './queue-transport.in
  */
 @Injectable()
 export class CloudTasksTransport extends QueueTransport implements OnModuleInit {
+  // Cloud Tasks exposes no per-queue depth API — declare it honestly so the
+  // monitor panel shows nothing rather than fabricated zeros.
+  readonly capabilities: TaskTransportCapabilities = { stats: 'none' };
+
   private readonly logger = new Logger(CloudTasksTransport.name);
   private client: CloudTasksClient;
   private readonly project: string;
@@ -81,21 +90,11 @@ export class CloudTasksTransport extends QueueTransport implements OnModuleInit 
     }
   }
 
-  async sendBulkTasks(
-    tasks: Array<LambdaStepPayload & { queueName: string }>,
-  ): Promise<Array<{ stepId: string } & TaskSendResult>> {
-    return Promise.all(
-      tasks.map(async (t) => {
-        const result = await this.sendTask(t.queueName, t);
-        return { stepId: t.stepId, ...result };
-      }),
-    );
-  }
-
-  async getQueueStats(_queueName: string): Promise<QueueStats> {
-    // Cloud Tasks doesn't expose per-queue message counts via API.
-    // Return zeros — monitoring should use GCP Console / Cloud Monitoring.
-    return { available: 0, inFlight: 0, delayed: 0 };
+  async getQueueStatuses(): Promise<QueueStatusRow[]> {
+    // Cloud Tasks exposes no per-queue message counts via API (capabilities.stats
+    // === 'none'); the panel shows nothing rather than fake zeros. Monitoring of
+    // Cloud Tasks depth is via GCP Console / Cloud Monitoring.
+    return [];
   }
 
   getWorkerEndpointUrl(_queueName: string): string {
