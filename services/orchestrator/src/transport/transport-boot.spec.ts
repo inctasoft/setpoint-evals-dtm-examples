@@ -1,3 +1,8 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- deliberate: the graph
+ * is loaded via require() INSIDE jest.isolateModulesAsync so the isolated module
+ * registry (which re-reads the env-at-import const) governs it. `await import()`
+ * under module:nodenext can emit a native ESM import that bypasses jest's isolate
+ * registry, silently defeating the env re-read this spec depends on. */
 /**
  * Phase 0 residual — real module-graph BOOT under the sqs profile.
  *
