@@ -2,7 +2,7 @@
 
 ## Setpoint Eval Metadata
 
-**Category**: monitor-backend · **Duration**: ~20s (packages build + tsc probe + one fast iot job) · **Timeout**: 90s · **Isolation**: parallel-safe
+**Category**: monitor-backend · **Duration**: ~20s idle · ~90s under contention (packages build + tsc probe + one fast iot job) · **Timeout**: 240s · **Isolation**: parallel-safe
 
 ## Scope note (Lane A / Lane B split — read this first)
 

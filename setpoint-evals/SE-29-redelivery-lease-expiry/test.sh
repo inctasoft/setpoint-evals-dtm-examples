@@ -109,10 +109,21 @@ validate_job_id "$JOB_ID" || { log_fail "invalid job id"; exit 1; }
 # Wait past the lease so the engine's scan sees an expired lease
 sleep $((LEASE_SECONDS + 3))
 
-TASK_RESULT="$(curl -s -X POST -H "Content-Type: application/json" -d '{}' \
-  "${ORCHESTRATOR_HOST}/api/${API_VERSION}/maintenance/tasks/redelivery-engine/execute")"
-TASK_SUCCESS="$(echo "$TASK_RESULT" | jq -r '.success // false')"
-RE_DISPATCHED="$(echo "$TASK_RESULT" | jq -r '.metrics.reDispatched // 0')"
+# Poll the manual trigger until a re-dispatch is reported (bounded): on a
+# loaded host the one-shot call can land just before the lease flips past NOW —
+# the 30s cron then does the redispatch (observed live as reDispatched=0 with
+# attempt_count >= 2 arriving later).
+TASK_RESULT=""
+TASK_SUCCESS="false"
+RE_DISPATCHED=0
+for _ in $(seq 1 6); do
+  TASK_RESULT="$(curl -s -X POST -H "Content-Type: application/json" -d '{}' \
+    "${ORCHESTRATOR_HOST}/api/${API_VERSION}/maintenance/tasks/redelivery-engine/execute")"
+  TASK_SUCCESS="$(echo "$TASK_RESULT" | jq -r '.success // false')"
+  RE_DISPATCHED="$(echo "$TASK_RESULT" | jq -r '.metrics.reDispatched // 0')"
+  [ "${RE_DISPATCHED:-0}" -ge 1 ] && break
+  sleep 10
+done
 
 ATTEMPT_COUNT="$(psql_steps "SELECT COALESCE(MAX(attempt_count),0) FROM dtm_steps WHERE job_id='$JOB_ID';" | tr -d '[:space:]')"
 LEASE_FUTURE="$(psql_steps "SELECT COUNT(*) FROM dtm_steps WHERE job_id='$JOB_ID' AND lease_expires_at > NOW();" | tr -d '[:space:]')"
