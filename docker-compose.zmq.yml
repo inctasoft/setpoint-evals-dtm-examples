@@ -33,6 +33,11 @@ services:
     environment:
       - ZMQ_TASKS_ENDPOINT=${ZMQ_TASKS_ENDPOINT:-tcp://0.0.0.0:5557}
       - ZMQ_TASK_ACK_TIMEOUT_MS=${ZMQ_TASK_ACK_TIMEOUT_MS:-2000}
+      # Liveness tuning. Guideline: keep ZMQ_WORKER_SILENCE_MS comfortably
+      # above ZMQ_HEARTBEAT_INTERVAL_MS. A worker whose heartbeat arrives after
+      # the silence window flaps dead — tolerated (a heartbeat is proof of
+      # life and revives the worker, flushing buffered tasks), but it costs
+      # routing gaps, so size the window for ~3x the interval.
       - ZMQ_WORKER_SILENCE_MS=${ZMQ_WORKER_SILENCE_MS:-15000}
       - ZMQ_WORKER_SWEEP_INTERVAL_MS=${ZMQ_WORKER_SWEEP_INTERVAL_MS:-5000}
     ports:
@@ -55,6 +60,8 @@ services:
       - WORKFLOW_NAME=order-processing
       - ZMQ_TASKS_ENDPOINT=tcp://orchestrator:5557
       - ZMQ_HEARTBEAT_INTERVAL_MS=${ZMQ_HEARTBEAT_INTERVAL_MS:-5000}
+      # Same worker-sdk simulation gate the LocalStack Lambda env carries in dev
+      - ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=${ENABLE_REQUESTS_FOR_SIMULATED_DELAYS:-true}
     volumes:
       - ./tools/zmq-worker-host/src:/app/src:ro
       - ./packages/core/dist:/app/node_modules/@dtm/core/dist:ro
@@ -86,6 +93,8 @@ services:
       - WORKFLOW_NAME=iot-sensor-pipeline
       - ZMQ_TASKS_ENDPOINT=tcp://orchestrator:5557
       - ZMQ_HEARTBEAT_INTERVAL_MS=${ZMQ_HEARTBEAT_INTERVAL_MS:-5000}
+      # Same worker-sdk simulation gate the LocalStack Lambda env carries in dev
+      - ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=${ENABLE_REQUESTS_FOR_SIMULATED_DELAYS:-true}
     volumes:
       - ./tools/zmq-worker-host/src:/app/src:ro
       - ./packages/core/dist:/app/node_modules/@dtm/core/dist:ro
@@ -117,6 +126,8 @@ services:
       - WORKFLOW_NAME=infra-provisioning
       - ZMQ_TASKS_ENDPOINT=tcp://orchestrator:5557
       - ZMQ_HEARTBEAT_INTERVAL_MS=${ZMQ_HEARTBEAT_INTERVAL_MS:-5000}
+      # Same worker-sdk simulation gate the LocalStack Lambda env carries in dev
+      - ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=${ENABLE_REQUESTS_FOR_SIMULATED_DELAYS:-true}
     volumes:
       - ./tools/zmq-worker-host/src:/app/src:ro
       - ./packages/core/dist:/app/node_modules/@dtm/core/dist:ro

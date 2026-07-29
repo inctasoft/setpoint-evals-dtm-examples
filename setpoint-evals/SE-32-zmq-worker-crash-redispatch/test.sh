@@ -115,7 +115,7 @@ PAYLOAD=$(cat <<EOF
   "payload": { "customerId": 1, "orderId": 1, "entityId": "$EXTERNAL_SYSTEM_ID" },
   "enableDeduplication": false,
   "testOptions": {
-    "ValidateCustomer": { "simDelay": 15000 },
+    "ValidateCustomer": { "simDelay": 13000 },
     "ValidateProduct": { "simDelay": 500 },
     "SubmitCustomer": { "simDelay": 500, "ackDelay": 500 },
     "SubmitOrder": { "simDelay": 500, "ackDelay": 500 }

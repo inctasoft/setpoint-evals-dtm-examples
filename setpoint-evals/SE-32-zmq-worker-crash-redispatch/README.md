@@ -6,7 +6,7 @@
 
 Mixed mode up (`QUEUE_TRANSPORT=zmq` + the `zmq-tasks` profile) with TWO
 order-processing worker-host replicas. The replica holding a mid-flight
-ValidateCustomer task (a 15s `simDelay` provides the kill window) is
+ValidateCustomer task (a 13s `simDelay` provides the kill window (13s is the worker-sdk maximum safe delay)) is
 `docker kill`ed; the Phase 1 redelivery engine — AUTO-ON under zmq because the
 transport declares `redelivery: 'orchestrator'` (no
 `REDELIVERY_ENGINE_FORCE_ENABLED` needed) — re-dispatches the step on lease
@@ -39,7 +39,7 @@ sequenceDiagram
     participant DB as dtm_steps
 
     T->>O: QUEUE_TRANSPORT=zmq + lease=5s + silence=3s, recreate
-    T->>O: POST jobs quick-order (ValidateCustomer simDelay 15s)
+    T->>O: POST jobs quick-order (ValidateCustomer simDelay 13s)
     O->>H1: task envelope (attempt 1)
     H1->>O: RECEIVED + in_progress callback
     T->>H1: docker kill (mid-simDelay)
@@ -75,7 +75,7 @@ ZMQ_WORKER_SWEEP_INTERVAL_MS=1000
   "payload": { "customerId": 1, "orderId": 1, "entityId": "<uuidgen per run>" },
   "enableDeduplication": false,
   "testOptions": {
-    "ValidateCustomer": { "simDelay": 15000 },
+    "ValidateCustomer": { "simDelay": 13000 },
     "ValidateProduct": { "simDelay": 500 },
     "SubmitCustomer": { "simDelay": 500, "ackDelay": 500 },
     "SubmitOrder": { "simDelay": 500, "ackDelay": 500 }

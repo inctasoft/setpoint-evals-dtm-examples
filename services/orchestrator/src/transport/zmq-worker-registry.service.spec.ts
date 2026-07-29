@@ -64,6 +64,30 @@ describe('Phase 2 — ZmqWorkerRegistryService', () => {
     expect(deaths).toEqual(['w-1']);
   });
 
+  it('SE-REG-revive-heartbeat: a heartbeat from a DEAD worker revives it (proof of life) and restores routability', () => {
+    const registry = makeRegistry();
+    const deaths: string[] = [];
+    registry.onWorkerDead((w) => deaths.push(w.workerId));
+    registry.register('w-1', ['q1'], 'identity-w-1', 1000);
+    registry.sweep(1000 + SILENCE_MS + 1);
+    expect(registry.getWorker('w-1')?.state).toBe('dead');
+    expect(registry.pickWorkerIdentity('q1')).toBeNull();
+
+    // A heartbeat IS evidence of life: discarding it and demanding a full
+    // re-HELLO strands every worker whose heartbeat interval exceeds the
+    // silence window (the SE-32 boot-flap: first heartbeat at +5s, silence
+    // 3s → dead before the first heartbeat ever lands, never recovers).
+    const outcome = registry.heartbeat('w-1', 1000 + SILENCE_MS + 2000);
+
+    expect(outcome).toBe('revived');
+    expect(registry.getWorker('w-1')?.state).toBe('alive');
+    expect(registry.pickWorkerIdentity('q1')).toBe('identity-w-1');
+    // Death notification fired exactly once — revival is not a new death.
+    expect(deaths).toEqual(['w-1']);
+    // And a subsequent heartbeat is a plain refresh, not another revival.
+    expect(registry.heartbeat('w-1', 1000 + SILENCE_MS + 3000)).toBe('refreshed');
+  });
+
   it('SE-REG-rehello: a HELLO from a dead worker revives it with fresh queues and identity', () => {
     const registry = makeRegistry();
     registry.register('w-1', ['q1'], 'identity-old', 1000);

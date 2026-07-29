@@ -5,6 +5,7 @@ import {
   encodeZmqEnvelope,
   buildZmqReceivedEnvelope,
   buildZmqHelloEnvelope,
+  buildZmqHeartbeatEnvelope,
 } from '@dtm/core';
 import { ZmqTransport } from './zmq-transport.service';
 import { ZmqWorkerRegistryService } from './zmq-worker-registry.service';
@@ -184,6 +185,32 @@ describe('Phase 2 — ZmqTransport (ROUTER side, real zeromq pair)', () => {
     expect(result.success).toBe(true);
     expect(result.taskHandle).toBeTruthy();
     await nextFrame(frames); // consume to keep the dealer iterator honest
+  });
+
+  it('SE-ZMQ-revive-flush: tasks buffered while the only worker is dead flush when its heartbeat revives it', async () => {
+    const { dealer, frames } = makeDealer('w-flap');
+    await sendHello(dealer, 'w-flap', [QUEUE]);
+
+    // Worker goes silent past the silence window → dead → unroutable. (The
+    // SE-32 boot-flap: heartbeat interval > silence window strands workers;
+    // a heartbeat is proof of life and must revive, not be discarded.)
+    registry.sweep(Date.now() + 60000);
+    expect(registry.pickWorkerIdentity(QUEUE)).toBeNull();
+
+    const buffered = await transport.sendTask(QUEUE, makePayload('step-flush-on-revive'));
+    expect(buffered.success).toBe(true); // buffered, never dropped
+
+    // The worker's next heartbeat revives it → the buffered task flushes.
+    await dealer.send(encodeZmqEnvelope(buildZmqHeartbeatEnvelope('w-flap')));
+
+    const frame = await nextFrame(frames);
+    const envelope = decodeZmqEnvelope(frame.topic, frame.json);
+    expect(envelope.kind).toBe('task');
+    if (envelope.kind !== 'task') throw new Error('unreachable');
+    expect(envelope.payload.message).toMatchObject({ stepId: 'step-flush-on-revive' });
+    expect(registry.getWorker('w-flap')?.state).toBe('alive');
+
+    await dealer.send(encodeZmqEnvelope(buildZmqReceivedEnvelope(envelope.payload.taskHandle)));
   });
 
   it('SE-ZMQ-health: healthCheck reports the bound ROUTER endpoint', async () => {

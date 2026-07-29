@@ -305,9 +305,16 @@ export class ZmqTransport extends QueueTransport implements OnModuleInit, OnModu
         this.registry.register(envelope.payload.workerId, envelope.payload.queues, identity);
         this.flushBuffers(envelope.payload.queues);
         break;
-      case 'heartbeat':
-        this.registry.heartbeat(envelope.payload.workerId);
+      case 'heartbeat': {
+        const outcome = this.registry.heartbeat(envelope.payload.workerId);
+        // Revival is proof of life from a worker we had written off: flush
+        // any tasks buffered while it was unroutable (same as the HELLO path).
+        if (outcome === 'revived') {
+          const queues = this.registry.getWorker(envelope.payload.workerId)?.queues ?? [];
+          this.flushBuffers(queues);
+        }
         break;
+      }
       case 'received': {
         const pending = this.pendingReceipts.get(envelope.payload.taskHandle);
         if (pending) {

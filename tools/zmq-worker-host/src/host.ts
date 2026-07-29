@@ -112,11 +112,18 @@ async function main(): Promise<void> {
   );
   console.log(`👋 HELLO sent — serving ${queues.length} queue(s)`);
 
-  const heartbeat = setInterval(() => {
+  const sendHeartbeat = () => {
     void dealer
       .send(encodeZmqEnvelope(buildZmqHeartbeatEnvelope(WORKER_ID)))
       .catch((error) => console.error("❌ Heartbeat send failed:", error));
-  }, HEARTBEAT_INTERVAL_MS);
+  };
+
+  // First heartbeat IMMEDIATELY after HELLO, not one interval later: the
+  // registry's silence sweep measures from the last SEEN heartbeat, and a
+  // worker whose interval exceeds the silence window would flap dead before
+  // its first heartbeat ever lands (the SE-32 boot-flap).
+  sendHeartbeat();
+  const heartbeat = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
   heartbeat.unref();
 
   const shutdown = (signal: string) => {

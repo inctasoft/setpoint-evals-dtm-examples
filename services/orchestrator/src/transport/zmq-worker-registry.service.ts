@@ -96,20 +96,32 @@ export class ZmqWorkerRegistryService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Refresh liveness from a heartbeat frame. Heartbeats from unknown or dead
-   * workers are ignored — only a HELLO (re-)registers.
+   * Refresh liveness from a heartbeat frame. A heartbeat IS proof of life:
+   * from a DEAD (known) worker it REVIVES the worker — discarding it and
+   * demanding a full re-HELLO strands any worker whose heartbeat interval
+   * exceeds the silence window (first heartbeat lands after the first sweep,
+   * the worker flaps dead and never recovers). Heartbeats from UNKNOWN
+   * workers are still ignored — their socket identity/queues are unknown, so
+   * only a HELLO can register them.
+   *
+   * Returns the outcome so callers (the transport) can flush buffered tasks
+   * on revival exactly as they do on HELLO.
    */
-  heartbeat(workerId: string, now = Date.now()): void {
+  heartbeat(workerId: string, now = Date.now()): 'refreshed' | 'revived' | 'ignored' {
     const worker = this.workers.get(workerId);
     if (!worker) {
       this.logger.warn(`Heartbeat from unregistered worker '${workerId}' ignored (HELLO required)`);
-      return;
-    }
-    if (worker.state === 'dead') {
-      this.logger.warn(`Heartbeat from dead worker '${workerId}' ignored (re-HELLO required)`);
-      return;
+      return 'ignored';
     }
     worker.lastHeartbeatAt = new Date(now);
+    if (worker.state === 'dead') {
+      worker.state = 'alive';
+      this.logger.log(
+        `Worker revived by heartbeat: ${workerId} serving [${worker.queues.join(', ')}]`,
+      );
+      return 'revived';
+    }
+    return 'refreshed';
   }
 
   /**
