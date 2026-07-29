@@ -17,6 +17,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${REPO_ROOT}/workflows/order-processing/setpoint-evals/shared/helpers.sh"
 
+# Profile gate (Phase 4): SQS visibility-timeout retry semantics — aws profile only.
+# Under zmq, redelivery is lease/engine-based (covered by SE-29/30 + SE-32).
+se_skip_if_zmq "SQS visibility-timeout retry semantics — aws profile only (zmq redelivery is lease-based, see SE-29/30/32)"
+
 echo -e "${CYAN}╔════════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║           Eval 02: Transient Failure Recovery                     ║${NC}"
 echo -e "${CYAN}╠════════════════════════════════════════════════════════════════════╣${NC}"

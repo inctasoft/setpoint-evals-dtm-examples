@@ -155,6 +155,13 @@ export const configValidationSchema = Joi.object({
     .default('kafka')
     .description('Event bus profile: kafka (default) or zmq'),
 
+  // Umbrella switch (Phase 4): expands to QUEUE_TRANSPORT + EVENT_BUS unless
+  // the explicit per-var env is set (explicit wins). Unset = per-var defaults.
+  BUS_PROFILE: Joi.string()
+    .valid('aws', 'zmq')
+    .optional()
+    .description('Umbrella bus profile: aws (sqs+kafka) or zmq (zmq tasks + zmq events)'),
+
   // ZeroMQ event bus (only read under EVENT_BUS=zmq)
   ZMQ_EVENTS_ENDPOINT: Joi.string()
     .description('PUB bind address for zmq events out')

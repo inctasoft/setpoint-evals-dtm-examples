@@ -19,6 +19,11 @@ source "$ROOT/workflows/order-processing/setpoint-evals/shared/helpers.sh"
 log_info "SE-20: kafka topics endpoint lists registered topics, never consumes"
 
 # --- preflight ---------------------------------------------------------------
+# Profile gate (Phase 4): this endpoint is a Kafka admin-client read — under
+# EVENT_BUS=zmq there is no broker to inspect (honest empty/degraded response
+# is covered by SE-36's health-honesty assertions instead).
+se_skip_if_zmq "Kafka admin topics endpoint — aws/kafka profile only (full-zmq has no broker; see SE-36)"
+
 curl -s -o /dev/null -m 5 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/health" \
   || se_skip "orchestrator is not reachable at ${ORCHESTRATOR_HOST}"
 command -v jq >/dev/null 2>&1 || se_skip "jq is required"

@@ -70,6 +70,31 @@ WARMUP_ONLY=false
 # Force localhost for host-side checks to avoid issues if .env defines internal docker endpoints (e.g. http://localstack:4566)
 LOCALSTACK_ENDPOINT="http://localhost:${LOCALSTACK_PORT:-4567}"
 
+# ── Bus profile detection (Phase 4) ─────────────────────────────────────────
+# BUS_PROFILE=zmq (env or .env), or an explicit QUEUE_TRANSPORT=zmq +
+# EVENT_BUS=zmq pair, means the stack runs with NO LocalStack, NO Kafka and
+# NO sqs-pollers BY DESIGN — the AWS-flavored checks below are skipped
+# honestly instead of hard-failing on absent infrastructure.
+detect_bus_profile() {
+  if [ -n "${BUS_PROFILE:-}" ]; then
+    echo "$BUS_PROFILE"
+    return
+  fi
+  local env_file="$PROJECT_ROOT/.env"
+  if [ -f "$env_file" ] && grep -q '^BUS_PROFILE=zmq' "$env_file"; then
+    echo "zmq"
+    return
+  fi
+  if [ -f "$env_file" ] \
+    && grep -q '^QUEUE_TRANSPORT=zmq' "$env_file" \
+    && grep -q '^EVENT_BUS=zmq' "$env_file"; then
+    echo "zmq"
+    return
+  fi
+  echo "aws"
+}
+BUS_PROFILE_DETECTED="$(detect_bus_profile)"
+
 # AWS CLI wrapper for LocalStack
 # Explicitly unset AWS_PROFILE to prevent interference from .env files (loaded by run-all.sh)
 # Force dummy credentials for LocalStack
@@ -774,6 +799,65 @@ check_kafka() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Check (zmq): core containers for the full-zmq profile
+# ═══════════════════════════════════════════════════════════════════════════
+check_docker_containers_zmq() {
+  echo ""
+  echo "🐳 Checking Docker containers (zmq profile)..."
+  echo ""
+
+  local required_containers=(
+    "${COMPOSE_PROJECT_NAME:-dtm}-orchestrator:Orchestrator Service"
+    "${COMPOSE_PROJECT_NAME:-dtm}-db:Migration Database"
+    "${COMPOSE_PROJECT_NAME:-dtm}-dev-ack-simulator:Dev ACK Simulator (zmq client)"
+  )
+
+  for container_spec in "${required_containers[@]}"; do
+    local container_name="${container_spec%%:*}"
+    local description="${container_spec##*:}"
+    if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+      log_success "$description is running"
+    else
+      log_error "$description is NOT running (required: $container_name)"
+    fi
+  done
+
+  # Brokers must be absent by design — their PRESENCE is a warning (stack
+  # was not brought up from the full-zmq profile), never an error.
+  for broker in localstack kafka zookeeper kafka-ui; do
+    if docker ps --format '{{.Names}}' | grep -q "${COMPOSE_PROJECT_NAME:-dtm}-${broker}"; then
+      log_warning "${broker} container is running — full-zmq does not need it (harmless, but not a zero-broker bring-up)"
+    fi
+  done
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Check (zmq): worker fleet registered with the orchestrator
+# ═══════════════════════════════════════════════════════════════════════════
+check_zmq_workers() {
+  echo ""
+  echo "🚌 Checking zmq worker fleet..."
+  echo ""
+
+  local host_port="${ORCHESTRATOR_PORT_HOST:-3002}"
+  local workers_json
+  workers_json=$(curl -s -m 5 "http://localhost:${host_port}/api/v1/workers" 2>/dev/null) || true
+
+  if [ -z "$workers_json" ]; then
+    log_error "GET /api/v1/workers is not reachable — is the orchestrator up under QUEUE_TRANSPORT=zmq?"
+    return
+  fi
+
+  local alive
+  alive=$(echo "$workers_json" | jq '[.[] | select(.state == "alive")] | length' 2>/dev/null || echo 0)
+  if [ "${alive:-0}" -ge 3 ]; then
+    log_success "Worker registry lists ${alive} live zmq workers (one per workflow)"
+  else
+    log_error "Worker registry lists only ${alive:-0} live zmq worker(s) — expected >= 3 (zmq-tasks profile up?)"
+  fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Check 10: Disk Space
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -804,9 +888,15 @@ main() {
     echo "Project: DTM Core Engine"
     echo "Location: $PROJECT_ROOT"
     echo ""
+    if [ "$BUS_PROFILE_DETECTED" = "zmq" ]; then
+      echo "🚌 BUS_PROFILE=zmq — no Lambda workers exist; warm-up skipped by design"
+      echo ""
+      exit 0
+    fi
+
     log_info "Running Lambda warm-up only (all other checks skipped)"
     echo ""
-    
+
     # Only run warm-up
     check_lambda_execution
     
@@ -824,18 +914,30 @@ main() {
   echo "Location: $PROJECT_ROOT"
   echo ""
   
-  # Run all checks
-  check_docker_containers
-  check_worker_mode
-  check_lambda_functions
-  check_lambda_execution
-  check_service_health
-  check_database_connectivity
-  check_environment_variables
-  check_seed_data
-  check_sqs_queues
-  check_kafka
-  check_disk_space
+  # Run all checks (profile-aware: under BUS_PROFILE=zmq the
+  # LocalStack/SQS/Lambda/poller checks are skipped by design)
+  if [ "$BUS_PROFILE_DETECTED" = "zmq" ]; then
+    echo "🚌 Bus profile: zmq (no LocalStack, no Kafka, no sqs-pollers — AWS checks skipped)"
+    echo ""
+    check_docker_containers_zmq
+    check_zmq_workers
+    check_database_connectivity
+    check_environment_variables
+    check_seed_data
+    check_disk_space
+  else
+    check_docker_containers
+    check_worker_mode
+    check_lambda_functions
+    check_lambda_execution
+    check_service_health
+    check_database_connectivity
+    check_environment_variables
+    check_seed_data
+    check_sqs_queues
+    check_kafka
+    check_disk_space
+  fi
   
   # Summary
   echo ""

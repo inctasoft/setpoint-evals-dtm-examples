@@ -120,6 +120,41 @@ qdelay() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Bus profile detection (Phase 4 — dual-profile SE matrix)
+# ═══════════════════════════════════════════════════════════════════════════
+# Echoes "zmq" when the stack runs the full-zmq profile (BUS_PROFILE=zmq in the
+# environment or .env, or an explicit QUEUE_TRANSPORT=zmq + EVENT_BUS=zmq pair
+# in .env), else "aws". SEs that are SQS/Kafka-semantic BY DESIGN (SQS
+# visibility-timeout retries, SQS DLQ routing, the Kafka admin topics
+# endpoint) must se_skip under zmq — a SKIP is the honest verdict there, not a
+# forced pass and never a failure.
+se_bus_profile() {
+  if [ -n "${BUS_PROFILE:-}" ]; then
+    echo "$BUS_PROFILE"
+    return
+  fi
+  local env_file="${SE_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/.env"
+  if [ -f "$env_file" ] && grep -q '^BUS_PROFILE=zmq' "$env_file"; then
+    echo "zmq"
+    return
+  fi
+  if [ -f "$env_file" ] \
+    && grep -q '^QUEUE_TRANSPORT=zmq' "$env_file" \
+    && grep -q '^EVENT_BUS=zmq' "$env_file"; then
+    echo "zmq"
+    return
+  fi
+  echo "aws"
+}
+
+# se_skip_if_zmq "<reason>" — one-liner gate for SQS/Kafka-semantic SEs.
+se_skip_if_zmq() {
+  if [ "$(se_bus_profile)" = "zmq" ]; then
+    se_skip "${1:-SQS/Kafka-semantic eval — aws profile only}"
+  fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Configuration
 # ═══════════════════════════════════════════════════════════════════════════
 
