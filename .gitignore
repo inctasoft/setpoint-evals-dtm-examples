@@ -222,3 +222,6 @@ tools/**/*.zip
 # sibling private projects. Removed 2026-07-18 (public-repo-hygiene follow-up), gitignored
 # so a future regeneration doesn't silently re-leak it.
 docs/_tidy-proposals.md
+
+# SE-27 throwaway compile probe (removed on clean exit; can be orphaned by a TIMEOUT kill)
+services/orchestrator/src/__se27_probe.ts
