@@ -20,9 +20,11 @@ import { StuckWaitingForChildrenTask } from './tasks/stuck-waiting-for-children.
 import { StuckDelegatedTask } from './tasks/stuck-delegated.task';
 import { StuckPendingTask } from './tasks/stuck-pending.task';
 import { RedeliveryEngineTask } from './tasks/redelivery-engine.task';
+import { EventRepublishScanTask } from './tasks/event-republish-scan.task';
 
 // Dependencies
 import { OrchestrationModule } from '../orchestration/orchestration.module';
+import { EventBusModule } from '../event-bus/event-bus.module';
 import { DelegationModule } from '../delegation/delegation.module';
 import { TransportModule } from '../transport/transport.module';
 
@@ -62,6 +64,7 @@ import { TransportModule } from '../transport/transport.module';
 
     // Orchestration service (for triggering job continuation)
     OrchestrationModule,
+    EventBusModule,
 
     // Delegation service (for re-delegating stuck steps)
     DelegationModule,
@@ -95,6 +98,7 @@ import { TransportModule } from '../transport/transport.module';
     // Orchestrator-driven redelivery engine (bus-agnosticism Phase 1;
     // self-gates to a no-op unless the transport declares it or the force flag is set)
     RedeliveryEngineTask,
+    EventRepublishScanTask,
   ],
 
   exports: [

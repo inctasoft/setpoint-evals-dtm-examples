@@ -6,7 +6,7 @@ import { JobRepository, StepRepository, JobStatus, StepStatus, JobType } from '@
 import { OrchestrationService } from '../orchestration/orchestration.service';
 import { CascadePublishService } from '../orchestration/cascade-publish.service';
 import { FanOutService } from '../orchestration/fan-out.service';
-import { KafkaService } from '../kafka/kafka.service';
+import { EventBus } from '../event-bus/event-bus.interface';
 import { WorkflowConfigService } from '../workflow-loader/workflow-config.service';
 import { WorkflowRegistryService } from '../workflow-loader/workflow-registry.service';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -102,7 +102,7 @@ describe('CallbackService', () => {
         { provide: OrchestrationService, useValue: mockOrchestrationService },
         { provide: CascadePublishService, useValue: mockCascadePublishService },
         { provide: FanOutService, useValue: mockFanOutService },
-        { provide: KafkaService, useValue: mockKafkaService },
+        { provide: EventBus, useValue: mockKafkaService },
         { provide: WorkflowConfigService, useValue: mockWorkflowConfigService },
         { provide: WorkflowRegistryService, useValue: mockWorkflowRegistryService },
         { provide: EventsGateway, useValue: mockEventsGateway },

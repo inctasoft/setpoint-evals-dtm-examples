@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StepRepository, StepStatus, Step as DbStep, JobRepository } from '@dtm/database';
-import { KafkaService } from '../kafka/kafka.service';
+import { EventBus } from '../event-bus/event-bus.interface';
 import { WorkflowConfigService, WorkflowRegistryService, FkMap } from '../workflow-loader';
 
 /**
@@ -39,7 +39,7 @@ export class CascadePublishService {
   constructor(
     private readonly stepRepository: StepRepository,
     private readonly jobRepository: JobRepository,
-    private readonly kafkaService: KafkaService,
+    private readonly eventBus: EventBus,
     private readonly workflowConfig: WorkflowConfigService,
     private readonly workflowRegistry: WorkflowRegistryService,
   ) {}
@@ -293,7 +293,8 @@ export class CascadePublishService {
 
     const cfg = wfConfig || this.workflowConfig;
     const cascadeDep = cfg.getCascade(cascadeName);
-    if (!cascadeDep || !cascadeDep.kafkaTopic) {
+    const eventTopic = cfg.getCascadeEventTopic(cascadeName);
+    if (!cascadeDep || !eventTopic) {
       throw new Error(`No cascade dependency config for ${cascadeName}`);
     }
 
@@ -317,10 +318,10 @@ export class CascadePublishService {
 
     // Publish to Kafka
     this.logger.log(
-      `📤 Publishing ${cascadeName} data to ${cascadeDep.kafkaTopic} with FK injections (${injectedData.length} records)`,
+      `📤 Publishing ${cascadeName} data to ${eventTopic} with FK injections (${injectedData.length} records)`,
     );
 
-    const published = await this.kafkaService.publish(cascadeDep.kafkaTopic, event, jobId);
+    const published = await this.eventBus.publish(eventTopic, event, jobId);
 
     if (published) {
       // Update step status to WAITING_FOR_ACK and set kafkaPublishedAt
@@ -341,7 +342,7 @@ export class CascadePublishService {
       }
 
       this.logger.log(
-        `✅ ${cascadeName} data published to ${cascadeDep.kafkaTopic} - waiting for acknowledgement`,
+        `✅ ${cascadeName} data published to ${eventTopic} - waiting for acknowledgement`,
       );
     } else {
       this.logger.warn(`⚠️ ${cascadeName} data not published (Kafka not configured)`);
@@ -363,7 +364,8 @@ export class CascadePublishService {
   ): Promise<void> {
     const cfg = wfConfig || this.workflowConfig;
     const cascadeDep = cfg.getCascade(cascadeName);
-    if (!cascadeDep || !cascadeDep.kafkaTopic) {
+    const eventTopic = cfg.getCascadeEventTopic(cascadeName);
+    if (!cascadeDep || !eventTopic) {
       throw new Error(`No cascade dependency config for ${cascadeName}`);
     }
 
@@ -377,10 +379,10 @@ export class CascadePublishService {
 
     // Publish to Kafka
     this.logger.log(
-      `📤 Publishing ${cascadeName} data to ${cascadeDep.kafkaTopic} with FK injections (${injectedData.length} records)`,
+      `📤 Publishing ${cascadeName} data to ${eventTopic} with FK injections (${injectedData.length} records)`,
     );
 
-    const published = await this.kafkaService.publish(cascadeDep.kafkaTopic, event, jobId);
+    const published = await this.eventBus.publish(eventTopic, event, jobId);
 
     if (published) {
       // Update step status to WAITING_FOR_ACK and set kafkaPublishedAt
@@ -402,7 +404,7 @@ export class CascadePublishService {
       }
 
       this.logger.log(
-        `✅ ${cascadeName} data published to ${cascadeDep.kafkaTopic} - waiting for acknowledgement`,
+        `✅ ${cascadeName} data published to ${eventTopic} - waiting for acknowledgement`,
       );
     } else {
       this.logger.warn(`⚠️ ${cascadeName} data not published (Kafka not configured)`);
@@ -460,5 +462,70 @@ export class CascadePublishService {
   hasDependentCascades(parentCascadeName: string, wfConfig?: WorkflowConfigService): boolean {
     const cfg = wfConfig || this.workflowConfig;
     return cfg.hasDependentCascades(parentCascadeName);
+  }
+
+  /**
+   * Re-publish a step's transformed-data event WITHOUT changing its state
+   * (Phase 3, used by the EventRepublishScanTask). For a WAITING_FOR_ACK step
+   * whose publish (or whose ACK) was dropped by a drop-realistic bus: the
+   * FK-injected output stored at publish time is reused verbatim, the event
+   * is rebuilt and re-published, and kafka_published_at is re-stamped so the
+   * scan's lease measures time since the LATEST publish attempt.
+   *
+   * Returns true when the bus accepted the re-publish; false when there is
+   * nothing honest to re-publish (unknown cascade/topic, no stored data) —
+   * callers count that as skipped, never as an error.
+   */
+  async republishStepEvent(step: DbStep): Promise<boolean> {
+    const jobId = step.job?.id;
+    if (!jobId) {
+      this.logger.error(`Cannot re-publish step ${step.id}: job relation not loaded`);
+      return false;
+    }
+
+    const cfg = this.getWorkflowConfig(step.job);
+    const cascadeName = cfg.getCascadeNameFromStep(step.stepValue);
+    if (!cascadeName) {
+      this.logger.warn(
+        `Step ${step.id} (${step.stepValue}) has no cascade — nothing to re-publish`,
+      );
+      return false;
+    }
+
+    const eventTopic = cfg.getCascadeEventTopic(cascadeName);
+    if (!eventTopic) {
+      this.logger.warn(`Cascade ${cascadeName} names no event topic — nothing to re-publish`);
+      return false;
+    }
+
+    const outputDataKey = this.getOutputDataKey(cascadeName, cfg);
+    const data = (step.output?.[outputDataKey] || []) as Array<Record<string, unknown>>;
+    if (data.length === 0) {
+      this.logger.warn(
+        `Step ${step.id} has no stored ${outputDataKey} to re-publish (publish never produced output?)`,
+      );
+      return false;
+    }
+
+    const event = this.buildTransformedEvent(jobId, step, cascadeName, data, cfg);
+
+    this.logger.log(
+      `🔁 Re-publishing ${cascadeName} data to ${eventTopic} for step ${step.id} (${data.length} records; dropped-publish recovery)`,
+    );
+
+    const published = await this.eventBus.publish(eventTopic, event, jobId);
+    if (published) {
+      // Re-stamp the publish marker (conditional on the status the scan
+      // observed — a real ACK landing concurrently wins; the scan then
+      // leaves the step alone next round).
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      await (this.stepRepository as any)['repo']
+        .createQueryBuilder()
+        .update()
+        .set({ kafkaPublishedAt: new Date() })
+        .where('id = :id AND status = :status', { id: step.id, status: StepStatus.WAITING_FOR_ACK })
+        .execute();
+    }
+    return published;
   }
 }

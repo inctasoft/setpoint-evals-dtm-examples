@@ -9,7 +9,7 @@ import {
   Step as DbStep, // Database entity
 } from '@dtm/database';
 import { DelegationService } from '../delegation/delegation.service';
-import { KafkaService } from '../kafka/kafka.service';
+import { EventBus } from '../event-bus/event-bus.interface';
 import { CorrelationService } from '../common/correlation/correlation.service';
 import { StepDelegationDto } from '../delegation/dto/step-delegation.dto';
 import {
@@ -41,8 +41,8 @@ export class OrchestrationService {
     private readonly stepRepository: StepRepository,
     private readonly delegationService: DelegationService,
     private readonly correlationService: CorrelationService,
-    @Inject(forwardRef(() => KafkaService))
-    private readonly kafkaService: KafkaService,
+    @Inject(forwardRef(() => EventBus))
+    private readonly eventBus: EventBus,
     private readonly workflowConfig: WorkflowConfigService,
     private readonly workflowRegistry: WorkflowRegistryService,
     private readonly eventsGateway: EventsGateway,
@@ -322,7 +322,7 @@ export class OrchestrationService {
           eventTimestamp: new Date(),
         };
 
-        await this.kafkaService.publish<JobCompletedEvent>(
+        await this.eventBus.publish<JobCompletedEvent>(
           'dtm.jobs.completed',
           jobCompletedEvent,
           jobId,
@@ -410,7 +410,7 @@ export class OrchestrationService {
           eventTimestamp: new Date(),
         };
 
-        await this.kafkaService.publish<JobFailedEvent>('dtm.jobs.failed', jobFailedEvent, jobId);
+        await this.eventBus.publish<JobFailedEvent>('dtm.jobs.failed', jobFailedEvent, jobId);
 
         // Update status
         await this.jobRepository.updateStatus(jobId, JobStatus.FAILED, errorMessage);
@@ -489,7 +489,7 @@ export class OrchestrationService {
           eventTimestamp: new Date(),
         };
 
-        await this.kafkaService.publish<JobCompletedEvent>(
+        await this.eventBus.publish<JobCompletedEvent>(
           'dtm.jobs.completed',
           jobCompletedEvent,
           jobId,

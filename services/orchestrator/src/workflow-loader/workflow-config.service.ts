@@ -212,6 +212,17 @@ export class WorkflowConfigService {
   }
 
   /**
+   * Resolve a cascade's publish topic with the D-D rename contract:
+   * `eventTopic` (bus-neutral primary) wins, `kafkaTopic` (compat alias) is
+   * the fallback. Returns undefined when the cascade is unknown or names no
+   * topic — callers skip publishing, never throw.
+   */
+  getCascadeEventTopic(cascadeName: string): string | undefined {
+    const cascade = this.getCascade(cascadeName);
+    return cascade?.eventTopic ?? cascade?.kafkaTopic;
+  }
+
+  /**
    * Get cascade config by output step value.
    * Handles batch/fan-out variants (e.g., SubmitLineItem maps to same cascade as SubmitOrder)
    * by falling back to a queueName-based reverse lookup.
