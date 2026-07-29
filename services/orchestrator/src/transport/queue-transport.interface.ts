@@ -76,7 +76,8 @@ export function isRedeliveryEngineActive(
 
 /**
  * Pluggable queue transport interface.
- * Implementations: SqsTransport (LocalStack/AWS), CloudTasksTransport (GCP).
+ * Implementations: SqsTransport (LocalStack/AWS), CloudTasksTransport (GCP),
+ * ZmqTransport (ZeroMQ ROUTER + zmq-worker-host DEALER fleet).
  */
 export abstract class QueueTransport {
   /** Declared capabilities — consumers branch on these, never on the concrete class. */

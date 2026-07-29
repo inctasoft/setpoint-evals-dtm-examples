@@ -123,6 +123,31 @@ export const configValidationSchema = Joi.object({
   CLEANUP_UNUSED_QUEUES: Joi.string().valid('true', 'false').default('false'),
 
   // ============================================
+  // Task Transport (bus-agnosticism program)
+  // ============================================
+  QUEUE_TRANSPORT: Joi.string()
+    .valid('sqs', 'cloud-tasks', 'zmq')
+    .default('sqs')
+    .description('Task transport profile: sqs (default), cloud-tasks, or zmq'),
+
+  // ZeroMQ task transport (only read under QUEUE_TRANSPORT=zmq)
+  ZMQ_TASKS_ENDPOINT: Joi.string()
+    .description('ROUTER bind address for the zmq task transport')
+    .default('tcp://0.0.0.0:5557'),
+  ZMQ_TASK_ACK_TIMEOUT_MS: Joi.number()
+    .min(100)
+    .description('Receipt-ack wait per zmq task dispatch')
+    .default(2000),
+  ZMQ_WORKER_SILENCE_MS: Joi.number()
+    .min(1000)
+    .description('Heartbeat silence after which a zmq worker is marked dead')
+    .default(15000),
+  ZMQ_WORKER_SWEEP_INTERVAL_MS: Joi.number()
+    .min(500)
+    .description('Zmq worker-registry sweeper cadence')
+    .default(5000),
+
+  // ============================================
   // Database Pool Settings
   // ============================================
   DB_POOL_SIZE: Joi.number().min(1).max(100).default(10),

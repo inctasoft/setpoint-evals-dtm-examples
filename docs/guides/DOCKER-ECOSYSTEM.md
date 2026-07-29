@@ -182,6 +182,7 @@ This section details exactly which containers are running in specific scenarios 
 | `docker-compose.yml` | **Main Core Services**: DB, Orchestrator, Monitor, Dev-Tools |
 | `docker-compose.workers.yml` | **Worker Ecosystem**: LocalStack, SQS Poller, Queue Init |
 | `docker-compose.kafka.yml` | **Standalone Kafka**: Zookeeper, Kafka, Kafka UI |
+| `docker-compose.zmq.yml` | **ZMQ Task Transport (mixed mode)**: per-workflow `zmq-worker-host` DEALER services + orchestrator ROUTER env (profile `zmq-tasks`; requires `QUEUE_TRANSPORT=zmq`) |
 | `workflows/*/docker-compose.*.yml` | **Source Systems**: Per-workflow source database containers |
 | `docker-compose.orchestrator-integrated.yml`| **Override**: Configures Orchestrator for Integrated Mode |
 | `docker-compose.kafka-init-integrated.yml`| **Utility**: Script to init topics in external Kafka |
@@ -195,4 +196,7 @@ The system uses Docker Compose profiles to selectively start services:
 - `web-ui`: The operations monitor dashboard
 - `dev-tools`: Testing tools (Ack Simulator, etc.)
 - `poller`: The manual SQS poller service
+- `zmq-tasks`: The ZeroMQ task transport worker hosts (one `zmq-worker-host` per
+  workflow, from `docker-compose.zmq.yml`). Mixed mode = zmq tasks + Kafka events
+  unchanged; activate with `QUEUE_TRANSPORT=zmq` in `.env` + this profile (SE-31/32/33).
 

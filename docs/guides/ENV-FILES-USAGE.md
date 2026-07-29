@@ -172,6 +172,22 @@ configService.get<boolean>("app.autoMigration.onConsumerCreated");
 | `ENABLE_DEV_ACK_SIMULATOR`                | Simulate external system ACKs | **Must be false** |
 | `ENABLE_MIGRATION_REQUESTS_DEDUPLICATION` | Dedupe requests   | Recommended: true |
 
+### Task Transport Variables
+
+| Variable | Description | Default |
+| -------- | ----------- | ------- |
+| `QUEUE_TRANSPORT` | Task transport profile: `sqs`, `cloud-tasks`, `zmq` | `sqs` |
+| `ZMQ_TASKS_ENDPOINT` | ROUTER bind address (orchestrator, zmq profile only) | `tcp://0.0.0.0:5557` |
+| `ZMQ_TASK_ACK_TIMEOUT_MS` | Receipt-ack wait per zmq dispatch | `2000` |
+| `ZMQ_WORKER_SILENCE_MS` | Heartbeat silence before a zmq worker is marked dead | `15000` |
+| `ZMQ_WORKER_SWEEP_INTERVAL_MS` | Zmq worker-registry sweeper cadence | `5000` |
+| `ZMQ_HEARTBEAT_INTERVAL_MS` | Worker-host heartbeat cadence (read by `zmq-worker-host` containers) | `5000` |
+| `ZMQ_TASKS_PORT_HOST` | Optional host port mapping for the ROUTER (debugging) | `5557` |
+
+The `zmq` profile additionally needs the `zmq-tasks` compose profile
+(`docker-compose.zmq.yml`) — one `zmq-worker-host` service per workflow.
+With `QUEUE_TRANSPORT` unset/`sqs`, every `ZMQ_*` variable is inert.
+
 ---
 
 ## Deployment Modes

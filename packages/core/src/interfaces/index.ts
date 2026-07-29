@@ -40,3 +40,28 @@ export type {
 
 // Test options
 export type { TestOptionSet } from "./test-options.interface";
+
+// ZeroMQ tasks envelope (zmq task transport wire contract)
+export {
+  ZMQ_ENVELOPE_VERSION,
+  ZMQ_TASK_TOPIC_PREFIX,
+  ZMQ_CONTROL_TOPIC,
+  zmqTopicForEnvelope,
+  buildZmqTaskEnvelope,
+  buildZmqReceivedEnvelope,
+  buildZmqHelloEnvelope,
+  buildZmqHeartbeatEnvelope,
+  encodeZmqEnvelope,
+  decodeZmqEnvelope,
+} from "./zmq-envelope.interface";
+export type {
+  ZmqTaskPayload,
+  ZmqReceivedPayload,
+  ZmqHelloPayload,
+  ZmqHeartbeatPayload,
+  ZmqTaskEnvelope,
+  ZmqReceivedEnvelope,
+  ZmqHelloEnvelope,
+  ZmqHeartbeatEnvelope,
+  ZmqEnvelope,
+} from "./zmq-envelope.interface";
