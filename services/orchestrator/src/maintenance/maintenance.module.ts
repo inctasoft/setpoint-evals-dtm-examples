@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from '@nestjs/config';
-import { Job, Step } from '@dtm/database';
+import { Job, Step, DeadLetter } from '@dtm/database';
 
 // Core infrastructure
 import { MaintenanceTaskRegistry } from './registry/maintenance-task-registry';
@@ -19,10 +19,12 @@ import { HealthMetricsTask } from './tasks/health-metrics.task';
 import { StuckWaitingForChildrenTask } from './tasks/stuck-waiting-for-children.task';
 import { StuckDelegatedTask } from './tasks/stuck-delegated.task';
 import { StuckPendingTask } from './tasks/stuck-pending.task';
+import { RedeliveryEngineTask } from './tasks/redelivery-engine.task';
 
 // Dependencies
 import { OrchestrationModule } from '../orchestration/orchestration.module';
 import { DelegationModule } from '../delegation/delegation.module';
+import { TransportModule } from '../transport/transport.module';
 
 /**
  * Maintenance Module
@@ -56,13 +58,16 @@ import { DelegationModule } from '../delegation/delegation.module';
     ConfigModule,
 
     // Database entities
-    TypeOrmModule.forFeature([Job, Step]),
+    TypeOrmModule.forFeature([Job, Step, DeadLetter]),
 
     // Orchestration service (for triggering job continuation)
     OrchestrationModule,
 
     // Delegation service (for re-delegating stuck steps)
     DelegationModule,
+
+    // Transport capabilities (the redelivery engine gates on them)
+    TransportModule,
   ],
 
   controllers: [MaintenanceController],
@@ -86,6 +91,10 @@ import { DelegationModule } from '../delegation/delegation.module';
     StuckWaitingForChildrenTask,
     StuckDelegatedTask,
     StuckPendingTask,
+
+    // Orchestrator-driven redelivery engine (bus-agnosticism Phase 1;
+    // self-gates to a no-op unless the transport declares it or the force flag is set)
+    RedeliveryEngineTask,
   ],
 
   exports: [
