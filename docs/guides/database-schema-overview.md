@@ -5,7 +5,8 @@
 **Connection**: `docker exec dtm-db psql -U dtm_user -d dtm`
 **Host port**: 5448 → Container port: 5432
 
-Two tables power all orchestration.
+Three tables power all orchestration (`dtm_jobs`, `dtm_steps`, plus `dtm_dead_letters`
+for the redelivery engine's bus-neutral dead-letter quarantine).
 
 ---
 
@@ -84,6 +85,8 @@ Tracks individual step execution within a job.
 | `sqs_message_id` | VARCHAR | NULL | SQS message ID (for tracking/debugging) |
 | `retry_count` | INT | DEFAULT 0 | Current retry attempt |
 | `max_retry_count` | INT | DEFAULT 3 | Maximum retries allowed |
+| `attempt_count` | INT | DEFAULT 0 | Bus-neutral synthetic dispatch counter — incremented on every (re-)dispatch; the redelivery engine's attempt source of truth. Inert under the SQS profile |
+| `lease_expires_at` | TIMESTAMP | NULL | Delegation lease — the redelivery engine re-dispatches the step if still non-terminal past this time. NULL = no lease (never scanned) |
 | `first_attempt_at` | TIMESTAMP | NULL | First execution start |
 | `last_attempt_at` | TIMESTAMP | NULL | Most recent execution start |
 | `execution_history` | JSONB | NULL | Array of ExecutionAttempt records |
@@ -142,6 +145,30 @@ partial_success          → Some children succeeded, some failed (fan-out paren
   "externalSystemId": "EXT-12345"
 }
 ```
+
+---
+
+## dtm_dead_letters
+
+Bus-neutral dead-letter quarantine written by the redelivery engine (maintenance task
+`redelivery-engine`) when a step exhausts `max_retry_count` dispatch attempts. This is
+the table-based replacement for a native bus DLQ — under the SQS profile nothing is
+written here (SQS routes to its own DLQ, see SE-02).
+
+Deliberately **no foreign keys** to `dtm_steps` / `dtm_jobs`: a dead letter is an
+audit record that must survive job cleanup (old-job cleanup cascades delete steps).
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `id` | UUID | PK | Dead-letter identifier (auto-generated) |
+| `step_id` | UUID | NOT NULL | Step that exhausted its attempts |
+| `job_id` | UUID | NOT NULL | Job the step belonged to |
+| `workflow_name` | VARCHAR | NOT NULL | Workflow config name (copied for post-cleanup querying) |
+| `step_value` | VARCHAR | NOT NULL | Step name (e.g., 'ValidateCustomer') |
+| `attempt_count` | INT | NOT NULL | Synthetic dispatch-attempt count at exhaustion |
+| `last_error` | TEXT | NULL | Last error the step reported |
+| `input` | JSONB | NULL | Input payload the step was dispatched with (for replay/inspection) |
+| `created_at` | TIMESTAMP | NOT NULL | When the dead letter was written |
 
 ---
 

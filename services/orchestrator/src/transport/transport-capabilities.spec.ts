@@ -2,6 +2,8 @@ import { Test } from '@nestjs/testing';
 import { QueueTransport, TaskTransportCapabilities } from './queue-transport.interface';
 import { SqsStatusService } from '../websocket/sqs-status.service';
 import { EventsGateway } from '../websocket/events.gateway';
+import { SqsTransport } from './sqs-transport.service';
+import { CloudTasksTransport } from './cloud-tasks-transport.service';
 
 /**
  * Phase 0 — interface honesty + latent DI-coupling fix.
@@ -24,7 +26,12 @@ describe('Phase 0 — TaskTransportCapabilities + SqsStatusService transport hon
 
   function makeTransport(overrides: Partial<QueueTransport> = {}): QueueTransport {
     return {
-      capabilities: { stats: 'native' } as TaskTransportCapabilities,
+      capabilities: {
+        stats: 'native',
+        redelivery: 'bus',
+        attemptCounter: 'native',
+        dlq: 'native',
+      } as TaskTransportCapabilities,
       sendTask: jest.fn(),
       getQueueStatuses: jest.fn().mockResolvedValue([]),
       getWorkerEndpointUrl: jest.fn(),
@@ -52,7 +59,12 @@ describe('Phase 0 — TaskTransportCapabilities + SqsStatusService transport hon
 
   it("SE-STATS-none: a stats:'none' transport broadcasts nothing and never touches the bus", async () => {
     const transport = makeTransport({
-      capabilities: { stats: 'none' } as TaskTransportCapabilities,
+      capabilities: {
+        stats: 'none',
+        redelivery: 'bus',
+        attemptCounter: 'synthetic',
+        dlq: 'table',
+      } as TaskTransportCapabilities,
     });
     const svc = new SqsStatusService(transport, eventsGateway as unknown as EventsGateway);
 
@@ -65,7 +77,12 @@ describe('Phase 0 — TaskTransportCapabilities + SqsStatusService transport hon
   it("SE-STATS-native: a stats:'native' transport feeds the panel through the abstraction", async () => {
     const rows = [{ name: 'dtm-validate', available: 3, inFlight: 1, dlq: 0 }];
     const transport = makeTransport({
-      capabilities: { stats: 'native' } as TaskTransportCapabilities,
+      capabilities: {
+        stats: 'native',
+        redelivery: 'bus',
+        attemptCounter: 'native',
+        dlq: 'native',
+      } as TaskTransportCapabilities,
       getQueueStatuses: jest.fn().mockResolvedValue(rows),
     });
     const svc = new SqsStatusService(transport, eventsGateway as unknown as EventsGateway);
@@ -76,5 +93,38 @@ describe('Phase 0 — TaskTransportCapabilities + SqsStatusService transport hon
     expect(eventsGateway.broadcast).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sqs_status', queues: rows }),
     );
+  });
+});
+
+/**
+ * Phase 1 — redelivery capability axes.
+ *
+ * The redelivery engine activates ONLY when the active transport declares
+ * `redelivery: 'orchestrator'` (or the REDELIVERY_ENGINE_FORCE_ENABLED escape
+ * hatch is set). These pins keep every transport's declaration honest so the
+ * engine can never silently activate under a bus that already redelivers
+ * natively (double redelivery = duplicate worker executions).
+ */
+describe('Phase 1 — redelivery / attemptCounter / dlq capability axes', () => {
+  it('SqsTransport declares full native bus redelivery (engine stays off)', () => {
+    const transport = new SqsTransport({} as never, {} as never);
+
+    expect(transport.capabilities).toEqual({
+      stats: 'native',
+      redelivery: 'bus',
+      attemptCounter: 'native',
+      dlq: 'native',
+    });
+  });
+
+  it('CloudTasksTransport declares honest values (native retry, no native DLQ, no surfaced attempt count)', () => {
+    const transport = new CloudTasksTransport();
+
+    expect(transport.capabilities).toEqual({
+      stats: 'none',
+      redelivery: 'bus',
+      attemptCounter: 'synthetic',
+      dlq: 'table',
+    });
   });
 });

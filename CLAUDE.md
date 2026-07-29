@@ -276,7 +276,7 @@ autodiscovered — no hand-maintained eval lists. Core SEs carry per-SE README m
 README (the pre-v2 legacy workflow-SE estate) degrades to defaults rather than erroring.
 Full contract: `server-config/docs/setpoint-eval-conventions.md`.
 
-### Core SEs (`setpoint-evals/`) -- 28 tests
+### Core SEs (`setpoint-evals/`) -- 30 tests
 Test generic engine capabilities (retry, DLQ, deduplication, concurrency, maintenance tasks,
 leader election, schema integrity, Setpoint Evals discovery/run API, DAG/activity endpoints).
 Count grows with the engine — treat any number in prose as a snapshot, not a contract; the
@@ -519,8 +519,10 @@ Workers report progress via HTTP POST to the orchestrator.
   recordsProcessed?: number;
   recordsFailed?: number;
   retryMetadata?: {
-    sqsMessageId: string;
-    sqsReceiveCount: number;
+    taskHandle?: string;            // Bus-neutral primary (alias pair with sqsMessageId)
+    attemptNumber?: number;         // Bus-neutral primary (alias pair with sqsReceiveCount)
+    sqsMessageId?: string;          // Compat alias — orchestrator falls back to it
+    sqsReceiveCount?: number;       // Compat alias — orchestrator falls back to it
     processingTimeMs: number;
     isRetry: boolean;
   };
@@ -538,7 +540,8 @@ See `docs/guides/callback-contract.md` for full details.
 
 ## Database Schema (Core)
 
-Two tables in `dtm` database:
+Three tables in `dtm` database (`dtm_dead_letters` is the redelivery engine's
+bus-neutral dead-letter quarantine — empty under the SQS profile):
 
 ### `dtm_jobs`
 | Column | Type | Description |
@@ -565,6 +568,8 @@ Two tables in `dtm` database:
 | `output` | JSONB | Output data from worker callback |
 | `sqs_message_id` | VARCHAR | SQS message tracking |
 | `retry_count` / `max_retry_count` | INT | Retry tracking |
+| `attempt_count` | INT | Bus-neutral synthetic dispatch counter (redelivery engine) |
+| `lease_expires_at` | TIMESTAMP | Delegation lease for the redelivery engine (NULL = never scanned) |
 | `execution_history` | JSONB | Array of all attempt records |
 | `kafka_published_at` | TIMESTAMP | When published to Kafka |
 | `ack_received_at` | TIMESTAMP | When ACK arrived |
@@ -600,6 +605,8 @@ Example: `enableDeduplication` → `FEATURE_FLAG_ENABLE_DEDUPLICATION`
 | `ENABLE_DEDUPLICATION` | `false` | Request deduplication |
 | `ENABLE_REQUEST_FEATURE_FLAGS` | `true` (dev) | Allow per-request flag overrides |
 | `MAINTENANCE_SCHEDULER_ENABLED` | `true` | Automatic maintenance task scheduling |
+| `REDELIVERY_ENGINE_FORCE_ENABLED` | `false` | Force the orchestrator-driven redelivery engine on (SE escape hatch; auto-on only for transports declaring `redelivery: 'orchestrator'`) |
+| `REDELIVERY_LEASE_SECONDS` | `300` | Delegation lease stamped at each dispatch; the redelivery engine re-dispatches non-terminal steps past it |
 | `PUBLISH_EVENTS_TO_KAFKA` | `true` | Enable Kafka event publishing |
 | `ORCHESTRATOR_CALLBACK_URL` | `http://orchestrator:3000` | Callback URL for workers (container context) |
 | `KAFKA_BROKER` | `dtm-kafka:29092` | Kafka broker (container context) |
@@ -639,6 +646,7 @@ Open `http://localhost:8090` — inspect topics, messages, consumer lag.
 |---------|-------|-----|
 | HTTP 000 / connection refused | Wrong port (3000 vs 3002) | Use `ORCHESTRATOR_URL="http://localhost:3002/api/v1"` |
 | SE POST gets 404 `{"message":"Cannot POST /api/v1/workflows/...","error":"Not Found"}` (raw-Nest shape, NOT the orchestrator's `{"code":"NOT_FOUND",...}` filter shape) and nothing in `docker logs dtm-orchestrator` | **No `.env.local` in this checkout/worktree** → helpers fall back to `.env` → `ORCHESTRATOR_PORT=3000` (container-internal) → the request hits whatever else binds host port 3000 (e.g. connectivity-tester, a NestJS app that answers with a plausible 404) | `cp .env.local.example .env.local` — MANDATORY in every fresh worktree (gitignored files don't come along) |
+| init-typeorm fails `password authentication failed for user "dtm_user"` right after `git worktree add` | **No `.env` in the worktree** → `local-env.sh` seeds a template `.env` (`DTM_DB_PASSWORD=your_password`) but the long-lived `postgres_data` volume carries the real password from the main checkout | Copy `.env` from the main checkout into the worktree too (same gitignored-file class as `.env.local`) |
 | Worker fails "X not found in source database" while the dedicated source-db container clearly has the row | Workers read the `dtm-db` copies, not the dedicated containers (see Workflow Source DBs warning above) | Query `dtm-db`; if it's stale, wipe `postgres_data` volume and restart so init-all-databases.sh reloads the canonical seed files |
 | Step stuck in WAITING_FOR_ACK | ACK not arrived from dev-ack-simulator | Check simulator logs, Kafka consumer lag |
 | Step stuck in PENDING | Dependencies not met (check if parent is WAITING_FOR_ACK) | Wait for ACK or check continueJob() logs |

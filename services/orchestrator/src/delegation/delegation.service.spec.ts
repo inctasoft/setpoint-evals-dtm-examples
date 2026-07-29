@@ -5,6 +5,7 @@ import { QueueTransport } from '../transport/queue-transport.interface';
 import { StepRepository, StepStatus, JobType } from '@dtm/database';
 import { StepDelegationDto } from './dto/step-delegation.dto';
 import { CorrelationService } from '../common/correlation/correlation.service';
+import { ConfigService } from '@nestjs/config';
 import { WorkflowConfigService } from '../workflow-loader/workflow-config.service';
 import { WorkflowRegistryService } from '../workflow-loader/workflow-registry.service';
 
@@ -16,7 +17,12 @@ describe('DelegationService', () => {
   beforeEach(async () => {
     // Create mock implementations
     const mockTransport = {
-      capabilities: { stats: 'native' as const },
+      capabilities: {
+        stats: 'native' as const,
+        redelivery: 'bus' as const,
+        attemptCounter: 'native' as const,
+        dlq: 'native' as const,
+      },
       sendTask: jest.fn(),
       getQueueStatuses: jest.fn(),
       getWorkerEndpointUrl: jest.fn(),
@@ -27,7 +33,12 @@ describe('DelegationService', () => {
       findById: jest.fn(),
       updateStatus: jest.fn(),
       markAsDelegated: jest.fn(),
+      recordDispatch: jest.fn().mockResolvedValue(undefined),
       claimForDelegation: jest.fn().mockResolvedValue(true),
+    };
+
+    const mockConfigService = {
+      get: jest.fn().mockImplementation((_key: string, def?: string) => def),
     };
 
     const mockCorrelationService = {
@@ -63,6 +74,7 @@ describe('DelegationService', () => {
         { provide: QueueTransport, useValue: mockTransport },
         { provide: StepRepository, useValue: mockStepRepository },
         { provide: CorrelationService, useValue: mockCorrelationService },
+        { provide: ConfigService, useValue: mockConfigService },
         { provide: WorkflowConfigService, useValue: mockWorkflowConfigService },
         { provide: WorkflowRegistryService, useValue: mockWorkflowRegistryService },
       ],
@@ -106,6 +118,37 @@ describe('DelegationService', () => {
         expect(result.stepId).toBe('step-1');
         expect(result.sqsMessageId).toBe('msg-abc-123');
         expect(stepRepository.markAsDelegated).toHaveBeenCalledWith('step-1', 'msg-abc-123');
+      });
+
+      it('should stamp the synthetic attempt counter and delegation lease on every dispatch', async () => {
+        // Arrange
+        const dto: StepDelegationDto = {
+          jobId: 'job-123',
+          stepId: 'step-1',
+          stepValue: '1',
+          stepType: 'Customer',
+          queueName: 'order-validate-customer',
+          jobType: JobType.DEFAULT,
+          input: {},
+        };
+
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
+          success: true,
+          taskHandle: 'msg-abc-123',
+        });
+
+        const before = Date.now();
+
+        // Act
+        await service.delegateStep(dto);
+
+        // Assert — every dispatch (initial or re-) refreshes the lease and
+        // increments the bus-neutral attempt counter (default lease: 300s).
+        expect(stepRepository.recordDispatch).toHaveBeenCalledWith('step-1', expect.any(Date));
+        const lease = stepRepository.recordDispatch.mock.calls[0][1] as Date;
+        expect(lease.getTime()).toBeGreaterThanOrEqual(before + 300 * 1000);
+        expect(lease.getTime()).toBeLessThan(Date.now() + 301 * 1000);
       });
 
       it('should send correct SQS message payload', async () => {
@@ -718,6 +761,66 @@ describe('DelegationService', () => {
         expect(result.success).toBe(true);
         expect(result.stepId).toBe(stepId);
         expect(result.sqsMessageId).toBe('msg-retry-123');
+      });
+
+      it('should reset IN_PROGRESS to PENDING so claimForDelegation can re-claim (engine re-dispatch)', async () => {
+        // Arrange — the redelivery engine re-dispatches lease-expired
+        // IN_PROGRESS / IN_PROGRESS_RETRYING steps, not just DELEGATED ones.
+        const stepId = 'step-in-progress';
+        const mockStep = {
+          id: stepId,
+          stepValue: 'ValidateCustomer',
+          status: StepStatus.IN_PROGRESS,
+          input: {},
+          job: {
+            id: 'job-123',
+            type: JobType.DEFAULT,
+          },
+        };
+
+        stepRepository.findById.mockResolvedValue(mockStep as any);
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
+          success: true,
+          taskHandle: 'msg-redispatch-1',
+        });
+
+        // Act
+        const result = await service.retryDelegation(stepId);
+
+        // Assert
+        expect(result.success).toBe(true);
+        expect(stepRepository.updateStatus).toHaveBeenCalledWith(stepId, StepStatus.PENDING);
+        expect(transport.sendTask).toHaveBeenCalled();
+      });
+
+      it('should reset IN_PROGRESS_RETRYING to PENDING so claimForDelegation can re-claim', async () => {
+        // Arrange
+        const stepId = 'step-retrying';
+        const mockStep = {
+          id: stepId,
+          stepValue: 'ValidateCustomer',
+          status: StepStatus.IN_PROGRESS_RETRYING,
+          input: {},
+          job: {
+            id: 'job-123',
+            type: JobType.DEFAULT,
+          },
+        };
+
+        stepRepository.findById.mockResolvedValue(mockStep as any);
+        transport.getWorkerEndpointUrl.mockReturnValue('http://orchestrator:3000');
+        transport.sendTask.mockResolvedValue({
+          success: true,
+          taskHandle: 'msg-redispatch-2',
+        });
+
+        // Act
+        const result = await service.retryDelegation(stepId);
+
+        // Assert
+        expect(result.success).toBe(true);
+        expect(stepRepository.updateStatus).toHaveBeenCalledWith(stepId, StepStatus.PENDING);
       });
 
       it('should use step input from database for retry', async () => {

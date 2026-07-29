@@ -3,14 +3,21 @@ import { StepStatus } from '@dtm/database';
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
- * Retry metadata from SQS message attributes
- * Sent by Lambda workers to track execution attempts
+ * Retry metadata from task-bus message attributes.
+ * Sent by workers to track execution attempts.
+ *
+ * Bus-neutral naming (operator decision D-D): `attemptNumber` / `taskHandle`
+ * are the primary names; `sqsReceiveCount` / `sqsMessageId` are accepted
+ * compat aliases. Current workers send BOTH; the orchestrator prefers the
+ * bus-neutral names and falls back to the aliases (old workers).
  */
 export interface RetryMetadata {
-  sqsMessageId: string;
-  sqsReceiveCount: number; // How many times SQS has delivered this message
+  taskHandle?: string;
+  attemptNumber?: number;
+  sqsMessageId?: string;
+  sqsReceiveCount?: number; // How many times the bus has delivered this task
   processingTimeMs: number;
-  isRetry: boolean; // True if receiveCount > 1
+  isRetry: boolean; // True if attemptNumber > 1
 }
 
 /**
@@ -96,9 +103,13 @@ export class StepProgressDto {
   };
 
   @ApiProperty({
-    description: 'Retry metadata from SQS message attributes (for tracking execution attempts)',
+    description:
+      'Retry metadata from task-bus message attributes (for tracking execution attempts). ' +
+      'Bus-neutral primaries: taskHandle/attemptNumber; sqsMessageId/sqsReceiveCount accepted as compat aliases.',
     required: false,
     example: {
+      taskHandle: 'abc123',
+      attemptNumber: 2,
       sqsMessageId: 'abc123',
       sqsReceiveCount: 2,
       processingTimeMs: 1234,

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { LambdaStepPayload } from '../aws/sqs.service';
 import { QueueTransport } from '../transport/queue-transport.interface';
 import { StepRepository, StepStatus, JobType } from '@dtm/database';
@@ -22,6 +23,7 @@ export class DelegationService {
     private readonly transport: QueueTransport,
     private readonly stepRepository: StepRepository,
     private readonly correlationService: CorrelationService,
+    private readonly configService: ConfigService,
     private readonly workflowConfig: WorkflowConfigService,
     private readonly workflowRegistry: WorkflowRegistryService,
   ) {}
@@ -82,6 +84,19 @@ export class DelegationService {
 
       this.logger.log(`Successfully delegated step ${dto.stepId}. Handle: ${result.taskHandle}`);
       await this.stepRepository.markAsDelegated(dto.stepId, result.taskHandle);
+
+      // Stamp the bus-neutral dispatch bookkeeping on EVERY dispatch (initial
+      // or re-): increment the synthetic attempt counter and set the
+      // delegation lease the redelivery engine scans. Inert under transports
+      // with native redelivery (nothing reads these columns there).
+      const leaseSeconds = parseInt(
+        this.configService.get<string>('REDELIVERY_LEASE_SECONDS', '300'),
+        10,
+      );
+      await this.stepRepository.recordDispatch(
+        dto.stepId,
+        new Date(Date.now() + leaseSeconds * 1000),
+      );
 
       return { stepId: dto.stepId, success: true, sqsMessageId: result.taskHandle };
     } catch (error) {
@@ -194,10 +209,17 @@ export class DelegationService {
       processingConfig: stepDef.metadata?.processingConfig as StepDelegationDto['processingConfig'],
     };
 
-    // Reset DELEGATED → PENDING so claimForDelegation (which guards against concurrent
-    // double-delegation by checking status='pending') can atomically claim it.
-    // Without this, retryDelegation would silently succeed without re-sending the SQS message.
-    if (step.status === StepStatus.DELEGATED) {
+    // Reset an active/dispatched status → PENDING so claimForDelegation (which
+    // guards against concurrent double-delegation by checking status='pending')
+    // can atomically claim it. Without this, retryDelegation would silently
+    // succeed without re-sending the SQS message. Covers DELEGATED (stuck
+    // delegation recovery) and IN_PROGRESS / IN_PROGRESS_RETRYING (redelivery
+    // engine re-dispatch of lease-expired steps).
+    if (
+      step.status === StepStatus.DELEGATED ||
+      step.status === StepStatus.IN_PROGRESS ||
+      step.status === StepStatus.IN_PROGRESS_RETRYING
+    ) {
       await this.stepRepository.updateStatus(stepId, StepStatus.PENDING);
     }
 

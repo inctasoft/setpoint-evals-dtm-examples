@@ -11,6 +11,8 @@ import { WorkflowConfigService } from '../workflow-loader/workflow-config.servic
 import { WorkflowRegistryService } from '../workflow-loader/workflow-registry.service';
 import { EventsGateway } from '../websocket/events.gateway';
 import { CorrelationService } from '../common/correlation/correlation.service';
+import { ConfigService } from '@nestjs/config';
+import { QueueTransport } from '../transport/queue-transport.interface';
 import { StepProgressDto } from './dto/step-progress.dto';
 
 describe('CallbackService', () => {
@@ -77,6 +79,21 @@ describe('CallbackService', () => {
       getCorrelationId: jest.fn().mockReturnValue('test-correlation-id'),
     };
 
+    // Default aws/SQS profile: bus redelivery, engine OFF — the engine-aware
+    // branches in CallbackService must stay byte-identical to pre-engine behavior.
+    const mockTransport = {
+      capabilities: {
+        stats: 'native',
+        redelivery: 'bus',
+        attemptCounter: 'native',
+        dlq: 'native',
+      },
+    };
+
+    const mockConfigService = {
+      get: jest.fn().mockImplementation((_key: string, def?: string) => def),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CallbackService,
@@ -90,6 +107,8 @@ describe('CallbackService', () => {
         { provide: WorkflowRegistryService, useValue: mockWorkflowRegistryService },
         { provide: EventsGateway, useValue: mockEventsGateway },
         { provide: CorrelationService, useValue: mockCorrelationService },
+        { provide: QueueTransport, useValue: mockTransport },
+        { provide: ConfigService, useValue: mockConfigService },
       ],
     }).compile();
 

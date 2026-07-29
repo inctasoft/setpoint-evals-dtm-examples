@@ -37,7 +37,11 @@ export function createBatchItemFailure(messageId: string): BatchItemFailure {
 }
 
 /**
- * Build retry metadata from SQS attributes and processing time
+ * Build retry metadata from SQS attributes and processing time.
+ *
+ * Emits BOTH the bus-neutral names (taskHandle / attemptNumber) and the
+ * legacy SQS aliases (sqsMessageId / sqsReceiveCount) so one release of
+ * mixed worker/orchestrator versions works (operator decision D-D).
  *
  * @param sqsAttributes - SQS message attributes
  * @param processingStartTime - Timestamp when processing started (from Date.now())
@@ -47,11 +51,15 @@ export function buildRetryMetadata(
   sqsAttributes: SQSMessageAttributes,
   processingStartTime: number,
 ): {
+  taskHandle: string;
+  attemptNumber: number;
   sqsMessageId: string;
   sqsReceiveCount: number;
   processingTimeMs: number;
 } {
   return {
+    taskHandle: sqsAttributes.messageId,
+    attemptNumber: sqsAttributes.receiveCount,
     sqsMessageId: sqsAttributes.messageId,
     sqsReceiveCount: sqsAttributes.receiveCount,
     processingTimeMs: Date.now() - processingStartTime,

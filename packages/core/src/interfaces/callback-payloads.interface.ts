@@ -9,19 +9,31 @@
 
 /**
  * Retry metadata tracked across worker attempts.
- * Populated by the worker SDK from SQS message attributes.
+ * Populated by the worker SDK from task-bus message attributes.
+ *
+ * Bus-neutral naming (operator decision D-D): `attemptNumber` / `taskHandle`
+ * are the primary names; `sqsReceiveCount` / `sqsMessageId` are accepted
+ * compat aliases so one release of mixed worker/orchestrator versions works.
+ * The orchestrator prefers the bus-neutral names and falls back to the
+ * aliases; worker-sdk sends BOTH during the transition window.
  */
 export interface RetryMetadata {
-  /** SQS message ID for this attempt */
-  sqsMessageId: string;
+  /** Bus-neutral task handle for this attempt (SQS message ID on SQS) */
+  taskHandle?: string;
 
-  /** Number of times SQS has delivered this message (1 = first attempt) */
-  sqsReceiveCount: number;
+  /** Bus-neutral delivery attempt number (1 = first attempt) */
+  attemptNumber?: number;
+
+  /** Compat alias of taskHandle — SQS message ID for this attempt */
+  sqsMessageId?: string;
+
+  /** Compat alias of attemptNumber — SQS delivery count (1 = first attempt) */
+  sqsReceiveCount?: number;
 
   /** Wall-clock time (ms) the worker spent processing */
   processingTimeMs: number;
 
-  /** Whether this is a retry (sqsReceiveCount > 1) */
+  /** Whether this is a retry (attemptNumber > 1) */
   isRetry: boolean;
 }
 

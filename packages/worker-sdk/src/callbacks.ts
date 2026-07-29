@@ -36,10 +36,14 @@ export async function sendInProgressCallback(
       stepId,
       status: "in_progress",
       retryMetadata: {
-        sqsMessageId: retryMetadata.sqsMessageId,
-        sqsReceiveCount: retryMetadata.sqsReceiveCount,
+        // Bus-neutral primaries + legacy SQS aliases (D-D compat window):
+        // workers send BOTH so mixed worker/orchestrator versions interoperate.
+        taskHandle: retryMetadata.taskHandle ?? retryMetadata.sqsMessageId,
+        attemptNumber: retryMetadata.attemptNumber ?? retryMetadata.sqsReceiveCount,
+        sqsMessageId: retryMetadata.sqsMessageId ?? retryMetadata.taskHandle,
+        sqsReceiveCount: retryMetadata.sqsReceiveCount ?? retryMetadata.attemptNumber,
         processingTimeMs: retryMetadata.processingTimeMs,
-        isRetry: retryMetadata.sqsReceiveCount > 1,
+        isRetry: (retryMetadata.attemptNumber ?? retryMetadata.sqsReceiveCount ?? 1) > 1,
       },
     };
 
@@ -92,10 +96,14 @@ export async function sendSuccessCallback<T = unknown>(
       output,
       // Retry metadata for tracking execution attempts
       retryMetadata: {
-        sqsMessageId: retryMetadata.sqsMessageId,
-        sqsReceiveCount: retryMetadata.sqsReceiveCount,
+        // Bus-neutral primaries + legacy SQS aliases (D-D compat window):
+        // workers send BOTH so mixed worker/orchestrator versions interoperate.
+        taskHandle: retryMetadata.taskHandle ?? retryMetadata.sqsMessageId,
+        attemptNumber: retryMetadata.attemptNumber ?? retryMetadata.sqsReceiveCount,
+        sqsMessageId: retryMetadata.sqsMessageId ?? retryMetadata.taskHandle,
+        sqsReceiveCount: retryMetadata.sqsReceiveCount ?? retryMetadata.attemptNumber,
         processingTimeMs: retryMetadata.processingTimeMs,
-        isRetry: retryMetadata.sqsReceiveCount > 1,
+        isRetry: (retryMetadata.attemptNumber ?? retryMetadata.sqsReceiveCount ?? 1) > 1,
       },
     };
 
@@ -145,10 +153,14 @@ export async function sendFailureCallback(
       error: error.message,
       // Retry metadata for tracking execution attempts
       retryMetadata: {
-        sqsMessageId: retryMetadata.sqsMessageId,
-        sqsReceiveCount: retryMetadata.sqsReceiveCount,
+        // Bus-neutral primaries + legacy SQS aliases (D-D compat window):
+        // workers send BOTH so mixed worker/orchestrator versions interoperate.
+        taskHandle: retryMetadata.taskHandle ?? retryMetadata.sqsMessageId,
+        attemptNumber: retryMetadata.attemptNumber ?? retryMetadata.sqsReceiveCount,
+        sqsMessageId: retryMetadata.sqsMessageId ?? retryMetadata.taskHandle,
+        sqsReceiveCount: retryMetadata.sqsReceiveCount ?? retryMetadata.attemptNumber,
         processingTimeMs: retryMetadata.processingTimeMs,
-        isRetry: retryMetadata.sqsReceiveCount > 1,
+        isRetry: (retryMetadata.attemptNumber ?? retryMetadata.sqsReceiveCount ?? 1) > 1,
       },
     };
 

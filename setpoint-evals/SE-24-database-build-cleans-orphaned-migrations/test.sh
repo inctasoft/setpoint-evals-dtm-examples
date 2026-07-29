@@ -37,6 +37,15 @@ rm -rf "$SCRATCH"
 mkdir -p "$SCRATCH"
 cp -r "$DB_PKG/src" "$DB_PKG/tsconfig.json" "$DB_PKG/package.json" "$SCRATCH/"
 
+# Workspace links (@dtm/*) do NOT live at the hoisted root with pnpm's hoisted
+# node-linker — each consumer keeps its own (packages/database/node_modules/
+# @dtm/core -> ../../../core). A bare scratch copy therefore cannot resolve
+# @dtm/core and tsc dies with TS2307 before the orphan-cleanup behavior this SE
+# guards is even exercised. Re-point the scratch copy's link at the real
+# package (same relative shape as the consumer's own link).
+mkdir -p "$SCRATCH/node_modules/@dtm"
+ln -s ../../../core "$SCRATCH/node_modules/@dtm/core"
+
 # Seed dist/migrations with a REAL orphan artifact (a genuine pre-consolidation
 # compiled migration, byte-identical to what the Phase 2a refactor actually
 # left behind) plus an unrelated stray file, simulating the aged-checkout

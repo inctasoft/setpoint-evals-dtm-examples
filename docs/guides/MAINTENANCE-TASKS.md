@@ -31,6 +31,13 @@ This guide details the available tasks, how to execute them (scheduled or manual
 *   **Purpose**: Aggregates system health statistics (active jobs, success rates, failure rates).
 *   **Schedule**: Every 5 minutes.
 
+### 5. Redelivery Engine (`redelivery-engine`)
+*   **Purpose**: Orchestrator-driven redelivery for transports without native redelivery. Scans for steps whose delegation lease (`dtm_steps.lease_expires_at`) expired while still `DELEGATED` / `IN_PROGRESS` / `IN_PROGRESS_RETRYING` and re-dispatches them (incrementing the synthetic `attempt_count`); steps that exhaust `max_retry_count` are written to `dtm_dead_letters` and marked `FAILED`.
+*   **Activation**: Fail-closed — a total no-op unless the active transport declares `redelivery: 'orchestrator'` (none of the current transports do) **or** `REDELIVERY_ENGINE_FORCE_ENABLED=true` (setpoint-eval escape hatch). Under the default SQS profile nothing fires: SQS redelivery semantics are unchanged.
+*   **Configuration**: `REDELIVERY_LEASE_SECONDS` (lease stamped at each dispatch, default 300).
+*   **Schedule**: Every 30 seconds.
+*   **Pinned by**: SE-29 (lease expiry re-dispatch), SE-30 (dead letter on exhaustion).
+
 ---
 
 ## 🚀 Execution Methods
