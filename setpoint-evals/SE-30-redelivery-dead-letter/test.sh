@@ -79,8 +79,12 @@ set_engine_env_and_recreate "true" \
   || { log_fail "orchestrator did not come back healthy with the engine forced on"; exit 1; }
 
 # --- act: a worker that fails EVERY attempt ----------------------------------
-# NOTE: every engine re-dispatch is a FRESH bus message, so the worker always
-# sees delivery attempt 1 — failOnAttempts: [1] fails every single attempt.
+# NOTE (aws): every engine re-dispatch is a FRESH bus message, so the worker
+# always sees delivery attempt 1 — failOnAttempts: [1] fails every attempt.
+# NOTE (zmq): the synthetic attempt counter INCREMENTS per dispatch, so the
+# bus-neutral expression of "fail every attempt" is [1,2,3] (Phase 4).
+FAIL_ATTEMPTS="[1]"
+[ "$(se_bus_profile)" = "zmq" ] && FAIL_ATTEMPTS="[1,2,3]"
 EXTERNAL_SYSTEM_ID=$(uuidgen)
 PAYLOAD=$(cat <<EOF
 {
@@ -88,7 +92,7 @@ PAYLOAD=$(cat <<EOF
   "payload": { "customerId": 1, "orderId": 1, "entityId": "$EXTERNAL_SYSTEM_ID" },
   "enableDeduplication": false,
   "testOptions": {
-    "ValidateCustomer": { "simDelay": 500, "failOnAttempts": [1] },
+    "ValidateCustomer": { "simDelay": 500, "failOnAttempts": $FAIL_ATTEMPTS },
     "ValidateProduct": { "simDelay": 500 },
     "SubmitCustomer": { "simDelay": 500, "ackDelay": 500 },
     "SubmitOrder": { "simDelay": 500, "ackDelay": 500 }

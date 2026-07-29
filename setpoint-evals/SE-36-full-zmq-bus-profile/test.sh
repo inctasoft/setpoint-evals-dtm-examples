@@ -142,7 +142,15 @@ BROKERS_LEFT="$(docker ps -q $(for c in $BROKER_CONTAINERS; do echo --filter "na
 POLLERS_LEFT="$(docker ps -q --filter "name=${PROJECT}-sqs-poller" | wc -l | tr -d ' ')"
 
 READY_CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 15 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/health/ready")"
-READY_KAFKA="$(curl -s -m 15 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/health/ready" | jq -r '.info.kafka.status // .details.kafka.status // "missing"' 2>/dev/null)"
+# Retry until the kafka key is present — a preceding SE's trap recreate can be
+# mid-boot when this probe first fires (observed live as a false 'missing').
+READY_BODY=""
+for _ in 1 2 3 4 5; do
+  READY_BODY="$(curl -s -m 15 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/health/ready")"
+  echo "$READY_BODY" | jq -e '.info.kafka.status' >/dev/null 2>&1 && break
+  sleep 3
+done
+READY_KAFKA="$(echo "$READY_BODY" | jq -r '.info.kafka.status // .details.kafka.status // "missing"' 2>/dev/null)"
 TOPICS_JSON=""
 for _ in 1 2 3; do
   TOPICS_JSON="$(curl -s -m 20 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/kafka/topics")"
