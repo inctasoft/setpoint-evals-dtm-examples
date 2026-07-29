@@ -154,6 +154,21 @@ se_skip_if_zmq() {
   fi
 }
 
+# se_wait_orchestrator_health [tries] [interval] — poll /health until it answers
+# 200. One-shot preflight probes se_skip falsely when an SE runs right after a
+# recreate-heavy SE (env flips): the orchestrator can take minutes to boot on a
+# loaded host (observed live: a whole destructive wave skip-racing one slow
+# recreate). Use in preflights instead of a single curl.
+se_wait_orchestrator_health() {
+  local tries="${1:-60}" interval="${2:-2}" i=0
+  until curl -sf -o /dev/null -m 3 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/health" 2>/dev/null; do
+    i=$((i + 1))
+    [ "$i" -ge "$tries" ] && return 1
+    sleep "$interval"
+  done
+  return 0
+}
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Configuration
 # ═══════════════════════════════════════════════════════════════════════════

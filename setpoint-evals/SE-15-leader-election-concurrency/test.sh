@@ -35,8 +35,10 @@ log_info "SE-15: LEADER-1 advisory-lock leader election (concurrent manual trigg
 
 # --- preflight ---------------------------------------------------------------
 docker exec "$DB_CONTAINER" true >/dev/null 2>&1 || se_skip "$DB_CONTAINER is not running"
-curl -s -o /dev/null -m 5 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/maintenance/health" \
-  || se_skip "orchestrator is not reachable at ${ORCHESTRATOR_HOST}"
+# Retry-poll (loaded hosts boot the orchestrator slowly after recreate-heavy SEs)
+_i=0; until curl -sf -o /dev/null -m 3 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/health" 2>/dev/null; do
+  _i=$((_i + 1)); [ "$_i" -ge 90 ] && se_skip "orchestrator is not reachable at ${ORCHESTRATOR_HOST}"; sleep 2
+done
 
 # --- arrange: seed STUCK_STEPS synthetic WAITING_FOR_ACK steps ---------------
 # Each on its own synthetic job (workflow_name/type mirror a real

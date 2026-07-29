@@ -28,7 +28,8 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 # --- preflight ---------------------------------------------------------------
-curl -s -o /dev/null -m 5 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/health" \
+# Retry-poll (loaded hosts boot the orchestrator slowly after recreate-heavy SEs)
+se_wait_orchestrator_health 90 2 \
   || se_skip "orchestrator is not reachable at ${ORCHESTRATOR_HOST}"
 docker compose version >/dev/null 2>&1 || se_skip "docker compose CLI not available"
 
