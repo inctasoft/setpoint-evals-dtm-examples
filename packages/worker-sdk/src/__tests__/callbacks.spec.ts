@@ -48,6 +48,10 @@ describe("Lambda Worker Utils - Callbacks", () => {
           recordsProcessed: defaultParams.recordsProcessed,
           output: defaultParams.output,
           retryMetadata: {
+            // Bus-neutral primaries are derived from the legacy aliases and
+            // sent alongside them (D-D compat window)
+            taskHandle: "msg-789",
+            attemptNumber: 1,
             ...defaultParams.retryMetadata,
             isRetry: false,
           },
@@ -224,6 +228,10 @@ describe("Lambda Worker Utils - Callbacks", () => {
           recordsProcessed: 0,
           error: "Test error",
           retryMetadata: {
+            // Bus-neutral primaries are derived from the legacy aliases and
+            // sent alongside them (D-D compat window)
+            taskHandle: "msg-789",
+            attemptNumber: 1,
             ...defaultParams.retryMetadata,
             isRetry: false,
           },

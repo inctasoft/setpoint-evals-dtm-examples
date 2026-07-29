@@ -17,6 +17,8 @@ import type { StepDefinition } from '@dtm/core';
 import { KafkaService } from '../kafka/kafka.service';
 import { EventsGateway } from '../websocket/events.gateway';
 import { CorrelationService } from '../common/correlation/correlation.service';
+import { ConfigService } from '@nestjs/config';
+import { QueueTransport, isRedeliveryEngineActive } from '../transport/queue-transport.interface';
 
 /**
  * Callback Service
@@ -43,7 +45,22 @@ export class CallbackService {
     private readonly workflowRegistry: WorkflowRegistryService,
     private readonly eventsGateway: EventsGateway,
     private readonly correlationService: CorrelationService,
+    private readonly transport: QueueTransport,
+    private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Is the orchestrator-driven redelivery engine active? When true, the
+   * engine (RedeliveryEngineTask) owns re-dispatch AND attempt exhaustion —
+   * a FAILED callback never waits on bus redelivery and never marks the step
+   * terminally FAILED itself. When false (default aws/SQS profile), every
+   * code path below is byte-identical to the pre-engine behavior.
+   */
+  private redeliveryEngineActive(): boolean {
+    const forceEnabled =
+      this.configService.get<string>('REDELIVERY_ENGINE_FORCE_ENABLED', 'false') === 'true';
+    return isRedeliveryEngineActive(this.transport.capabilities, forceEnabled);
+  }
 
   /**
    * Resolve the correct WorkflowConfigService for a job.
@@ -463,6 +480,25 @@ export class CallbackService {
           throw new Error(`Step ${dto.stepId} not found after update`);
         }
 
+        // When the redelivery engine is active it owns BOTH redelivery and
+        // exhaustion: updateStepFromCallback already left the step
+        // IN_PROGRESS_RETRYING, and the engine's lease-expiry scan will
+        // re-dispatch it (or dead-letter it once attempt_count is exhausted
+        // and nudge orchestration itself). Nothing more to do here.
+        if (this.redeliveryEngineActive()) {
+          this.logger.log(
+            `Step ${dto.stepId} failed (attempt ${updatedStep.retryCount}/${updatedStep.maxRetryCount}). ` +
+              `Redelivery engine owns re-dispatch and exhaustion. Not updating job status or triggering orchestration.`,
+          );
+
+          return {
+            success: true,
+            message: 'Step failed, redelivery engine will re-dispatch or dead-letter',
+            jobId: dto.jobId,
+            stepId: dto.stepId,
+          };
+        }
+
         // Check if retries are exhausted using the step's configured maxRetryCount.
         // The SQS poller provides reliable message re-delivery for retries.
         const effectiveMaxRetries = updatedStep.maxRetryCount;
@@ -582,7 +618,11 @@ export class CallbackService {
       throw new Error(`Step ${dto.stepId} not found`);
     }
 
-    // Build execution attempt record
+    // Build execution attempt record.
+    // Bus-neutral wire names (D-D): prefer attemptNumber/taskHandle, fall back
+    // to the sqsReceiveCount/sqsMessageId compat aliases (old workers).
+    const busAttemptNumber = dto.retryMetadata?.attemptNumber ?? dto.retryMetadata?.sqsReceiveCount;
+    const busTaskHandle = dto.retryMetadata?.taskHandle ?? dto.retryMetadata?.sqsMessageId;
     const attemptNumber = (step.retryCount || 0) + 1;
     const attempt: ExecutionAttempt = {
       attemptNumber,
@@ -590,8 +630,9 @@ export class CallbackService {
       status: dto.status === StepStatus.COMPLETED ? 'success' : 'failure',
       error: dto.error,
       output: dto.output,
-      sqsMessageId: dto.retryMetadata?.sqsMessageId,
-      sqsReceiveCount: dto.retryMetadata?.sqsReceiveCount,
+      sqsMessageId: busTaskHandle,
+      sqsReceiveCount: busAttemptNumber,
+      taskHandle: busTaskHandle,
       processingTimeMs: dto.retryMetadata?.processingTimeMs,
     };
 
@@ -601,7 +642,7 @@ export class CallbackService {
 
     // Log retry information
     const retryInfo = dto.retryMetadata?.isRetry
-      ? ` (retry attempt ${dto.retryMetadata.sqsReceiveCount}/${step.maxRetryCount})`
+      ? ` (retry attempt ${busAttemptNumber}/${step.maxRetryCount})`
       : '';
     this.logger.log(`Step ${dto.stepId} callback received: ${dto.status}${retryInfo}`);
 
@@ -663,8 +704,13 @@ export class CallbackService {
       }
 
       case StepStatus.FAILED: {
-        // Lambda has failed - determine if retries are exhausted
-        const retriesExhausted = attemptNumber >= step.maxRetryCount;
+        // Lambda has failed - determine if retries are exhausted.
+        // When the redelivery engine is active it OWNS exhaustion: the step
+        // stays IN_PROGRESS_RETRYING and the engine dead-letters it once the
+        // synthetic attempt count is exhausted. When inactive (default aws
+        // profile) the behavior below is byte-identical to the pre-engine one.
+        const engineActive = this.redeliveryEngineActive();
+        const retriesExhausted = !engineActive && attemptNumber >= step.maxRetryCount;
         const finalStatus = retriesExhausted ? StepStatus.FAILED : StepStatus.IN_PROGRESS_RETRYING;
 
         await this.stepRepository.updateFromCallback(dto.stepId, {
@@ -694,7 +740,8 @@ export class CallbackService {
           });
         } else {
           this.logger.log(
-            `Step ${dto.stepId} IN_PROGRESS_RETRYING (attempt ${attemptNumber}/${step.maxRetryCount}): ${dto.error}. SQS will retry.`,
+            `Step ${dto.stepId} IN_PROGRESS_RETRYING (attempt ${attemptNumber}/${step.maxRetryCount}): ${dto.error}. ` +
+              (engineActive ? 'Redelivery engine will re-dispatch.' : 'SQS will retry.'),
           );
           this.eventsGateway.broadcast({
             type: 'step_retrying',

@@ -47,11 +47,18 @@ export interface ProcessingWorkMessage extends BaseWorkMessage {
 }
 
 /**
- * Retry metadata tracked across Lambda attempts
+ * Retry metadata tracked across worker attempts.
+ *
+ * Bus-neutral naming (operator decision D-D): `taskHandle` / `attemptNumber`
+ * are the primary names; `sqsMessageId` / `sqsReceiveCount` are compat
+ * aliases. `buildRetryMetadata` populates BOTH so a mixed-version release
+ * (new worker → old orchestrator, or vice versa) keeps working.
  */
 export interface RetryMetadata {
-  sqsMessageId: string;
-  sqsReceiveCount: number;
+  taskHandle?: string;
+  attemptNumber?: number;
+  sqsMessageId?: string;
+  sqsReceiveCount?: number;
   processingTimeMs: number;
   isRetry: boolean;
 }
