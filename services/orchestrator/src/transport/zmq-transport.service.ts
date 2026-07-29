@@ -250,16 +250,20 @@ export class ZmqTransport extends QueueTransport implements OnModuleInit, OnModu
       let flushed = 0;
       let envelope: ZmqTaskEnvelope | undefined;
       while ((envelope = buffered.shift())) {
+        // Per-iteration capture: the receipt-ack callback below is async and
+        // must not close over the loop-mutated `envelope` (TS18048, and it
+        // would observe later iterations' tasks).
+        const task = envelope;
         const identity = this.registry.pickWorkerIdentity(queueName);
         if (!identity) {
-          buffered.unshift(envelope);
+          buffered.unshift(task);
           break;
         }
-        this.dispatchToWorker(identity, envelope);
-        void this.awaitReceipt(envelope, identity).then((acked) => {
+        this.dispatchToWorker(identity, task);
+        void this.awaitReceipt(task, identity).then((acked) => {
           if (!acked) {
             this.logger.warn(
-              `No receipt-ack for flushed task ${envelope.payload.taskHandle} — lease expiry covers a lost dispatch`,
+              `No receipt-ack for flushed task ${task.payload.taskHandle} — lease expiry covers a lost dispatch`,
             );
           }
         });
