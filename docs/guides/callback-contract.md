@@ -49,6 +49,16 @@ orchestrator versions interoperates. Current workers send BOTH. The orchestrator
 prefers the bus-neutral names and falls back to the aliases, so an old worker that
 only sends `sqsMessageId` / `sqsReceiveCount` keeps working unchanged.
 
+### Bus-neutral event topics (compat aliases, Phase 3)
+
+Cascade configs name their publish topic with `eventTopic` (bus-neutral primary);
+`kafkaTopic` is the accepted compat alias (accept both, prefer `eventTopic`). The
+publish + acknowledgement roundtrip itself travels the `EventBus` abstraction
+(`EVENT_BUS=kafka|zmq`): under `kafka` it is byte-identical to the original Kafka
+flow; under `zmq` the same envelopes travel ZeroMQ PUB/SUB + PUSH/PULL and the
+`event-republish-scan` maintenance task recovers dropped publishes. The step
+callback contract documented here is identical on both buses.
+
 ## Response Format (`StepProgressResponseDto`)
 
 ```json

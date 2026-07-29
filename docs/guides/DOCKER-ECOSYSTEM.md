@@ -182,7 +182,7 @@ This section details exactly which containers are running in specific scenarios 
 | `docker-compose.yml` | **Main Core Services**: DB, Orchestrator, Monitor, Dev-Tools |
 | `docker-compose.workers.yml` | **Worker Ecosystem**: LocalStack, SQS Poller, Queue Init |
 | `docker-compose.kafka.yml` | **Standalone Kafka**: Zookeeper, Kafka, Kafka UI |
-| `docker-compose.zmq.yml` | **ZMQ Task Transport (mixed mode)**: per-workflow `zmq-worker-host` DEALER services + orchestrator ROUTER env (profile `zmq-tasks`; requires `QUEUE_TRANSPORT=zmq`) |
+| `docker-compose.zmq.yml` | **ZMQ Transports (mixed/full modes)**: per-workflow `zmq-worker-host` DEALER services + orchestrator ROUTER env (profile `zmq-tasks`; requires `QUEUE_TRANSPORT=zmq`) + zmq EVENT bus sockets (PUB 5558 / PULL 5559) and dev-ack-simulator zmq client env (requires `EVENT_BUS=zmq`) |
 | `workflows/*/docker-compose.*.yml` | **Source Systems**: Per-workflow source database containers |
 | `docker-compose.orchestrator-integrated.yml`| **Override**: Configures Orchestrator for Integrated Mode |
 | `docker-compose.kafka-init-integrated.yml`| **Utility**: Script to init topics in external Kafka |

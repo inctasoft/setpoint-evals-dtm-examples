@@ -131,8 +131,11 @@ services:
   # Only runs in standalone mode (not in integrated mode with the external system)
   dev-ack-simulator:
     build:
-      context: tools/dev-ack-simulator
-      dockerfile: Dockerfile
+      # Repo-root context: the zmq event bus client type-checks against
+      # packages/core sources (tsconfig paths); runtime gets @dtm/core via the
+      # volume mounts below.
+      context: .
+      dockerfile: tools/dev-ack-simulator/Dockerfile
       network: host
     image: dtm-dev-ack-simulator:latest
     container_name: ${COMPOSE_PROJECT_NAME:-dtm}-dev-ack-simulator
@@ -152,6 +155,12 @@ services:
       - ./workflows/infra-provisioning/dist:/app/wf-infra-provisioning:ro
       # Mount ack simulator dist for dev iteration (pnpm build + docker restart)
       - ./tools/dev-ack-simulator/dist:/app/dist:ro
+      # @dtm/core is an optionalDependency (standalone image install cannot
+      # resolve workspace:*) — provide it read-only at runtime. The zmq event
+      # bus client (EVENT_BUS=zmq) needs its envelope helpers; the kafka
+      # profile ignores it.
+      - ./packages/core/dist:/app/node_modules/@dtm/core/dist:ro
+      - ./packages/core/package.json:/app/node_modules/@dtm/core/package.json:ro
     ports:
       - "3003:3001"
     networks:

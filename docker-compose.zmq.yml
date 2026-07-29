@@ -40,10 +40,26 @@ services:
       # routing gaps, so size the window for ~3x the interval.
       - ZMQ_WORKER_SILENCE_MS=${ZMQ_WORKER_SILENCE_MS:-15000}
       - ZMQ_WORKER_SWEEP_INTERVAL_MS=${ZMQ_WORKER_SWEEP_INTERVAL_MS:-5000}
+      # Phase 3 — zmq EVENT bus (EVENT_BUS=zmq): PUB (events out) + PULL
+      # (acks in) binds. Inert under EVENT_BUS unset/kafka.
+      - ZMQ_EVENTS_ENDPOINT=${ZMQ_EVENTS_ENDPOINT:-tcp://0.0.0.0:5558}
+      - ZMQ_ACKS_ENDPOINT=${ZMQ_ACKS_ENDPOINT:-tcp://0.0.0.0:5559}
+      - EVENT_REPUBLISH_LEASE_SECONDS=${EVENT_REPUBLISH_LEASE_SECONDS:-60}
     ports:
       # Host exposure is optional (debugging host-side workers); worker hosts
       # reach the ROUTER over the internal dtm network at orchestrator:5557.
       - "${ZMQ_TASKS_PORT_HOST:-5557}:5557"
+      - "${ZMQ_EVENTS_PORT_HOST:-5558}:5558"
+      - "${ZMQ_ACKS_PORT_HOST:-5559}:5559"
+
+  # Phase 3 — dev-ack-simulator event-bus client override (merged over
+  # docker-compose.yml's dev-tools service). EVENT_BUS itself flows via
+  # env_file (.env); these are the zmq peer endpoints it connects to.
+  # Inert under EVENT_BUS unset/kafka.
+  dev-ack-simulator:
+    environment:
+      - ZMQ_EVENTS_ENDPOINT=${ZMQ_EVENTS_PEER_ENDPOINT:-tcp://orchestrator:5558}
+      - ZMQ_ACKS_ENDPOINT=${ZMQ_ACKS_PEER_ENDPOINT:-tcp://orchestrator:5559}
 
   # ============================================================================
   # Worker hosts — one service per workflow, compose-scaled for replicas

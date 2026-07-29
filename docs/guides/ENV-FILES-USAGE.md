@@ -183,10 +183,17 @@ configService.get<boolean>("app.autoMigration.onConsumerCreated");
 | `ZMQ_WORKER_SWEEP_INTERVAL_MS` | Zmq worker-registry sweeper cadence | `5000` |
 | `ZMQ_HEARTBEAT_INTERVAL_MS` | Worker-host heartbeat cadence (read by `zmq-worker-host` containers) | `5000` |
 | `ZMQ_TASKS_PORT_HOST` | Optional host port mapping for the ROUTER (debugging) | `5557` |
+| `EVENT_BUS` | Event bus profile: `kafka`, `zmq` | `kafka` |
+| `ZMQ_EVENTS_ENDPOINT` | PUB bind for zmq events out (orchestrator, `EVENT_BUS=zmq` only) | `tcp://0.0.0.0:5558` |
+| `ZMQ_ACKS_ENDPOINT` | PULL bind for zmq acks in (orchestrator, `EVENT_BUS=zmq` only) | `tcp://0.0.0.0:5559` |
+| `EVENT_REPUBLISH_LEASE_SECONDS` | Un-ACKed publish age before the event-republish scan re-publishes | `60` |
+| `EVENT_REPUBLISH_SCAN_FORCE_ENABLED` | Force the event-republish scan on (SE escape hatch) | `false` |
 
 The `zmq` profile additionally needs the `zmq-tasks` compose profile
 (`docker-compose.zmq.yml`) — one `zmq-worker-host` service per workflow.
-With `QUEUE_TRANSPORT` unset/`sqs`, every `ZMQ_*` variable is inert.
+With `QUEUE_TRANSPORT` unset/`sqs`, every task-transport `ZMQ_*` variable is inert;
+likewise with `EVENT_BUS` unset/`kafka`, the event-bus `ZMQ_*` and
+`EVENT_REPUBLISH_*` variables are inert.
 
 ---
 
