@@ -113,6 +113,15 @@ async function main(): Promise<void> {
   console.log(`👋 HELLO sent — serving ${queues.length} queue(s)`);
 
   const sendHeartbeat = () => {
+    // Re-HELLO on EVERY heartbeat tick, not only at boot: the registry is
+    // in-memory, so an orchestrator recreate wipes it — and while zmq
+    // auto-reconnects the socket, registration does not recover by itself
+    // (observed live: fleet permanently empty after recreates, tasks buffered
+    // forever). Registration is idempotent (first/revived transitions log,
+    // steady state is silent; buffered tasks flush on re-registration).
+    void dealer
+      .send(encodeZmqEnvelope(buildZmqHelloEnvelope({ workerId: WORKER_ID, queues })))
+      .catch((error) => console.error("❌ Re-HELLO send failed:", error));
     void dealer
       .send(encodeZmqEnvelope(buildZmqHeartbeatEnvelope(WORKER_ID)))
       .catch((error) => console.error("❌ Heartbeat send failed:", error));

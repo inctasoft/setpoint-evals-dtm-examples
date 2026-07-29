@@ -103,6 +103,15 @@ describe("Phase 2 — worker-host per-workflow isolation", () => {
       jest.doMock(ORDER_WORKERS, () => ({
         handlerMap: { "order-validate-customer": fakeHandler },
       }));
+      // The convention fallback reads the workflow CONFIG for unmapped queues —
+      // mock it explicitly: doMock registrations leak across specs in this file
+      // (earlier discovery specs mock ORDER_CONFIG to throw).
+      jest.doMock(ORDER_CONFIG, () => ({
+        orderProcessingWorkflow: {
+          name: "order-processing",
+          steps: { default: [{ queueName: "order-validate-customer" }] },
+        },
+      }));
       jest.doMock(IOT_WORKERS, throwOnLoad("iot-sensor-pipeline-workers"));
       jest.doMock(INFRA_WORKERS, throwOnLoad("infra-provisioning-workers"));
       jest.doMock(ORDER_TYPEORM, throwOnLoad("order-processing-typeorm"));
@@ -116,6 +125,40 @@ describe("Phase 2 — worker-host per-workflow isolation", () => {
       expect(() => getHandlerMapForWorkflow("nope")).toThrow(
         /No handler map for workflow 'nope'/,
       );
+    });
+  });
+
+  it("SE-ISO-fallback: a queue missing from handlerMap resolves via the source-file convention (archive/record steps)", () => {
+    jest.isolateModules(() => {
+      const fallbackHandler = jest.fn();
+      jest.doMock(ORDER_WORKERS, () => ({
+        handlerMap: { "order-validate-customer": jest.fn() },
+      }));
+      jest.doMock(ORDER_CONFIG, () => ({
+        orderProcessingWorkflow: {
+          name: "order-processing",
+          steps: {
+            default: [
+              { queueName: "order-validate-customer" },
+              { queueName: "order-archive-processed-order" },
+            ],
+          },
+        },
+      }));
+      jest.doMock(
+        "@dtm-workflows/order-processing-workers/dist/archive-processed-order/index.js",
+        () => ({ handler: fallbackHandler }),
+      );
+      jest.doMock(IOT_CONFIG, throwOnLoad("iot-sensor-pipeline"));
+      jest.doMock(INFRA_CONFIG, throwOnLoad("infra-provisioning"));
+      jest.doMock(IOT_WORKERS, throwOnLoad("iot-sensor-pipeline-workers"));
+      jest.doMock(INFRA_WORKERS, throwOnLoad("infra-provisioning-workers"));
+
+      const { getHandlerMapForWorkflow } = require("./handler-registry");
+
+      const handlerMap = getHandlerMapForWorkflow("order-processing");
+      expect(handlerMap["order-archive-processed-order"]).toBe(fallbackHandler);
+      expect(handlerMap["order-validate-customer"]).toBeDefined();
     });
   });
 
