@@ -41,6 +41,15 @@ export class KafkaConsumer implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
+    // EVENT_BUS=zmq: the simulator consumes over the zmq SUB socket instead —
+    // the Kafka consumer stays dark (Phase 3).
+    if ((process.env.EVENT_BUS || "kafka") === "zmq") {
+      this.logger.log(
+        "EVENT_BUS=zmq — Kafka consumer disabled (zmq event bus active)",
+      );
+      return;
+    }
+
     if (this.subscriptions.length === 0) {
       this.logger.warn(
         "No ACK subscriptions configured — Kafka consumer will not start",

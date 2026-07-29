@@ -1,6 +1,6 @@
 import { Module, MiddlewareConsumer, RequestMethod } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
-import { KafkaModule } from "./kafka/kafka.module";
+import { EventBusModule } from "./event-bus/event-bus.module";
 import { SimulatorModule } from "./simulator/simulator.module";
 import { CorrelationModule } from "./common/correlation/correlation.module";
 import { CorrelationMiddleware } from "./common/middleware/correlation.middleware";
@@ -12,7 +12,7 @@ import { CorrelationMiddleware } from "./common/middleware/correlation.middlewar
       envFilePath: [".env", ".env.local", ".env.development"],
     }),
     CorrelationModule,
-    KafkaModule,
+    EventBusModule,
     SimulatorModule,
   ],
 })
