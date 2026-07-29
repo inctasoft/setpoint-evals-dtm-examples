@@ -107,7 +107,7 @@ SELECT COALESCE(MAX(attempt_count),0) FROM dtm_steps WHERE job_id='<JOB_ID>';  -
 - [ ] two order-processing replicas were registered before the crash
 - [ ] the ValidateCustomer task reached a replica before the kill
 - [ ] the redelivery engine executed successfully (auto-on under zmq)
-- [ ] the engine re-dispatched the crashed worker's lease-expired step
+- [ ] the engine re-dispatched the crashed worker's lease-expired step (manual trigger or 30s cron — first to win)
 - [ ] the synthetic attempt counter proves a re-dispatch (attempt_count >= 2)
 - [ ] the job completed after losing a worker mid-task
 

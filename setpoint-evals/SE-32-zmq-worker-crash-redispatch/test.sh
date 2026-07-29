@@ -155,6 +155,14 @@ TASK_RESULT="$(curl -s -X POST -H "Content-Type: application/json" -d '{}' \
 TASK_SUCCESS="$(echo "$TASK_RESULT" | jq -r '.success // false')"
 RE_DISPATCHED="$(echo "$TASK_RESULT" | jq -r '.metrics.reDispatched // 0')"
 
+# Race note: the engine ALSO runs on a 30s cron. If a cron tick re-dispatched
+# the lease-expired step before this manual trigger, the manual call honestly
+# reports reDispatched=0 — the re-dispatch already happened. The contract is
+# "the engine re-dispatched the crashed worker's step" by EITHER path, so
+# count the orchestrator's own re-dispatch log lines as proof too.
+ENGINE_LOGS="$(docker logs "${PROJECT}-orchestrator" --since 3m 2>&1 || true)"
+CRON_RE_DISPATCHED="$(echo "$ENGINE_LOGS" | grep -c "Re-dispatching lease-expired step" || true)"
+
 ATTEMPT_COUNT="$(psql_steps "SELECT COALESCE(MAX(attempt_count),0) FROM dtm_steps WHERE job_id='$JOB_ID';" | tr -d '[:space:]')"
 
 JOB_FINAL="processing"
@@ -170,7 +178,7 @@ ck_has "the orchestrator booted the ZeroMQ ROUTER transport" "$ORCH_LOGS" "ZmqTr
 ck "two order-processing replicas were registered before the crash" test "${OP_REPLICAS:-0}" -ge 2
 ck_has "the ValidateCustomer task reached a replica before the kill" "$VICTIM_LOGS" "order-validate-customer] Task"
 ck_eq "the redelivery engine executed successfully (auto-on under zmq)" "$TASK_SUCCESS" "true"
-ck "the engine re-dispatched the crashed worker's lease-expired step" test "${RE_DISPATCHED:-0}" -ge 1
+ck "the engine re-dispatched the crashed worker's lease-expired step (manual trigger or 30s cron — first to win)" test "$(( ${RE_DISPATCHED:-0} + ${CRON_RE_DISPATCHED:-0} ))" -ge 1
 ck "the synthetic attempt counter proves a re-dispatch (attempt_count >= 2)" test "${ATTEMPT_COUNT:-0}" -ge 2
 ck_eq "the job completed after losing a worker mid-task" "${JOB_FINAL,,}" "completed"
 
