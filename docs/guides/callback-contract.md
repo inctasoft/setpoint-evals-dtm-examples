@@ -31,13 +31,23 @@ The callback URL is provided to workers in the SQS message payload as `callbackU
     metadata?: Record<string, unknown>;
   };
   retryMetadata?: {
-    sqsMessageId: string;           // SQS message ID
-    sqsReceiveCount: number;        // Delivery attempt (1 = first)
+    taskHandle?: string;            // Bus-neutral task handle (primary name)
+    attemptNumber?: number;         // Bus-neutral delivery attempt (primary name, 1 = first)
+    sqsMessageId?: string;          // Compat alias of taskHandle (SQS message ID)
+    sqsReceiveCount?: number;       // Compat alias of attemptNumber
     processingTimeMs: number;       // Worker processing time in ms
-    isRetry: boolean;               // True if sqsReceiveCount > 1
+    isRetry: boolean;               // True if attemptNumber > 1
   };
 }
 ```
+
+### Bus-neutral retry metadata (compat aliases)
+
+`taskHandle` / `attemptNumber` are the bus-neutral primary names; `sqsMessageId` /
+`sqsReceiveCount` are accepted compat aliases so one release of mixed worker and
+orchestrator versions interoperates. Current workers send BOTH. The orchestrator
+prefers the bus-neutral names and falls back to the aliases, so an old worker that
+only sends `sqsMessageId` / `sqsReceiveCount` keeps working unchanged.
 
 ## Response Format (`StepProgressResponseDto`)
 
@@ -60,7 +70,7 @@ Workers typically send two callbacks per step:
   "jobId": "...",
   "stepId": "...",
   "status": "in_progress",
-  "retryMetadata": { "sqsMessageId": "...", "sqsReceiveCount": 1, "processingTimeMs": 0, "isRetry": false }
+  "retryMetadata": { "taskHandle": "...", "attemptNumber": 1, "sqsMessageId": "...", "sqsReceiveCount": 1, "processingTimeMs": 0, "isRetry": false }
 }
 ```
 
