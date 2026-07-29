@@ -1,12 +1,22 @@
 /**
  * Handler Registry — zmq-worker-host
  *
- * Resolves the handlerMap and DataSources for the ONE workflow this host
+ * Resolves the handlerMap and DataSource for the ONE workflow this host
  * serves (WORKFLOW_NAME). Mirrors the sqs-poller's debug-server mode: the
  * SAME workflow-exported `handlerMap` (Record<queueName, handler>) is invoked
- * in-process, DataSources are pre-initialized, and DataSource.destroy() is
- * neutralized so concurrent handlers never tear down shared connections.
+ * in-process, the workflow DataSource is pre-initialized, and
+ * DataSource.destroy() is neutralized so concurrent handlers never tear down
+ * shared connections.
+ *
+ * ISOLATION: each host container bind-mounts ONLY its own workflow's
+ * packages (config, workers, source-db typeorm) into /app/node_modules.
+ * Every workflow package resolution here is therefore a LAZY require inside
+ * the switch body — static imports would force every host to resolve every
+ * workflow at load time and crash-loop the container.
  */
+
+/* eslint-disable @typescript-eslint/no-require-imports -- deliberate: lazy
+ * per-case require() is the isolation mechanism documented above. */
 
 // Must import reflect-metadata before any TypeORM entity decorators are evaluated
 import "reflect-metadata";
@@ -14,51 +24,78 @@ import "reflect-metadata";
 import type { SQSEvent, Context, SQSBatchResponse } from "aws-lambda";
 import type { DataSource } from "typeorm";
 
-import { handlerMap as orderProcessingHandlers } from "@dtm-workflows/order-processing-workers";
-import { handlerMap as iotSensorPipelineHandlers } from "@dtm-workflows/iot-sensor-pipeline-workers";
-import { handlerMap as infraProvisioningHandlers } from "@dtm-workflows/infra-provisioning-workers";
-
-import { OrderProcessingDataSource } from "@dtm-workflows/order-processing-typeorm";
-import { IotSensorDataSource } from "@dtm-workflows/iot-sensor-pipeline-typeorm";
-import { InfraProvisioningDataSource } from "@dtm-workflows/infra-provisioning-typeorm";
-
 export type LambdaHandler = (
   event: SQSEvent,
   context: Context,
 ) => Promise<SQSBatchResponse | void>;
 
-const HANDLER_MAPS: Record<string, Record<string, LambdaHandler>> = {
-  "order-processing": orderProcessingHandlers,
-  "iot-sensor-pipeline": iotSensorPipelineHandlers,
-  "infra-provisioning": infraProvisioningHandlers,
-};
+const REGISTERED_WORKFLOW_NAMES = [
+  "infra-provisioning",
+  "iot-sensor-pipeline",
+  "order-processing",
+];
 
-const WORKFLOW_DATA_SOURCES: Record<string, { name: string; ds: DataSource }> =
-  {
-    "order-processing": {
-      name: "OrderProcessing",
-      ds: OrderProcessingDataSource,
-    },
-    "iot-sensor-pipeline": { name: "IotSensor", ds: IotSensorDataSource },
-    "infra-provisioning": {
-      name: "InfraProvisioning",
-      ds: InfraProvisioningDataSource,
-    },
-  };
+function unknownWorkflow(workflowName: string, what: string): Error {
+  return new Error(
+    `No ${what} for workflow '${workflowName}'. Registered: ${REGISTERED_WORKFLOW_NAMES.join(", ")}`,
+  );
+}
 
 /**
- * Handler map for one workflow. Throws on an unknown name (fail fast at boot).
+ * Handler map for ONE workflow, loaded lazily (fail fast on unknown name).
  */
 export function getHandlerMapForWorkflow(
   workflowName: string,
 ): Record<string, LambdaHandler> {
-  const handlerMap = HANDLER_MAPS[workflowName];
-  if (!handlerMap) {
-    throw new Error(
-      `No handler map for workflow '${workflowName}'. Registered: ${Object.keys(HANDLER_MAPS).sort().join(", ")}`,
-    );
+  switch (workflowName) {
+    case "order-processing": {
+      const { handlerMap } = require("@dtm-workflows/order-processing-workers");
+      return handlerMap;
+    }
+    case "iot-sensor-pipeline": {
+      const {
+        handlerMap,
+      } = require("@dtm-workflows/iot-sensor-pipeline-workers");
+      return handlerMap;
+    }
+    case "infra-provisioning": {
+      const {
+        handlerMap,
+      } = require("@dtm-workflows/infra-provisioning-workers");
+      return handlerMap;
+    }
+    default:
+      throw unknownWorkflow(workflowName, "handler map");
   }
-  return handlerMap;
+}
+
+/** The served workflow's source-db DataSource, loaded lazily. */
+function getDataSourceForWorkflow(workflowName: string): {
+  name: string;
+  ds: DataSource;
+} {
+  switch (workflowName) {
+    case "order-processing": {
+      const {
+        OrderProcessingDataSource,
+      } = require("@dtm-workflows/order-processing-typeorm");
+      return { name: "OrderProcessing", ds: OrderProcessingDataSource };
+    }
+    case "iot-sensor-pipeline": {
+      const {
+        IotSensorDataSource,
+      } = require("@dtm-workflows/iot-sensor-pipeline-typeorm");
+      return { name: "IotSensor", ds: IotSensorDataSource };
+    }
+    case "infra-provisioning": {
+      const {
+        InfraProvisioningDataSource,
+      } = require("@dtm-workflows/infra-provisioning-typeorm");
+      return { name: "InfraProvisioning", ds: InfraProvisioningDataSource };
+    }
+    default:
+      throw unknownWorkflow(workflowName, "DataSource");
+  }
 }
 
 /**
@@ -96,30 +133,27 @@ export function createMockContext(functionName: string): Context {
 }
 
 /**
- * Pre-initialize the workflow's DataSource and neutralize destroy().
- * Handlers call destroy() in their finally blocks (written for one-shot
- * Lambda executions); in a long-lived in-process host that would tear down
- * the shared connection mid-flight for sibling handlers.
+ * Pre-initialize the SERVED workflow's DataSource (only that one) and
+ * neutralize destroy(). Handlers call destroy() in their finally blocks
+ * (written for one-shot Lambda executions); in a long-lived in-process host
+ * that would tear down the shared connection mid-flight for sibling handlers.
  */
 export async function initWorkflowDataSource(
   workflowName: string,
 ): Promise<void> {
-  const entry = WORKFLOW_DATA_SOURCES[workflowName];
-  if (!entry) {
-    throw new Error(`No DataSource registered for workflow '${workflowName}'`);
-  }
+  const { name, ds } = getDataSourceForWorkflow(workflowName);
 
   try {
-    if (!entry.ds.isInitialized) {
-      await entry.ds.initialize();
+    if (!ds.isInitialized) {
+      await ds.initialize();
     }
-    entry.ds.destroy = async () => {
+    ds.destroy = async () => {
       /* no-op in the long-lived worker host */
     };
-    console.log(`  ✅ ${entry.name} DataSource initialized (destroy disabled)`);
+    console.log(`  ✅ ${name} DataSource initialized (destroy disabled)`);
   } catch (error) {
     console.warn(
-      `  ⚠️  ${entry.name} DataSource init failed (handlers may initialize on demand): ${error instanceof Error ? error.message : error}`,
+      `  ⚠️  ${name} DataSource init failed (handlers may initialize on demand): ${error instanceof Error ? error.message : error}`,
     );
   }
 }
