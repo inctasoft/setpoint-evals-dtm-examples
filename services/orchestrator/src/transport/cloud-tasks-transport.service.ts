@@ -25,7 +25,15 @@ import {
 export class CloudTasksTransport extends QueueTransport implements OnModuleInit {
   // Cloud Tasks exposes no per-queue depth API — declare it honestly so the
   // monitor panel shows nothing rather than fabricated zeros.
-  readonly capabilities: TaskTransportCapabilities = { stats: 'none' };
+  // Redelivery is native (retryConfig), but there is no native DLQ and no
+  // attempt count reaches the orchestrator (nothing reads the GCP dispatch
+  // headers), so those two axes declare the honest table/synthetic values.
+  readonly capabilities: TaskTransportCapabilities = {
+    stats: 'none',
+    redelivery: 'bus',
+    attemptCounter: 'synthetic',
+    dlq: 'table',
+  };
 
   private readonly logger = new Logger(CloudTasksTransport.name);
   private client: CloudTasksClient;

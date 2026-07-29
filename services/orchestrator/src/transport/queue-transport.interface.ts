@@ -28,13 +28,50 @@ export interface QueueStatusRow {
  *   'none'   — no first-class API (Cloud Tasks); the panel shows nothing rather
  *              than fake zeros, and the poller does no work.
  *
- * Phase 0 introduces only `stats` (the capability the current honesty fix needs).
- * The redelivery / attempt-counter / dlq axes from the bus-agnosticism plan land
- * with the redelivery engine in a later phase — declaring them now, with nothing
- * reading them, would be the exact interface dishonesty this phase removes.
+ * `redelivery` — who re-dispatches a task whose worker died mid-flight?
+ *   'bus'          — the transport itself redelivers (SQS visibility-timeout
+ *                    redrive, Cloud Tasks retryConfig). The orchestrator-driven
+ *                    redelivery engine MUST stay off.
+ *   'orchestrator' — the transport offers at-most-once dispatch; the
+ *                    redelivery engine (RedeliveryEngineTask) owns re-dispatch
+ *                    from the dtm_steps.lease_expires_at delegation leases.
+ *
+ * `attemptCounter` — where does the per-attempt count come from?
+ *   'native'    — the bus surfaces a delivery count the worker can read
+ *                 (SQS ApproximateReceiveCount → retryMetadata.attemptNumber).
+ *   'synthetic' — no usable native count reaches the orchestrator; the
+ *                 bus-neutral dtm_steps.attempt_count column (incremented on
+ *                 every dispatch) is the source of truth. Cloud Tasks DOES set
+ *                 an X-CloudTasks-TaskExecutionCount header, but nothing in
+ *                 this repo's worker path reads it, so the honest declaration
+ *                 is 'synthetic'.
+ *
+ * `dlq` — where do exhausted tasks go?
+ *   'native' — the bus routes them (SQS redrive policy → DLQ).
+ *   'table'  — no native DLQ; the redelivery engine writes dtm_dead_letters
+ *              rows on attempt exhaustion. Cloud Tasks has no dead-letter
+ *              queue concept (an exhausted task is simply dropped), so it
+ *              declares 'table'.
  */
 export interface TaskTransportCapabilities {
   stats: 'native' | 'none';
+  redelivery: 'bus' | 'orchestrator';
+  attemptCounter: 'native' | 'synthetic';
+  dlq: 'native' | 'table';
+}
+
+/**
+ * Is the orchestrator-driven redelivery engine active for this deployment?
+ * True only when the active transport declares `redelivery: 'orchestrator'`
+ * or the REDELIVERY_ENGINE_FORCE_ENABLED escape hatch (setpoint evals, tests)
+ * forces it on. Under the default SQS profile this is false and the engine
+ * is a complete no-op.
+ */
+export function isRedeliveryEngineActive(
+  capabilities: TaskTransportCapabilities,
+  forceEnabled: boolean,
+): boolean {
+  return capabilities.redelivery === 'orchestrator' || forceEnabled;
 }
 
 /**

@@ -14,7 +14,12 @@ import {
  */
 @Injectable()
 export class SqsTransport extends QueueTransport {
-  readonly capabilities: TaskTransportCapabilities = { stats: 'native' };
+  readonly capabilities: TaskTransportCapabilities = {
+    stats: 'native',
+    redelivery: 'bus',
+    attemptCounter: 'native',
+    dlq: 'native',
+  };
 
   constructor(
     private readonly sqsService: SqsService,
