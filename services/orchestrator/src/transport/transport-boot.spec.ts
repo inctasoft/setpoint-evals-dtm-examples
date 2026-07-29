@@ -151,6 +151,12 @@ describe('SE-BOOT — real module graph boots under the sqs profile', () => {
     // No AwsModule under zmq: the SQS concrete is not in this graph at all.
     expect(() => moduleRef.get('SqsTransport', { strict: false })).toThrow();
 
+    // THE Phase 2 boot-bug pin: the concrete token and the QueueTransport
+    // token MUST resolve to the SAME instance. Two instances each bind the
+    // ROUTER in onModuleInit → the second dies on EADDRINUSE and the whole
+    // bootstrap exits 1 before ever logging "ROUTER bound".
+    expect(moduleRef.get(ZmqTransport)).toBe(transport);
+
     const registry = moduleRef.get(ZmqWorkerRegistryService);
     expect(registry).toBeInstanceOf(ZmqWorkerRegistryService);
     expect(registry.listWorkers()).toEqual([]);
@@ -185,9 +191,10 @@ describe('SE-BOOT — real module graph boots under the sqs profile', () => {
       expect(providers).not.toEqual(expect.arrayContaining([SqsTransport]));
     });
 
-    // zmq profile (Phase 2): the zmq lane wires ZmqTransport + its worker
-    // registry and NO AWS/GCP transport concrete. Metadata-only read — the
-    // ROUTER never binds without a module init.
+    // zmq profile (Phase 2): the zmq lane wires the worker registry plus ONE
+    // ZmqTransport instance behind both tokens (useClass for QueueTransport,
+    // useExisting for the concrete) and NO AWS/GCP transport concrete.
+    // Metadata-only read — the ROUTER never binds without a module init.
     process.env.QUEUE_TRANSPORT = 'zmq';
     await jest.isolateModulesAsync(async () => {
       const { SqsTransport } = require('./sqs-transport.service');
@@ -195,11 +202,23 @@ describe('SE-BOOT — real module graph boots under the sqs profile', () => {
       const { ZmqTransport } = require('./zmq-transport.service');
       const { ZmqWorkerRegistryService } = require('./zmq-worker-registry.service');
       const { ZmqWorkersController } = require('./zmq-workers.controller');
+      const { QueueTransport } = require('./queue-transport.interface');
       const { TransportModule } = require('./transport.module');
 
       const providers = Reflect.getMetadata('providers', TransportModule);
-      expect(providers).toEqual(expect.arrayContaining([ZmqTransport, ZmqWorkerRegistryService]));
+      expect(providers).toEqual(expect.arrayContaining([ZmqWorkerRegistryService]));
       expect(providers).not.toEqual(expect.arrayContaining([SqsTransport, CloudTasksTransport]));
+
+      // Single-instance wiring (the Phase 2 EADDRINUSE boot-bug pin): the class
+      // appears only as useClass behind QueueTransport, never as a standalone
+      // concrete provider that would instantiate a second ROUTER-binding copy.
+      expect(providers).toEqual(
+        expect.arrayContaining([
+          { provide: QueueTransport, useClass: ZmqTransport },
+          { provide: ZmqTransport, useExisting: QueueTransport },
+        ]),
+      );
+      expect(providers).not.toEqual(expect.arrayContaining([ZmqTransport]));
 
       // The /workers introspection endpoint exists ONLY under the zmq profile.
       const controllers = Reflect.getMetadata('controllers', TransportModule);

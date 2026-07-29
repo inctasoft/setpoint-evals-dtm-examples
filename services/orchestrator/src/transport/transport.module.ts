@@ -28,8 +28,14 @@ const QUEUE_TRANSPORT = process.env.QUEUE_TRANSPORT || 'sqs';
     ...(QUEUE_TRANSPORT === 'zmq'
       ? [
           ZmqWorkerRegistryService,
-          ZmqTransport,
+          // ONE instance, two tokens: `useClass` for QueueTransport would create a
+          // SECOND ZmqTransport alongside the concrete one — and every instance's
+          // onModuleInit binds the ROUTER, so a duplicate instance dies on
+          // EADDRINUSE and takes the whole bootstrap down (Phase 2 boot bug).
+          // SqsTransport/CloudTasksTransport tolerate the duplicate (stateless
+          // clients); a transport holding an exclusive socket cannot.
           { provide: QueueTransport, useClass: ZmqTransport },
+          { provide: ZmqTransport, useExisting: QueueTransport },
         ]
       : QUEUE_TRANSPORT === 'cloud-tasks'
         ? [CloudTasksTransport, { provide: QueueTransport, useClass: CloudTasksTransport }]
