@@ -108,6 +108,56 @@ describe('SE-BOOT — real module graph boots under the sqs profile', () => {
     await moduleRef.close();
   });
 
+  it('SE-BOOT-zmq: TransportModule compiles under the zmq profile — ZmqTransport wired through QueueTransport, no socket bound', async () => {
+    process.env.QUEUE_TRANSPORT = 'zmq';
+
+    let moduleRef: any;
+    let ZmqTransport: any;
+    let ZmqWorkerRegistryService: any;
+    let QueueTransport: any;
+
+    await jest.isolateModulesAsync(async () => {
+      const { Test } = require('@nestjs/testing');
+      const { ConfigService } = require('@nestjs/config');
+      const { StepRepository } = require('@dtm/database');
+
+      ({ ZmqTransport } = require('./zmq-transport.service'));
+      ({ ZmqWorkerRegistryService } = require('./zmq-worker-registry.service'));
+      ({ QueueTransport } = require('./queue-transport.interface'));
+      const { TransportModule } = require('./transport.module');
+
+      // Same hermetic-stub pattern as the sqs boot spec: ConfigService feeds
+      // defaults (no env), StepRepository is a leaf the zmq transport reads
+      // the attempt counter from. `.compile()` (not `.init()`) instantiates
+      // the singletons WITHOUT binding the ROUTER (onModuleInit never fires).
+      const BootStubModule = {
+        module: class BootStubModule {},
+        global: true,
+        providers: [
+          { provide: ConfigService, useValue: { get: (_k: string, d: unknown) => d } },
+          { provide: StepRepository, useValue: {} },
+        ],
+        exports: [ConfigService, StepRepository],
+      };
+
+      moduleRef = await Test.createTestingModule({
+        imports: [BootStubModule, TransportModule],
+      }).compile();
+    });
+
+    const transport = moduleRef.get(QueueTransport);
+    expect(transport).toBeInstanceOf(ZmqTransport);
+    expect(transport.capabilities.redelivery).toBe('orchestrator');
+    // No AwsModule under zmq: the SQS concrete is not in this graph at all.
+    expect(() => moduleRef.get('SqsTransport', { strict: false })).toThrow();
+
+    const registry = moduleRef.get(ZmqWorkerRegistryService);
+    expect(registry).toBeInstanceOf(ZmqWorkerRegistryService);
+    expect(registry.listWorkers()).toEqual([]);
+
+    await moduleRef.close();
+  });
+
   it('SE-BOOT-profile-select: QUEUE_TRANSPORT drives provider selection at import time (env-at-import), no GCP client constructed', async () => {
     // sqs profile: TransportModule wires the SqsTransport concrete.
     process.env.QUEUE_TRANSPORT = 'sqs';
@@ -133,6 +183,27 @@ describe('SE-BOOT — real module graph boots under the sqs profile', () => {
       const providers = Reflect.getMetadata('providers', TransportModule);
       expect(providers).toEqual(expect.arrayContaining([CloudTasksTransport]));
       expect(providers).not.toEqual(expect.arrayContaining([SqsTransport]));
+    });
+
+    // zmq profile (Phase 2): the zmq lane wires ZmqTransport + its worker
+    // registry and NO AWS/GCP transport concrete. Metadata-only read — the
+    // ROUTER never binds without a module init.
+    process.env.QUEUE_TRANSPORT = 'zmq';
+    await jest.isolateModulesAsync(async () => {
+      const { SqsTransport } = require('./sqs-transport.service');
+      const { CloudTasksTransport } = require('./cloud-tasks-transport.service');
+      const { ZmqTransport } = require('./zmq-transport.service');
+      const { ZmqWorkerRegistryService } = require('./zmq-worker-registry.service');
+      const { ZmqWorkersController } = require('./zmq-workers.controller');
+      const { TransportModule } = require('./transport.module');
+
+      const providers = Reflect.getMetadata('providers', TransportModule);
+      expect(providers).toEqual(expect.arrayContaining([ZmqTransport, ZmqWorkerRegistryService]));
+      expect(providers).not.toEqual(expect.arrayContaining([SqsTransport, CloudTasksTransport]));
+
+      // The /workers introspection endpoint exists ONLY under the zmq profile.
+      const controllers = Reflect.getMetadata('controllers', TransportModule);
+      expect(controllers).toEqual(expect.arrayContaining([ZmqWorkersController]));
     });
   });
 });

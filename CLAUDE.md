@@ -75,6 +75,7 @@ Each workflow defines its own source database:
 - **LocalStack**: port 4567 (SQS endpoint: `http://localhost:4567`)
 - **Kafka**: port 9093 (host) → 29092 (internal broker)
 - **Dev ACK Simulator**: port 3003 (host) → 3001 (container)
+- **ZMQ Worker Hosts** (only under `QUEUE_TRANSPORT=zmq` + profile `zmq-tasks`): `dtm-zmq-worker-host-<workflow>-<n>` — DEALER task workers, one per workflow; no host port (ROUTER on orchestrator:5557 internal, optionally 5557 host)
 - **Kafka UI**: port 8090
 
 ### Lambda Worker Deployment Mode (IMPORTANT)
@@ -90,6 +91,18 @@ export ENABLE_LAMBDA_WITH_ESM_LOCALSTACK_DEPLOYMENT=true
 ```
 
 See `docs/guides/DEPLOYMENT-MODES.md` for full details.
+
+### Task Transports (`QUEUE_TRANSPORT`, bus-agnosticism program)
+Step dispatch goes through a pluggable `QueueTransport` (`services/orchestrator/src/transport/`):
+- **`sqs` (default)** — LocalStack/AWS SQS via the sqs-poller; native redelivery/DLQ. Fully unchanged.
+- **`cloud-tasks`** — GCP Cloud Tasks.
+- **`zmq`** — ZeroMQ: the orchestrator BINDS a ROUTER (`ZMQ_TASKS_ENDPOINT`), and per-workflow
+  `zmq-worker-host` containers (`tools/zmq-worker-host`, DEALERs) CONNECT, HELLO-register their
+  queues, heartbeat, and run the SAME workflow handlers in-process (HTTP callbacks unchanged).
+  The orchestrator-driven redelivery engine activates automatically (the zmq transport declares
+  `redelivery: 'orchestrator'`); dead letters land in `dtm_dead_letters`. Fleet introspection:
+  `GET /api/v1/workers`. Mixed mode (zmq tasks + Kafka events unchanged):
+  `QUEUE_TRANSPORT=zmq` in `.env` + `docker-compose.zmq.yml` profile `zmq-tasks` (SE-31/32/33).
 
 ### Port Mapping & ORCHESTRATOR_URL
 The orchestrator listens on port 3000 inside its container, mapped to **port 3002** on the host.
@@ -276,9 +289,10 @@ autodiscovered — no hand-maintained eval lists. Core SEs carry per-SE README m
 README (the pre-v2 legacy workflow-SE estate) degrades to defaults rather than erroring.
 Full contract: `server-config/docs/setpoint-eval-conventions.md`.
 
-### Core SEs (`setpoint-evals/`) -- 30 tests
+### Core SEs (`setpoint-evals/`) -- 33 tests
 Test generic engine capabilities (retry, DLQ, deduplication, concurrency, maintenance tasks,
-leader election, schema integrity, Setpoint Evals discovery/run API, DAG/activity endpoints).
+leader election, schema integrity, Setpoint Evals discovery/run API, DAG/activity endpoints,
+redelivery engine, zmq task transport).
 Count grows with the engine — treat any number in prose as a snapshot, not a contract; the
 directory listing is the source of truth (`ls setpoint-evals/ | grep ^SE-`).
 ```bash
@@ -607,6 +621,12 @@ Example: `enableDeduplication` → `FEATURE_FLAG_ENABLE_DEDUPLICATION`
 | `MAINTENANCE_SCHEDULER_ENABLED` | `true` | Automatic maintenance task scheduling |
 | `REDELIVERY_ENGINE_FORCE_ENABLED` | `false` | Force the orchestrator-driven redelivery engine on (SE escape hatch; auto-on only for transports declaring `redelivery: 'orchestrator'`) |
 | `REDELIVERY_LEASE_SECONDS` | `300` | Delegation lease stamped at each dispatch; the redelivery engine re-dispatches non-terminal steps past it |
+| `QUEUE_TRANSPORT` | `sqs` | Task transport profile: `sqs` (default) · `cloud-tasks` · `zmq` (ZeroMQ tasks, mixed mode via `docker-compose.zmq.yml` profile `zmq-tasks`) |
+| `ZMQ_TASKS_ENDPOINT` | `tcp://0.0.0.0:5557` | ROUTER bind address (orchestrator, zmq profile); worker hosts connect to `tcp://orchestrator:5557` |
+| `ZMQ_TASK_ACK_TIMEOUT_MS` | `2000` | Receipt-ack wait per zmq task dispatch |
+| `ZMQ_WORKER_SILENCE_MS` | `15000` | Heartbeat silence after which a zmq worker is marked dead (unrouted) |
+| `ZMQ_WORKER_SWEEP_INTERVAL_MS` | `5000` | Zmq worker-registry sweeper cadence |
+| `ZMQ_HEARTBEAT_INTERVAL_MS` | `5000` | Worker-host heartbeat cadence (containers in `docker-compose.zmq.yml`) |
 | `PUBLISH_EVENTS_TO_KAFKA` | `true` | Enable Kafka event publishing |
 | `ORCHESTRATOR_CALLBACK_URL` | `http://orchestrator:3000` | Callback URL for workers (container context) |
 | `KAFKA_BROKER` | `dtm-kafka:29092` | Kafka broker (container context) |

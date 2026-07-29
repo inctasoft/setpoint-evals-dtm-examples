@@ -7,7 +7,7 @@ import { TransportModule } from '../transport/transport.module';
 /**
  * Delegation Module
  * Handles delegation of workflow steps to workers via pluggable QueueTransport.
- * QUEUE_TRANSPORT=sqs (default) | cloud-tasks
+ * QUEUE_TRANSPORT=sqs (default) | cloud-tasks | zmq
  */
 @Module({
   imports: [DatabaseModule, TransportModule, CorrelationModule],

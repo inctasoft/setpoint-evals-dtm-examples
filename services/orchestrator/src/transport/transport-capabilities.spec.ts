@@ -1,9 +1,14 @@
 import { Test } from '@nestjs/testing';
-import { QueueTransport, TaskTransportCapabilities } from './queue-transport.interface';
+import {
+  QueueTransport,
+  TaskTransportCapabilities,
+  isRedeliveryEngineActive,
+} from './queue-transport.interface';
 import { SqsStatusService } from '../websocket/sqs-status.service';
 import { EventsGateway } from '../websocket/events.gateway';
 import { SqsTransport } from './sqs-transport.service';
 import { CloudTasksTransport } from './cloud-tasks-transport.service';
+import { ZmqTransport } from './zmq-transport.service';
 
 /**
  * Phase 0 — interface honesty + latent DI-coupling fix.
@@ -126,5 +131,23 @@ describe('Phase 1 — redelivery / attemptCounter / dlq capability axes', () => 
       attemptCounter: 'synthetic',
       dlq: 'table',
     });
+  });
+
+  it('Phase 2 — ZmqTransport is the first transport that flips the redelivery engine on for real', () => {
+    // Constructed without a bound socket: capabilities are a static declaration.
+    const config = { get: (_k: string, d: unknown) => d } as never;
+    const transport = new ZmqTransport(config, {} as never, {} as never);
+
+    expect(transport.capabilities).toEqual({
+      stats: 'native',
+      redelivery: 'orchestrator',
+      attemptCounter: 'synthetic',
+      dlq: 'table',
+    });
+    // Engine-activation gate: ON for zmq with no escape hatch, still OFF for SQS.
+    expect(isRedeliveryEngineActive(transport.capabilities, false)).toBe(true);
+    expect(
+      isRedeliveryEngineActive(new SqsTransport({} as never, {} as never).capabilities, false),
+    ).toBe(false);
   });
 });

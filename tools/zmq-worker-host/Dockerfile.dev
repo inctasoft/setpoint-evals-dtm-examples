@@ -1,0 +1,31 @@
+FROM node:22-alpine
+
+# Install pnpm and tsx globally
+RUN npm install -g pnpm@9 tsx@4.7.0
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json ./
+
+# Install dependencies (including dev dependencies for tsx)
+# Use --ignore-workspace for standalone build.
+# NOTE (zeromq): the zeromq npm package SHIPS prebuilt N-API binaries inside
+# the tarball — including linux-x64 musl for Node 22 (build/linux/x64/node/
+# musl-127-Release) — so node:22-alpine needs NO build toolchain
+# (python3/make/g++) as long as the prebuild covers the platform. If a future
+# zeromq bump drops the in-tarball prebuild, add:
+#   RUN apk add --no-cache python3 make g++
+RUN pnpm install --ignore-workspace
+
+# Copy TypeScript config
+COPY tsconfig.json ./
+
+# Source will be mounted as volume, not copied
+# This allows hot reload to work
+
+# Expose debugger port if needed
+EXPOSE 9230
+
+# Run with tsx in watch mode for hot reload
+CMD ["pnpm", "run", "dev"]
