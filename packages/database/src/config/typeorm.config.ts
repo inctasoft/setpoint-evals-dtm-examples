@@ -1,6 +1,6 @@
 import { DataSource } from "typeorm";
 import * as path from "path";
-import { Job, Step } from "../entities";
+import { Job, Step, DeadLetter } from "../entities";
 
 // Resolve migrations path relative to the database package.
 // Clean single-migration approach: Only dtm_jobs and dtm_steps tables.
@@ -32,7 +32,7 @@ export default new DataSource({
   username: process.env.DTM_DB_USER || "dtm_user",
   password: process.env.DTM_DB_PASSWORD || "dtm",
   database: process.env.DTM_DB_NAME || "dtm",
-  entities: [Job, Step],
+  entities: [Job, Step, DeadLetter],
   migrations: [migrationsPath],
   // Always use migrations, not auto-sync (safer, production-like)
   synchronize: false,

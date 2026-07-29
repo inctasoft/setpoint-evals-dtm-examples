@@ -415,6 +415,22 @@ export class StepRepository {
   }
 
   /**
+   * Stamp the bus-neutral dispatch bookkeeping on every (re-)dispatch:
+   * increment the synthetic attempt counter and set the delegation lease.
+   *
+   * Called from the delegation path right after a successful transport send,
+   * so BOTH the initial delegation and every redelivery-engine re-dispatch
+   * refresh the lease and bump attemptCount. The columns are inert when no
+   * orchestrator-redelivery transport is active (nothing reads them there),
+   * so this runs unconditionally — behavior under the SQS profile is
+   * unchanged.
+   */
+  async recordDispatch(id: string, leaseExpiresAt: Date): Promise<void> {
+    await this.repo.increment({ id }, "attemptCount", 1);
+    await this.repo.update(id, { leaseExpiresAt });
+  }
+
+  /**
    * Update step progress (incremental updates during processing)
    */
   async updateProgress(

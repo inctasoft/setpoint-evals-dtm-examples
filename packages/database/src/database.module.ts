@@ -1,6 +1,6 @@
 import { Module, Global } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
-import { Job, Step } from "./entities";
+import { Job, Step, DeadLetter } from "./entities";
 import { JobRepository, StepRepository } from "./repositories";
 
 /**
@@ -23,7 +23,7 @@ import { JobRepository, StepRepository } from "./repositories";
 @Module({
   imports: [
     // Only register entities for the connection configured by the consuming app
-    TypeOrmModule.forFeature([Job, Step]),
+    TypeOrmModule.forFeature([Job, Step, DeadLetter]),
   ],
   providers: [JobRepository, StepRepository],
   exports: [TypeOrmModule, JobRepository, StepRepository],

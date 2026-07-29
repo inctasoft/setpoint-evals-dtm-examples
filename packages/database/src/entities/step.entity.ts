@@ -36,6 +36,12 @@ export interface ExecutionAttempt {
   output?: Record<string, unknown>;
   sqsMessageId?: string;
   sqsReceiveCount?: number; // From SQS message attributes
+  /**
+   * Bus-neutral task handle (alias of sqsMessageId; operator decision D-D).
+   * Populated from retryMetadata.taskHandle when the worker sends the new
+   * wire names, falling back to sqsMessageId for old workers.
+   */
+  taskHandle?: string;
   processingTimeMs?: number;
 }
 
@@ -138,6 +144,26 @@ export class Step {
 
   @Column({ name: "max_retry_count", type: "int", default: 3 })
   maxRetryCount!: number;
+
+  /**
+   * Bus-neutral synthetic attempt counter — incremented on EVERY dispatch
+   * (initial delegation or redelivery-engine re-dispatch). Replaces
+   * sqsReceiveCount semantics for transports whose native delivery count
+   * never reaches the orchestrator (TaskTransportCapabilities.attemptCounter
+   * === 'synthetic'). Inert under the SQS profile (nothing reads it there).
+   */
+  @Column({ name: "attempt_count", type: "int", default: 0 })
+  attemptCount!: number;
+
+  /**
+   * Delegation lease: the orchestrator-driven redelivery engine re-dispatches
+   * this step if it is still in a non-terminal state past this timestamp.
+   * Stamped at every dispatch (initial or re-); NULL means "no lease" (rows
+   * written before the engine existed, or non-engine deployments that never
+   * populate it — the engine's scan only matches non-NULL expired leases).
+   */
+  @Column({ name: "lease_expires_at", type: "timestamp", nullable: true })
+  leaseExpiresAt?: Date;
 
   @Column({ name: "first_attempt_at", type: "timestamp", nullable: true })
   firstAttemptAt?: Date;
