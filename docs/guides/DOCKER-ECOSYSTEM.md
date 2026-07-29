@@ -199,4 +199,8 @@ The system uses Docker Compose profiles to selectively start services:
 - `zmq-tasks`: The ZeroMQ task transport worker hosts (one `zmq-worker-host` per
   workflow, from `docker-compose.zmq.yml`). Mixed mode = zmq tasks + Kafka events
   unchanged; activate with `QUEUE_TRANSPORT=zmq` in `.env` + this profile (SE-31/32/33).
+- Full-zmq bring-up (Phase 4): `BUS_PROFILE=zmq ./scripts/local-env.sh start --zmq`
+  or compose `-f docker-compose.yml -f docker-compose.zmq.yml --profile db
+  --profile orchestrator --profile dev-tools --profile zmq-tasks up -d` — NO
+  LocalStack, NO Kafka/Zookeeper/Kafka-UI, NO sqs-pollers (SE-36).
 
