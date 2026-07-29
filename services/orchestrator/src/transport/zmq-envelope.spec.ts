@@ -5,10 +5,12 @@ import {
   buildZmqReceivedEnvelope,
   buildZmqHelloEnvelope,
   buildZmqHeartbeatEnvelope,
+  buildZmqEventEnvelope,
   encodeZmqEnvelope,
   decodeZmqEnvelope,
   ZmqTaskEnvelope,
   ZmqHelloEnvelope,
+  ZmqEventEnvelope,
 } from '@dtm/core';
 
 /**
@@ -104,5 +106,45 @@ describe('Phase 2 — zmq tasks envelope schema', () => {
     // Control topic for a task frame, and a task topic naming another queue.
     expect(() => decodeZmqEnvelope(ZMQ_CONTROL_TOPIC, json)).toThrow(/topic/);
     expect(() => decodeZmqEnvelope('task.order-submit-order', json)).toThrow(/topic/);
+  });
+
+  it('SE-ENV-event: an event envelope round-trips under the EVENT TOPIC itself (SUB-side filtering needs no JSON peek)', () => {
+    const envelope = buildZmqEventEnvelope({
+      topic: 'order-processing.customer.completed',
+      message: { jobId: 'j-1', stepId: 's-1', recordCount: 2 },
+    });
+
+    const [topic, json] = encodeZmqEnvelope(envelope);
+    expect(topic).toBe('order-processing.customer.completed');
+
+    const decoded = decodeZmqEnvelope(topic, json) as ZmqEventEnvelope;
+    expect(decoded.version).toBe(ZMQ_ENVELOPE_VERSION);
+    expect(decoded.kind).toBe('event');
+    expect(decoded.payload.topic).toBe('order-processing.customer.completed');
+    expect(decoded.payload.message).toEqual({ jobId: 'j-1', stepId: 's-1', recordCount: 2 });
+  });
+
+  it('SE-ENV-event-discipline: event frames reject topic/frame mismatch, missing topic, and non-object message', () => {
+    const envelope = buildZmqEventEnvelope({
+      topic: 'order-processing.customer.ack',
+      message: { jobId: 'j-1' },
+    });
+    const [, json] = encodeZmqEnvelope(envelope);
+
+    // Frame topic must equal the payload topic (and NOT the control topic).
+    expect(() => decodeZmqEnvelope('order-processing.order.ack', json)).toThrow(/topic/);
+    expect(() => decodeZmqEnvelope(ZMQ_CONTROL_TOPIC, json)).toThrow(/topic/);
+    expect(() =>
+      decodeZmqEnvelope(
+        't',
+        JSON.stringify({ version: 1, kind: 'event', payload: { topic: 't' } }),
+      ),
+    ).toThrow(/message/);
+    expect(() =>
+      decodeZmqEnvelope(
+        't',
+        JSON.stringify({ version: 1, kind: 'event', payload: { message: {} } }),
+      ),
+    ).toThrow(/topic/);
   });
 });

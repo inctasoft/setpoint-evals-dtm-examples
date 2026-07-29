@@ -148,6 +148,32 @@ export const configValidationSchema = Joi.object({
     .default(5000),
 
   // ============================================
+  // Event Bus (bus-agnosticism program, Phase 3)
+  // ============================================
+  EVENT_BUS: Joi.string()
+    .valid('kafka', 'zmq')
+    .default('kafka')
+    .description('Event bus profile: kafka (default) or zmq'),
+
+  // ZeroMQ event bus (only read under EVENT_BUS=zmq)
+  ZMQ_EVENTS_ENDPOINT: Joi.string()
+    .description('PUB bind address for zmq events out')
+    .default('tcp://0.0.0.0:5558'),
+  ZMQ_ACKS_ENDPOINT: Joi.string()
+    .description('PULL bind address for zmq acks in')
+    .default('tcp://0.0.0.0:5559'),
+  EVENT_REPUBLISH_SCAN_FORCE_ENABLED: Joi.string()
+    .valid('true', 'false')
+    .default('false')
+    .description(
+      'Force the event-republish scan on (SE escape hatch; auto-on under EVENT_BUS=zmq)',
+    ),
+  EVENT_REPUBLISH_LEASE_SECONDS: Joi.number()
+    .min(1)
+    .description('Un-ACKed publish age before the event-republish scan re-publishes')
+    .default(60),
+
+  // ============================================
   // Database Pool Settings
   // ============================================
   DB_POOL_SIZE: Joi.number().min(1).max(100).default(10),

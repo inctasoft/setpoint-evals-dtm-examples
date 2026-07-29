@@ -1,10 +1,10 @@
 import { Module, forwardRef } from "@nestjs/common";
 import { SimulatorService } from "./simulator.service";
-import { KafkaModule } from "../kafka/kafka.module";
+import { EventBusModule } from "../event-bus/event-bus.module";
 import { ConfigLoaderModule } from "../config/config-loader.module";
 
 @Module({
-  imports: [forwardRef(() => KafkaModule), ConfigLoaderModule],
+  imports: [forwardRef(() => EventBusModule), ConfigLoaderModule],
   providers: [SimulatorService],
   exports: [SimulatorService],
 })

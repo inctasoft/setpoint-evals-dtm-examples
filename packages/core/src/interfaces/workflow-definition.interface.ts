@@ -237,6 +237,14 @@ export interface CascadeConfig {
   /** Kafka topic for publishing transformed data (required when ackChannel = 'kafka' or default) */
   kafkaTopic?: string;
 
+  /**
+   * Bus-neutral primary name for the publish topic (operator decision D-D):
+   * `eventTopic` is the preferred name going forward; `kafkaTopic` is the
+   * compat alias. Readers MUST resolve via `eventTopic ?? kafkaTopic` (accept
+   * both, prefer new) so one release of mixed config versions keeps working.
+   */
+  eventTopic?: string;
+
   /** Kafka topic for receiving external ACKs (required when ackChannel = 'kafka' or default) */
   ackTopic?: string;
 

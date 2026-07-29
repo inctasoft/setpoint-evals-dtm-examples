@@ -15,6 +15,8 @@ import type { AckSubscription } from "./ack-subscription.interface";
 interface CascadeConfig {
   cascadeName: string;
   kafkaTopic?: string;
+  /** Bus-neutral primary topic name (D-D); kafkaTopic is the compat alias. */
+  eventTopic?: string;
   ackTopic?: string;
   outputStep: string;
 }
@@ -116,15 +118,17 @@ export class ConfigLoaderService {
 
   /**
    * Derive AckSubscription[] from the workflow's cascades config.
-   * Only includes cascades that have both kafkaTopic and ackTopic defined.
+   * Only includes cascades that have both a publish topic (eventTopic, or
+   * the kafkaTopic compat alias) and ackTopic defined.
    */
   private deriveSubscriptions(config: WorkflowConfig): AckSubscription[] {
     const subscriptions: AckSubscription[] = [];
 
     for (const cascade of config.cascades) {
-      if (!cascade.kafkaTopic || !cascade.ackTopic) {
+      const listenTopic = cascade.eventTopic ?? cascade.kafkaTopic;
+      if (!listenTopic || !cascade.ackTopic) {
         this.logger.debug(
-          `Skipping cascade ${cascade.cascadeName} — no kafkaTopic or ackTopic`,
+          `Skipping cascade ${cascade.cascadeName} — no eventTopic/kafkaTopic or ackTopic`,
         );
         continue;
       }
@@ -138,7 +142,7 @@ export class ConfigLoaderService {
       );
 
       subscriptions.push({
-        listenTopic: cascade.kafkaTopic,
+        listenTopic,
         ackTopic: cascade.ackTopic,
         outputStep: cascade.outputStep,
         cascadeName: cascade.cascadeName,

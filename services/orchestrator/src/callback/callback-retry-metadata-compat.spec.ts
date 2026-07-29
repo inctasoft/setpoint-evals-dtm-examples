@@ -5,7 +5,7 @@ import { JobRepository, StepRepository, StepStatus, JobType } from '@dtm/databas
 import { OrchestrationService } from '../orchestration/orchestration.service';
 import { CascadePublishService } from '../orchestration/cascade-publish.service';
 import { FanOutService } from '../orchestration/fan-out.service';
-import { KafkaService } from '../kafka/kafka.service';
+import { EventBus } from '../event-bus/event-bus.interface';
 import { WorkflowConfigService } from '../workflow-loader/workflow-config.service';
 import { WorkflowRegistryService } from '../workflow-loader/workflow-registry.service';
 import { EventsGateway } from '../websocket/events.gateway';
@@ -110,7 +110,7 @@ describe('CallbackService — retryMetadata compat aliases', () => {
           provide: FanOutService,
           useValue: { handleDiscoveryComplete: jest.fn(), handleChildStepComplete: jest.fn() },
         },
-        { provide: KafkaService, useValue: { publish: jest.fn().mockResolvedValue(true) } },
+        { provide: EventBus, useValue: { publish: jest.fn().mockResolvedValue(true) } },
         { provide: WorkflowConfigService, useValue: mockWorkflowConfigService },
         { provide: WorkflowRegistryService, useValue: mockWorkflowRegistryService },
         { provide: EventsGateway, useValue: { broadcast: jest.fn() } },

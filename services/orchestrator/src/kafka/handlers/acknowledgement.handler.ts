@@ -64,7 +64,9 @@ export class AcknowledgementHandler implements OnModuleInit, IMessageHandler {
   }
 
   /**
-   * Main message handler (required by IMessageHandler interface)
+   * Main message handler (required by IMessageHandler interface).
+   * kafkajs entry point: validates + parses the raw value (poison pills throw
+   * → DLQ), then delegates to the bus-neutral handleBusMessage.
    */
   async handleMessage(payload: EachMessagePayload): Promise<void> {
     const topic = payload.topic;
@@ -98,31 +100,48 @@ export class AcknowledgementHandler implements OnModuleInit, IMessageHandler {
       );
     }
 
+    await this.handleBusMessage(topic, message);
+  }
+
+  /**
+   * Bus-neutral entry point (Phase 3): a parsed acknowledgement event from
+   * ANY EventBus implementation. The kafkajs path reaches it via
+   * handleMessage; the zmq path reaches it via the EventBus.subscribe
+   * adapter in KafkaHandlersModule. Semantics are identical from here down:
+   * validation and business errors are logged, never rethrown (mirrors the
+   * pre-Phase-3 catch-all); only the kafkajs entry's raw-value guards
+   * (empty/unparseable) ever reach the Kafka DLQ.
+   */
+  async handleBusMessage(topic: string, message: unknown): Promise<void> {
+    const ackMessage = message as AcknowledgementMessage;
+
     // Use jobId as correlation ID if available
-    const correlationId = message.jobId;
+    const correlationId = ackMessage.jobId;
 
     await this.correlationService.runWithCorrelationId(async () => {
       // Route to appropriate handler based on topic — dynamic resolution via WorkflowRegistryService
       try {
         const resolved = this.workflowRegistry.getByAckTopic(topic);
         if (!resolved) {
-          this.logger.warn(`⚠️  Unknown acknowledgement topic: ${topic}`, {
-            offset: payload.message.offset,
-          });
+          this.logger.warn(`⚠️  Unknown acknowledgement topic: ${topic}`);
           // Return early - not a poison pill, just unexpected topic
           return;
         }
 
         const cascadeName = resolved.cascadeName;
-        await this.processAcknowledgement(message, cascadeName, resolved.config);
+        await this.processAcknowledgement(ackMessage, cascadeName, resolved.config);
       } catch (processingError) {
-        // Business logic errors - don't throw, just log
+        // Business logic errors - don't throw, just log. NOTE (preserved
+        // pre-Phase-3 semantics): this catch ALSO swallows the missing-fields
+        // validation throw from processAcknowledgement — only empty/unparseable
+        // raw values (thrown in handleMessage, before this point) ever reach
+        // the Kafka DLQ.
         this.logger.error(`❌ Failed to process acknowledgement (business logic error)`, {
           error: processingError instanceof Error ? processingError.message : 'Unknown error',
           stack: processingError instanceof Error ? processingError.stack : undefined,
           topic,
-          jobId: message.jobId,
-          stepId: message.stepId,
+          jobId: ackMessage.jobId,
+          stepId: ackMessage.stepId,
         });
 
         // IMPORTANT: Do NOT throw here

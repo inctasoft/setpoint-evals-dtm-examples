@@ -4,7 +4,7 @@ import { OrchestrationService } from './orchestration.service';
 import { JobRepository, StepRepository, JobStatus, StepStatus, JobType } from '@dtm/database';
 import { DelegationService } from '../delegation/delegation.service';
 import { CorrelationService } from '../common/correlation/correlation.service';
-import { KafkaService } from '../kafka/kafka.service';
+import { EventBus } from '../event-bus/event-bus.interface';
 import { WorkflowConfigService } from '../workflow-loader/workflow-config.service';
 import { WorkflowRegistryService } from '../workflow-loader/workflow-registry.service';
 import { FeatureFlagService } from '../workflow-loader/feature-flag.service';
@@ -97,7 +97,7 @@ describe('OrchestrationService', () => {
         { provide: StepRepository, useValue: mockStepRepository },
         { provide: DelegationService, useValue: mockDelegationService },
         { provide: CorrelationService, useValue: mockCorrelationService },
-        { provide: KafkaService, useValue: mockKafkaService },
+        { provide: EventBus, useValue: mockKafkaService },
         { provide: WorkflowConfigService, useValue: mockWorkflowConfigService },
         { provide: WorkflowRegistryService, useValue: mockWorkflowRegistryService },
         { provide: EventsGateway, useValue: mockEventsGateway },

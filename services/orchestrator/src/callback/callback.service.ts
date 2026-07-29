@@ -14,7 +14,7 @@ import { FanOutService } from '../orchestration/fan-out.service';
 import { TransformationFailedEvent } from './dto/transformed-data-events.dto';
 import { WorkflowConfigService, WorkflowRegistryService } from '../workflow-loader';
 import type { StepDefinition } from '@dtm/core';
-import { KafkaService } from '../kafka/kafka.service';
+import { EventBus } from '../event-bus/event-bus.interface';
 import { EventsGateway } from '../websocket/events.gateway';
 import { CorrelationService } from '../common/correlation/correlation.service';
 import { ConfigService } from '@nestjs/config';
@@ -40,7 +40,7 @@ export class CallbackService {
     private readonly orchestrationService: OrchestrationService,
     private readonly cascadePublishService: CascadePublishService,
     private readonly fanOutService: FanOutService,
-    private readonly kafkaService: KafkaService,
+    private readonly eventBus: EventBus,
     private readonly workflowConfig: WorkflowConfigService,
     private readonly workflowRegistry: WorkflowRegistryService,
     private readonly eventsGateway: EventsGateway,
@@ -793,7 +793,7 @@ export class CallbackService {
         return;
       }
 
-      const topicName = cascade.kafkaTopic;
+      const topicName = cfg.getCascadeEventTopic(cascade.cascadeName);
       if (!topicName) {
         this.logger.warn(
           `⚠️  No Kafka topic configured for cascade ${cascade.cascadeName}, skipping publish`,
@@ -823,7 +823,7 @@ export class CallbackService {
       );
       this.logger.debug(`Transformed ${cascade.cascadeName} sample:`, transformedData[0]);
 
-      const published = await this.kafkaService.publish(topicName, event, jobId);
+      const published = await this.eventBus.publish(topicName, event, jobId);
 
       if (published) {
         this.logger.log(
@@ -887,15 +887,16 @@ export class CallbackService {
       };
 
       // Derive failed topic from completed topic, or use convention
-      const topicName = cascade.kafkaTopic
-        ? cascade.kafkaTopic.replace('.completed', '.failed')
+      const cascadeTopic = cfg.getCascadeEventTopic(cascade.cascadeName);
+      const topicName = cascadeTopic
+        ? cascadeTopic.replace('.completed', '.failed')
         : `workflow.${cascade.cascadeName}.failed`;
 
       this.logger.log(
         `📤 Publishing transformation failure for ${cascade.cascadeName} to: ${topicName}`,
       );
 
-      const published = await this.kafkaService.publish(topicName, event, jobId);
+      const published = await this.eventBus.publish(topicName, event, jobId);
 
       if (published) {
         this.logger.log(

@@ -51,6 +51,7 @@ export {
   buildZmqReceivedEnvelope,
   buildZmqHelloEnvelope,
   buildZmqHeartbeatEnvelope,
+  buildZmqEventEnvelope,
   encodeZmqEnvelope,
   decodeZmqEnvelope,
 } from "./zmq-envelope.interface";
@@ -59,9 +60,11 @@ export type {
   ZmqReceivedPayload,
   ZmqHelloPayload,
   ZmqHeartbeatPayload,
+  ZmqEventPayload,
   ZmqTaskEnvelope,
   ZmqReceivedEnvelope,
   ZmqHelloEnvelope,
   ZmqHeartbeatEnvelope,
+  ZmqEventEnvelope,
   ZmqEnvelope,
 } from "./zmq-envelope.interface";

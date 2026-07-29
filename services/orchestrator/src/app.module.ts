@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
 import { KafkaModule } from './kafka/kafka.module';
 import { KafkaHandlersModule } from './kafka/kafka-handlers.module';
+import { EventBusModule } from './event-bus/event-bus.module';
 import { AwsModule } from './aws/aws.module';
 import { DelegationModule } from './delegation/delegation.module';
 import { CallbackModule } from './callback/callback.module';
@@ -89,6 +90,8 @@ logRuntimeMode();
     CallbackModule,
     OrchestrationModule,
     KafkaModule,
+    // Event bus abstraction (kafka default | zmq) — selected by EVENT_BUS
+    EventBusModule,
     // Kafka Handlers (includes consumer)
     KafkaHandlersModule,
     IngestionModule,

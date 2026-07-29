@@ -104,6 +104,19 @@ Step dispatch goes through a pluggable `QueueTransport` (`services/orchestrator/
   `GET /api/v1/workers`. Mixed mode (zmq tasks + Kafka events unchanged):
   `QUEUE_TRANSPORT=zmq` in `.env` + `docker-compose.zmq.yml` profile `zmq-tasks` (SE-31/32/33).
 
+### Event Bus (`EVENT_BUS`, Phase 3)
+Events (transformed-data publishes, job lifecycle, acknowledgements) travel a pluggable `EventBus`
+(`services/orchestrator/src/event-bus/`), DISJOINT from QueueTransport:
+- **`kafka` (default)** — brokered; today's behavior byte-equivalent.
+- **`zmq`** — orchestrator binds PUB (events out, 5558) + PULL (acks in, 5559); the
+  dev-ack-simulator connects SUB/PUSH (`tools/dev-ack-simulator/src/event-bus/`). PUB/SUB is
+  fire-and-forget (drops when no subscriber is attached), so the **event-republish scan**
+  (`event-republish-scan` maintenance task, auto-on under zmq) re-publishes un-ACKed steps past
+  `EVENT_REPUBLISH_LEASE_SECONDS` — without it a dropped publish stalls until the 30-min
+  stuck-ack auto-fail. Topic configs use bus-neutral `eventTopic` with `kafkaTopic` as the
+  compat alias (D-D: accept both, prefer new). Full-zmq profile: `QUEUE_TRANSPORT=zmq` +
+  `EVENT_BUS=zmq` (SE-34/35; sqs-tasks+zmq-events mixed mode works too — compose change only).
+
 ### Port Mapping & ORCHESTRATOR_URL
 The orchestrator listens on port 3000 inside its container, mapped to **port 3002** on the host.
 Workflow SE `helpers.sh` already defaults to the host-mapped port —
@@ -289,7 +302,7 @@ autodiscovered — no hand-maintained eval lists. Core SEs carry per-SE README m
 README (the pre-v2 legacy workflow-SE estate) degrades to defaults rather than erroring.
 Full contract: `server-config/docs/setpoint-eval-conventions.md`.
 
-### Core SEs (`setpoint-evals/`) -- 33 tests
+### Core SEs (`setpoint-evals/`) -- 35 tests
 Test generic engine capabilities (retry, DLQ, deduplication, concurrency, maintenance tasks,
 leader election, schema integrity, Setpoint Evals discovery/run API, DAG/activity endpoints,
 redelivery engine, zmq task transport).
@@ -627,6 +640,11 @@ Example: `enableDeduplication` → `FEATURE_FLAG_ENABLE_DEDUPLICATION`
 | `ZMQ_WORKER_SILENCE_MS` | `15000` | Heartbeat silence after which a zmq worker is marked dead (unrouted) |
 | `ZMQ_WORKER_SWEEP_INTERVAL_MS` | `5000` | Zmq worker-registry sweeper cadence |
 | `ZMQ_HEARTBEAT_INTERVAL_MS` | `5000` | Worker-host heartbeat cadence (containers in `docker-compose.zmq.yml`) |
+| `EVENT_BUS` | `kafka` | Event bus profile: `kafka` (default) · `zmq` (ZeroMQ events: PUB 5558 / PULL 5559 via `docker-compose.zmq.yml`) |
+| `ZMQ_EVENTS_ENDPOINT` | `tcp://0.0.0.0:5558` | PUB bind (orchestrator, zmq events); subscribers connect to `tcp://orchestrator:5558` |
+| `ZMQ_ACKS_ENDPOINT` | `tcp://0.0.0.0:5559` | PULL bind (orchestrator, zmq acks); ack publishers connect to `tcp://orchestrator:5559` |
+| `EVENT_REPUBLISH_LEASE_SECONDS` | `60` | Un-ACKed publish age before the event-republish scan re-publishes (zmq events) |
+| `EVENT_REPUBLISH_SCAN_FORCE_ENABLED` | `false` | Force the event-republish scan on (SE escape hatch; auto-on under `EVENT_BUS=zmq`) |
 | `PUBLISH_EVENTS_TO_KAFKA` | `true` | Enable Kafka event publishing |
 | `ORCHESTRATOR_CALLBACK_URL` | `http://orchestrator:3000` | Callback URL for workers (container context) |
 | `KAFKA_BROKER` | `dtm-kafka:29092` | Kafka broker (container context) |

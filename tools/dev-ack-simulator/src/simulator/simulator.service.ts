@@ -1,6 +1,9 @@
 import { Injectable, Inject, Logger } from "@nestjs/common";
 import { EachMessagePayload } from "kafkajs";
-import { KafkaService } from "../kafka/kafka.service";
+import {
+  SIMULATOR_EVENT_BUS,
+  SimulatorEventBus,
+} from "../event-bus/simulator-event-bus.interface";
 import {
   ACK_SUBSCRIPTIONS,
   AckSubscription,
@@ -61,7 +64,8 @@ export class SimulatorService {
   private readonly stepNameLookup: Map<string, AckSubscription>;
 
   constructor(
-    private readonly kafkaService: KafkaService,
+    @Inject(SIMULATOR_EVENT_BUS)
+    private readonly eventBus: SimulatorEventBus,
     @Inject(ACK_SUBSCRIPTIONS)
     private readonly subscriptions: AckSubscription[],
     @Inject(ACK_DEFAULTS_PROVIDER)
@@ -120,7 +124,8 @@ export class SimulatorService {
   }
 
   /**
-   * Main message handler
+   * Main message handler (kafkajs entry: parse, then delegate to the
+   * bus-neutral handleBusMessage)
    */
   async handleMessage(payload: EachMessagePayload): Promise<void> {
     const topic = payload.topic;
@@ -132,7 +137,22 @@ export class SimulatorService {
 
     try {
       const message = JSON.parse(messageValue) as CompletedTransformMessage;
+      await this.handleBusMessage(topic, message);
+    } catch (error) {
+      this.logger.error(`Failed to process completion message: ${error}`);
+    }
+  }
 
+  /**
+   * Bus-neutral entry point (Phase 3): a parsed completion event from ANY
+   * event bus profile. The kafkajs path reaches it via handleMessage; the
+   * zmq path reaches it via ZmqEventBusClient.
+   */
+  async handleBusMessage(
+    topic: string,
+    message: CompletedTransformMessage,
+  ): Promise<void> {
+    try {
       if (!message.requiresAcknowledgement) {
         this.logger.debug("Step does not require acknowledgement, skipping");
         return;
@@ -211,7 +231,7 @@ export class SimulatorService {
         await this.delay(ackDelay);
       }
 
-      await this.kafkaService.publish(ackTopic, finalAck);
+      await this.eventBus.publish(ackTopic, finalAck);
 
       const finalPrimaryKey = finalAck.externalId as string;
       const wasOverridden = customPayload?.externalId !== undefined;

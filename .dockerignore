@@ -1,5 +1,8 @@
 # Node.js
 node_modules
+# Nested workspace package node_modules too (pnpm symlink farms break COPY on
+# repo-root build contexts, e.g. tools/dev-ack-simulator)
+**/node_modules
 npm-debug.log
 yarn-error.log
 pnpm-debug.log

@@ -13,11 +13,17 @@
  *   received  worker → orchestrator   lightweight receipt-ack for one taskHandle
  *   hello     worker → orchestrator   registration (workerId + queues served)
  *   heartbeat worker → orchestrator   liveness refresh (silence ⇒ dead)
+ *   event     event bus, BOTH directions (Phase 3): orchestrator PUB →
+ *             subscriber (transformed-data events) and simulator PUSH →
+ *             orchestrator PULL (acknowledgements). Topic frame = the event
+ *             topic itself, so SUB-side prefix filtering works unchanged.
  *
  * Durability note: this transport is at-most-once. A task dispatched to a
  * worker that dies mid-flight is re-dispatched by the orchestrator's
  * redelivery engine from the `dtm_steps` delegation lease — the database is
- * the durability anchor, not the socket.
+ * the durability anchor, not the socket. Event frames have the same
+ * character: PUB/SUB drops when no subscriber is attached, so recovery is
+ * the orchestrator's event-republish scan, not the socket.
  */
 
 /** Current envelope schema version. Decoders reject anything else. */
@@ -53,6 +59,19 @@ export interface ZmqHeartbeatPayload {
   workerId: string;
 }
 
+/**
+ * Event-bus frame payload (Phase 3). Travels in both directions:
+ * orchestrator PUB → subscribers (cascade data events) and simulator PUSH →
+ * orchestrator PULL (acknowledgement events). The event topic is duplicated
+ * into the frame's topic so SUB-side filtering needs no JSON peek.
+ */
+export interface ZmqEventPayload {
+  /** Event topic (e.g. 'order-processing.customer.completed' or its .ack twin). */
+  topic: string;
+  /** The event body exactly as the Kafka path would place in the message value. */
+  message: Record<string, unknown>;
+}
+
 interface ZmqEnvelopeBase<K extends string, P> {
   version: number;
   kind: K;
@@ -69,18 +88,24 @@ export type ZmqHeartbeatEnvelope = ZmqEnvelopeBase<
   "heartbeat",
   ZmqHeartbeatPayload
 >;
+export type ZmqEventEnvelope = ZmqEnvelopeBase<"event", ZmqEventPayload>;
 
 export type ZmqEnvelope =
   | ZmqTaskEnvelope
   | ZmqReceivedEnvelope
   | ZmqHelloEnvelope
-  | ZmqHeartbeatEnvelope;
+  | ZmqHeartbeatEnvelope
+  | ZmqEventEnvelope;
 
 /** Topic a given envelope must travel under (checked on decode). */
 export function zmqTopicForEnvelope(envelope: ZmqEnvelope): string {
-  return envelope.kind === "task"
-    ? `${ZMQ_TASK_TOPIC_PREFIX}${envelope.payload.queueName}`
-    : ZMQ_CONTROL_TOPIC;
+  if (envelope.kind === "task") {
+    return `${ZMQ_TASK_TOPIC_PREFIX}${envelope.payload.queueName}`;
+  }
+  if (envelope.kind === "event") {
+    return envelope.payload.topic;
+  }
+  return ZMQ_CONTROL_TOPIC;
 }
 
 export function buildZmqTaskEnvelope(payload: ZmqTaskPayload): ZmqTaskEnvelope {
@@ -111,6 +136,12 @@ export function buildZmqHeartbeatEnvelope(
     kind: "heartbeat",
     payload: { workerId },
   };
+}
+
+export function buildZmqEventEnvelope(
+  payload: ZmqEventPayload,
+): ZmqEventEnvelope {
+  return { version: ZMQ_ENVELOPE_VERSION, kind: "event", payload };
 }
 
 /** Serialize an envelope to the `[topic, json]` frame pair. */
@@ -177,6 +208,18 @@ export function decodeZmqEnvelope(topic: string, json: string): ZmqEnvelope {
         );
       }
       return raw as unknown as ZmqTaskEnvelope;
+    }
+    case "event": {
+      requireString(payload.topic, "topic");
+      if (!isRecord(payload.message)) {
+        throw new Error("Invalid zmq envelope: 'message' must be an object");
+      }
+      if (topic !== payload.topic) {
+        throw new Error(
+          `Invalid zmq envelope: event frame topic '${topic}' does not match payload topic '${payload.topic}'`,
+        );
+      }
+      return raw as unknown as ZmqEventEnvelope;
     }
     case "received":
       requireString(payload.taskHandle, "taskHandle");

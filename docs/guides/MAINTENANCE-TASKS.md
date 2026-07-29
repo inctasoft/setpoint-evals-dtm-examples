@@ -33,10 +33,20 @@ This guide details the available tasks, how to execute them (scheduled or manual
 
 ### 5. Redelivery Engine (`redelivery-engine`)
 *   **Purpose**: Orchestrator-driven redelivery for transports without native redelivery. Scans for steps whose delegation lease (`dtm_steps.lease_expires_at`) expired while still `DELEGATED` / `IN_PROGRESS` / `IN_PROGRESS_RETRYING` and re-dispatches them (incrementing the synthetic `attempt_count`); steps that exhaust `max_retry_count` are written to `dtm_dead_letters` and marked `FAILED`.
-*   **Activation**: Fail-closed — a total no-op unless the active transport declares `redelivery: 'orchestrator'` (none of the current transports do) **or** `REDELIVERY_ENGINE_FORCE_ENABLED=true` (setpoint-eval escape hatch). Under the default SQS profile nothing fires: SQS redelivery semantics are unchanged.
+*   **Activation**: Fail-closed — a total no-op unless the active transport declares `redelivery: 'orchestrator'` (the zmq task transport does) **or** `REDELIVERY_ENGINE_FORCE_ENABLED=true` (setpoint-eval escape hatch). Under the default SQS profile nothing fires: SQS redelivery semantics are unchanged.
 *   **Configuration**: `REDELIVERY_LEASE_SECONDS` (lease stamped at each dispatch, default 300).
 *   **Schedule**: Every 30 seconds.
 *   **Pinned by**: SE-29 (lease expiry re-dispatch), SE-30 (dead letter on exhaustion).
+
+---
+
+### 6. Event Republish Scan (`event-republish-scan`)
+*   **Purpose**: Dropped-publish recovery for drop-realistic event buses (the A5 gap). Under `EVENT_BUS=zmq`, a publish fired while no subscriber is attached vanishes silently (PUB/SUB fire-and-forget); without this scan the step would sit `WAITING_FOR_ACK` until the 30-minute `stuck-acknowledgement` task auto-fails it. The scan (a) re-publishes `WAITING_FOR_ACK` steps whose `kafka_published_at` is older than the lease, and (b) re-fires the pending-publish check for `COMPLETED` output steps with `kafka_published_at IS NULL`.
+*   **Activation**: Fail-closed — a total no-op unless the active event bus declares `droppedPublishRecovery: 'orchestrator'` (ZmqEventBus does) **or** `EVENT_REPUBLISH_SCAN_FORCE_ENABLED=true` (setpoint-eval escape hatch). Under the default Kafka bus nothing fires: the 30-minute stuck-ack behavior is byte-identical.
+*   **Configuration**: `EVENT_REPUBLISH_LEASE_SECONDS` (un-ACKed publish age before re-publish, default 60).
+*   **Schedule**: Every 30 seconds.
+*   **Column note**: the publish marker column stays named `kafka_published_at` — a bus-neutral rename was considered and rejected as not cheap (entity + migration + every reader); treat the name as the bus-neutral publish marker.
+*   **Pinned by**: SE-35 (dropped publish recovered before the 30-min timeout).
 
 ---
 

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { CallbackService } from './callback/callback.service';
-import { KafkaService } from './kafka/kafka.service';
+import { EventBus } from './event-bus/event-bus.interface';
 
 export interface HealthCheckResult {
   status: 'UP' | 'DOWN' | 'DEGRADED';
@@ -35,7 +35,7 @@ export class AppService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly callbackService: CallbackService,
-    private readonly kafkaService: KafkaService,
+    private readonly eventBus: EventBus,
   ) {}
 
   getHello(): string {
@@ -114,8 +114,9 @@ export class AppService {
     const startTime = Date.now();
 
     try {
-      // Use KafkaService to check Kafka health
-      const isConnected = this.kafkaService.isConnected();
+      // Use the EventBus abstraction to check event-bus health
+      // (Kafka connectivity under the kafka profile, socket bindings under zmq)
+      const isConnected = this.eventBus.isConnected();
       const responseTime = Date.now() - startTime;
 
       if (isConnected) {
