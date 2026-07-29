@@ -59,6 +59,17 @@ wait_for_orchestrator_health() {
   return 0
 }
 
+
+# Restore the worker fleet when the OUTER stack profile needs it (see SE-31's
+# copy of this comment): under a restored zmq .env a bare rm -sf would leave
+# subsequent evals workerless.
+restore_workers_if_profile_needs() {
+  grep -qE '^BUS_PROFILE=zmq|^QUEUE_TRANSPORT=zmq' "$ENV_FILE" || return 0
+  zmq_compose up -d \
+    zmq-worker-host-order-processing \
+    zmq-worker-host-iot-sensor-pipeline \
+    zmq-worker-host-infra-provisioning >/dev/null 2>&1 || true
+}
 restore_all() {
   # Brokers first (nothing asserts during restore — best effort, never mask the verdict).
   # ORDER MATTERS: kafka crashes when started before zookeeper is ready, and an aws
@@ -91,6 +102,7 @@ restore_all() {
       --profile db --profile orchestrator --profile dev-tools \
       up -d --no-deps --force-recreate orchestrator dev-ack-simulator ) >/dev/null 2>&1 || true
   wait_for_orchestrator_health || log_warn "orchestrator did not confirm healthy during final restore"
+  restore_workers_if_profile_needs
 }
 trap restore_all EXIT
 

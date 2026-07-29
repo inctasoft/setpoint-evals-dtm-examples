@@ -7,6 +7,47 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # Source shared helpers
 source "${REPO_ROOT}/workflows/order-processing/setpoint-evals/shared/helpers.sh"
 
+# ── Profile-aware redelivery timing (Phase 4) ────────────────────────────────
+# This SE's fan-out job contains steps that fail deterministically (the
+# default-variant payload intentionally omits productId/paymentId/shipmentId);
+# STEP 2 needs those steps to reach a TERMINAL state inside the poll budget.
+# On aws that is SQS's ~30s visibility-timeout redelivery; under zmq it is the
+# redelivery engine — but its default lease is 300s, far beyond the budget.
+# Under BUS_PROFILE=zmq, flip REDELIVERY_LEASE_SECONDS=5 (SE-29's proven
+# pattern) so the engine exhausts the doomed steps in time. The stuck-
+# WAITING_FOR_CHILDREN recovery this SE actually tests is profile-neutral.
+ENV_FILE="$REPO_ROOT/.env"
+COMPOSE_MAIN="$REPO_ROOT/docker-compose.yml"
+COMPOSE_ZMQ="$REPO_ROOT/docker-compose.zmq.yml"
+ENV_BACKUP=""
+if [ "$(se_bus_profile)" = "zmq" ]; then
+  ENV_BACKUP="$(mktemp)"
+  cp "$ENV_FILE" "$ENV_BACKUP"
+  sed -i '/^REDELIVERY_LEASE_SECONDS=/d' "$ENV_FILE"
+  printf '\nREDELIVERY_LEASE_SECONDS=5\n' >> "$ENV_FILE"
+  ( cd "$REPO_ROOT" && docker compose --env-file "$ENV_FILE" \
+      -f "$COMPOSE_MAIN" -f "$COMPOSE_ZMQ" \
+      --profile db --profile orchestrator --profile dev-tools --profile zmq-tasks \
+      up -d --no-deps --force-recreate orchestrator ) >/dev/null
+  _tries=0
+  until curl -sf -m 3 "http://localhost:${ORCHESTRATOR_PORT_HOST:-3002}/api/v1/health" >/dev/null 2>&1; do
+    _tries=$((_tries + 1))
+    [ "$_tries" -gt 60 ] && { echo "orchestrator did not come back healthy after lease flip"; exit 1; }
+    sleep 2
+  done
+fi
+restore_lease_env() {
+  if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
+    cp "$ENV_BACKUP" "$ENV_FILE"
+    rm -f "$ENV_BACKUP"
+    ( cd "$REPO_ROOT" && docker compose --env-file "$ENV_FILE" \
+        -f "$COMPOSE_MAIN" -f "$COMPOSE_ZMQ" \
+        --profile db --profile orchestrator --profile dev-tools --profile zmq-tasks \
+        up -d --no-deps --force-recreate orchestrator ) >/dev/null 2>&1 || true
+  fi
+}
+trap restore_lease_env EXIT
+
 # Test configuration
 # Generate unique identifier for each run (enables multiple runs without conflicts)
 EXTERNAL_SYSTEM_ID=$(uuidgen)

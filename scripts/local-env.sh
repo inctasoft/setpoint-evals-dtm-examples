@@ -35,6 +35,7 @@ COMPOSE_ORDER_PROCESSING="workflows/order-processing/docker-compose.order-proces
 COMPOSE_IOT_SENSOR="workflows/iot-sensor-pipeline/docker-compose.iot-sensor-pipeline.yml"
 COMPOSE_INFRA_PROVISIONING="workflows/infra-provisioning/docker-compose.infra-provisioning.yml"
 COMPOSE_WORKERS="docker-compose.workers.yml"
+COMPOSE_ZMQ="docker-compose.zmq.yml"
 COMPOSE_WORKERS_DEV="docker-compose.workers.dev.yml"
 
 # External Kafka Network (for integrated mode with the external system)
@@ -66,6 +67,7 @@ Usage: $0 <command> [options]
 
 Commands:
   start --standalone [--orchestrator] [--monitor] [--build]          Start all services with local Kafka
+  start --standalone --zmq [--orchestrator] [--build]                Full-zmq profile: NO Kafka, NO LocalStack, NO pollers (BUS_PROFILE=zmq)
   start --integrated [--orchestrator] [--monitor] [--build]          Start services using the external system's Kafka
   stop                                                               Stop all services
   deploy-workers [--count=N] [--debug-server] [--build]              Deploy Lambda workers (default: --count=10)
@@ -181,6 +183,29 @@ start_standalone() {
     pkill -9 -f "tsx.*poller.ts" 2>/dev/null || true
     rm -f /tmp/dtm-orchestrator.pid /tmp/dtm-poller.pid 2>/dev/null || true
     
+    # ── Full-zmq profile (Phase 4) ─────────────────────────────────────────
+    # BUS_PROFILE=zmq via compose passthrough; NO Kafka/Zookeeper/Kafka-UI, NO
+    # LocalStack, NO sqs-pollers — db + orchestrator + dev-ack-simulator +
+    # zmq-worker-hosts only.
+    if [ "$ZMQ_PROFILE" = true ]; then
+        export BUS_PROFILE=zmq
+        print_info "Full-zmq profile: BUS_PROFILE=zmq (no brokers, no LocalStack, no pollers)"
+        echo ""
+        if [ ! -f "$COMPOSE_ZMQ" ]; then
+            print_error "$COMPOSE_ZMQ not found — the zmq profiles are missing"
+            exit 1
+        fi
+        docker compose --env-file "$ENV_FILE" -f "$COMPOSE_MAIN" -f "$COMPOSE_ZMQ" \
+            --profile db --profile orchestrator --profile dev-tools --profile zmq-tasks \
+            up -d --wait $(get_build_flag)
+        print_success "Full-zmq stack is up (db, orchestrator, dev-ack-simulator, zmq-worker-hosts)"
+        echo ""
+        print_header "${GREEN}✅ Full-ZMQ Environment Ready!${NC}"
+        echo ""
+        show_access_urls "standalone"
+        return 0
+    fi
+
     # Build workspace packages if debug mode is enabled and orchestrator is starting
     if [ "$START_ORCHESTRATOR" = true ]; then
         echo ""
@@ -334,6 +359,29 @@ start_integrated() {
     # Check Docker
     check_docker || exit 1
     
+    # ── Full-zmq profile (Phase 4) ─────────────────────────────────────────
+    # BUS_PROFILE=zmq via compose passthrough; NO Kafka/Zookeeper/Kafka-UI, NO
+    # LocalStack, NO sqs-pollers — db + orchestrator + dev-ack-simulator +
+    # zmq-worker-hosts only.
+    if [ "$ZMQ_PROFILE" = true ]; then
+        export BUS_PROFILE=zmq
+        print_info "Full-zmq profile: BUS_PROFILE=zmq (no brokers, no LocalStack, no pollers)"
+        echo ""
+        if [ ! -f "$COMPOSE_ZMQ" ]; then
+            print_error "$COMPOSE_ZMQ not found — the zmq profiles are missing"
+            exit 1
+        fi
+        docker compose --env-file "$ENV_FILE" -f "$COMPOSE_MAIN" -f "$COMPOSE_ZMQ" \
+            --profile db --profile orchestrator --profile dev-tools --profile zmq-tasks \
+            up -d --wait $(get_build_flag)
+        print_success "Full-zmq stack is up (db, orchestrator, dev-ack-simulator, zmq-worker-hosts)"
+        echo ""
+        print_header "${GREEN}✅ Full-ZMQ Environment Ready!${NC}"
+        echo ""
+        show_access_urls "standalone"
+        return 0
+    fi
+
     # Build workspace packages if debug mode is enabled and orchestrator is starting
     if [ "$START_ORCHESTRATOR" = true ]; then
         echo ""
@@ -711,10 +759,12 @@ purge_all() {
         DB_NAME="dtm"
         
         # Execute DELETE via docker exec (more reliable than psql from host)
+        # dtm_dead_letters purged explicitly too (Phase 4: the redelivery
+        # engine's bus-neutral quarantine is zmq-relevant state; harmless on aws).
         DELETE_RESULT=$(docker exec ${COMPOSE_PROJECT_NAME:-dtm}-db psql \
             -U "$DB_USER" \
             -d "$DB_NAME" \
-            -c "DELETE FROM dtm_jobs;" 2>&1)
+            -c "DELETE FROM dtm_dead_letters; DELETE FROM dtm_jobs;" 2>&1)
         
         if [ $? -eq 0 ]; then
             # Extract number of deleted rows from PostgreSQL output
@@ -1972,6 +2022,10 @@ if [ "${1}" = "start" ]; then
                 ;;
             --build|--rebuild)
                 REBUILD_FLAG=true
+                shift
+                ;;
+            --zmq)
+                ZMQ_PROFILE=true
                 shift
                 ;;
             *)

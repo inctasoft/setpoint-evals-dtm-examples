@@ -59,6 +59,20 @@ wait_for_orchestrator_health() {
   return 0
 }
 
+
+# Restore the worker fleet when the OUTER stack profile needs it: the trap
+# restores .env to its pre-SE state; if that state runs zmq tasks
+# (BUS_PROFILE=zmq or QUEUE_TRANSPORT=zmq), a bare `rm -sf` would leave every
+# SUBSEQUENT eval workerless (estate poisoning — observed live as SE-10/17
+# stalling after SE-34's trap). Under an aws restored .env the fleet stays
+# down, matching the pre-SE state.
+restore_workers_if_profile_needs() {
+  grep -qE '^BUS_PROFILE=zmq|^QUEUE_TRANSPORT=zmq' "$ENV_FILE" || return 0
+  zmq_compose up -d \
+    zmq-worker-host-order-processing \
+    zmq-worker-host-iot-sensor-pipeline \
+    zmq-worker-host-infra-provisioning >/dev/null 2>&1 || true
+}
 restore_all() {
   # Worker hosts first (nothing asserts during restore — best effort, never mask the verdict)
   zmq_compose rm -sf \
@@ -75,6 +89,7 @@ restore_all() {
       --profile db --profile orchestrator --profile dev-tools \
       up -d --no-deps --force-recreate orchestrator ) >/dev/null 2>&1 || true
   wait_for_orchestrator_health || log_warn "orchestrator did not confirm healthy during final restore"
+  restore_workers_if_profile_needs
 }
 trap restore_all EXIT
 
