@@ -1,6 +1,6 @@
 # Demo Video Recordings
 
-Three subtitled "story" recordings of the DTM Operations Dashboard (dtm-video-v2) —
+Four subtitled "story" recordings of the DTM Operations Dashboard (dtm-video-v2) —
 each drives the monitor's own Scenarios screen the way an operator would: open an
 eval, read its README as the contract (gherkin + a mermaid diagram **actually
 scrolled into view**, not just present-in-the-DOM), a spotlighted click on **Run**,
@@ -66,7 +66,13 @@ plus the recording/tooling changes below.
 
 ## Prerequisites
 
-1. **Infrastructure running** — `pnpm infra` (orchestrator + workers + DB + Kafka + SQS)
+1. **Infrastructure running** — `pnpm infra` (orchestrator + workers + DB + Kafka + SQS).
+   **The fourth demo is the exception**: `zmq-profile-demo.spec.ts` records against
+   the **full-zmq profile** instead — `BUS_PROFILE=zmq` with every broker container
+   STOPPED (no kafka/zookeeper/kafka-ui/localstack, no sqs-pollers) and the three
+   `zmq-worker-host` containers registered. It can NEVER record in the same
+   invocation as the three aws demos (the bus profile is process-wide), which is
+   why the pipeline gives it its own flag — see `DEMO_ZMQ=1` below.
 2. **Monitor dashboard running**, with the frontend auth bypass on (`DISABLE_AUTH=true`
    alone does NOT bypass the monitor's own SuperTokens redirect — see `app.tsx`):
    ```bash
@@ -90,6 +96,10 @@ plus the recording/tooling changes below.
 ```bash
 DASHBOARD_URL=http://localhost:5173 DTM_DB_PASSWORD=dtm_dev_password_2026 \
   bash scripts/generate-demo-media.sh
+
+# The fourth (full-zmq) demo — run against a BUS_PROFILE=zmq stack instead:
+DASHBOARD_URL=http://localhost:5173 DTM_DB_PASSWORD=dtm_dev_password_2026 \
+  DEMO_ZMQ=1 bash scripts/generate-demo-media.sh
 ```
 
 This is copy-pasteable as written against a stock local bring-up — adjust
@@ -124,6 +134,7 @@ pnpm se:playwright:demo:order    # order-processing partial payment failure
 pnpm se:playwright:demo:iot      # iot-sensor-pipeline double fan-out
 pnpm se:playwright:demo:infra    # infra-provisioning cascade failure
 pnpm se:playwright:demo:story    # all three STORY demos, one invocation (no ffmpeg step)
+pnpm se:playwright:demo:zmq      # full-zmq profile, zero brokers (records only against a BUS_PROFILE=zmq stack)
 pnpm se:playwright:demo:multi    # untouched pre-rework demo (not narrated)
 pnpm demo:reset                  # optional: TRUNCATE dtm_jobs before a take (see above)
 pnpm demo:media                  # alias for scripts/generate-demo-media.sh
@@ -174,6 +185,7 @@ hero.gif -frames:v 1 -update 1 out.png` and eyeball it) before trusting it.
 | `docs/media/order-processing-partial-payment-failure.mp4` | ~63s (ramped 3x from ~96s raw; verified across 2 runs: 63.0-63.7s) | ~3 MB |
 | `docs/media/iot-double-fan-out.mp4` | ~48s (unramped; verified across 2 runs: 47.7-48.0s) | ~4 MB |
 | `docs/media/infra-cascade-failure.mp4` | ~87s (ramped 5x from ~173s raw; verified across 2 runs: 87.0-87.2s) | ~3 MB |
+| `docs/media/zmq-bus-profile-zero-brokers.mp4` | ~67s (unramped — zmq has no SQS-retry dead-air; verified across 3 runs: 67.0s final, spec passes 1.1-1.4m) | ~4 MB |
 | `docs/media/hero.gif` | ~18s | ~2 MB |
 
 Committed in-repo, not as GitHub release assets — every mp4 is comfortably under a
@@ -333,6 +345,46 @@ rows, both render live and both back the caption's "each tried three times" clai
 | `terminal-landed` | "And network and environment stand untouched. Damage contained, not smeared." | Full-screen DAG: red core, amber ring, 2 green survivors |
 | `fullscreen-exit` | "FAILED — with a map of exactly what that means." | Job Detail, FAILED badge |
 | `assertions` | "What should break, broke. What shouldn't, didn't. Checked." | Assertions checklist, IN VIEWPORT |
+
+### 4. Full-ZeroMQ Bus Profile — `SE-36-full-zmq-bus-profile` → `COMPLETED`
+
+The bus-agnosticism program's closeout demo, and the only one that records against
+a **different stack profile**: full-zmq (`BUS_PROFILE=zmq`, every broker container
+stopped). The Run button re-issues SE-36's own quick-order payload, the job lands
+COMPLETED in seconds, and the story is told through what is NOT on camera: no SQS,
+no LocalStack, no Kafka — while the monitor's own panels prove the work anyway.
+Two surfaces carry the honesty argument (both verified live before scripting, see
+the spec's header): the task-bus ("SQS") panel under zmq shows every
+registry-known queue in its idle state ("All 42 queues idle" — accounted for, none
+on a broker; receipt-ack is near-instant so a busy row is a coin flip, NOT a
+beat-worthy surface), and the Kafka Topics tab renders its honest degraded
+empty-state ("Kafka broker not reachable — topics unavailable" —
+`/api/v1/kafka/topics` → `{topics: [], connected: false}`), never an error page.
+
+| Beat label | Caption | What's on screen |
+|---|---|---|
+| `open` | "The same engine. One docker network. Zero brokers." | Scenarios screen loading |
+| `scenarios` | "The contract says it plainly: stop every broker — the work still gets done." | Gherkin block |
+| `mermaid-visible` | "No queue server, no message broker — and the steps still flow, the answers still come back." | README mermaid, IN VIEWPORT |
+| — | "One click runs the real thing — on nothing but this network." | Spotlighted Run button |
+| `run-click`/`job-created` | "A real order, entering the real engine." | Job-created link |
+| `workflow-filtered` | *(dashboard filtered)* | Dashboard, workflow filtered |
+| `taskbus-panel` | "Every queue the engine knows, in plain view — and not one of them on a broker." | Task-bus panel's idle state ("All 42 queues idle") |
+| `fullscreen-open` | "The whole job, as a living map." | Full-screen DAG entered on camera |
+| — | "Work flowing already — no waiting room, no redelivery clock." | DAG + console streaming live events (capped ~7s — zmq jobs land in seconds; tightened after first-take frame review) |
+| `drilldown-open` | "Every step accounted for, on the record — the same way it always was." | Drill-down: SubmitCustomer's real activity timeline |
+| `kafka-honest` | "This panel has nothing to hide: there is no broker to reach." | Kafka tab's honest degraded empty-state |
+| `terminal-landed` | "COMPLETED — every step, every confirmation, zero brokers." | Job Detail, COMPLETED badge |
+| `assertions` | "The checklist, kept item by item." | Assertions checklist, IN VIEWPORT |
+| `close` | "AWS primitives when you want them. Zero brokers when you don't. One environment variable." | Closing beat |
+
+**Pipeline note:** the bus profile is process-wide, so this demo can never share a
+recording invocation with the three aws demos. `generate-demo-media.sh` gives it
+its own flag: `DEMO_ZMQ=1` records only this spec (via `-g 'ZeroMQ'`) and runs
+only its media steps; the default path is byte-identical for the aws three, and
+converts/publishes the zmq raw opportunistically when present. No speed-ramp for
+this slug — zmq has no SQS-retry dead-air to compress (publishes unramped, like
+iot).
 
 ## Caption system
 

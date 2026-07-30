@@ -76,6 +76,34 @@ else
   )
 fi
 
+# ZMQ story demo (bus-agnosticism program closeout) — records against the
+# full-zmq profile (BUS_PROFILE=zmq, zero brokers), which can NEVER share an
+# invocation with the three aws story demos: the bus profile is process-wide, so
+# no single stack can satisfy both. DEMO_ZMQ=1 runs ONLY the zmq spec and its
+# media steps; the default path below stays byte-identical for the aws three.
+if [ "${DEMO_ZMQ:-0}" = "1" ]; then
+  ZMQ_SLUG="zmq-bus-profile-zero-brokers"
+  if [ "${SKIP_RECORD:-0}" = "1" ]; then
+    echo "==> [zmq] SKIP_RECORD=1 — reusing existing raw recording, NOT re-recording"
+  else
+    echo "==> [zmq] Recording the full-zmq STORY demo ($ZMQ_SLUG) — requires BUS_PROFILE=zmq stack, zero brokers"
+    (
+      cd "$PW_DIR"
+      DASHBOARD_URL="${DASHBOARD_URL:-http://localhost:5173}" \
+        npx playwright test --project=demo-videos -g 'ZeroMQ'
+    )
+  fi
+  echo "==> [zmq] Converting webm -> raw mp4 (unramped — zmq has no SQS-retry dead-air to compress)"
+  ffmpeg -y -i "$VIDEO_DIR/$ZMQ_SLUG.webm" -c:v libx264 -pix_fmt yuv420p -crf 20 -preset slow -movflags +faststart -an "$RAW_DIR/$ZMQ_SLUG.mp4"
+  cp "$RAW_DIR/$ZMQ_SLUG.mp4" "$MEDIA_DIR/$ZMQ_SLUG.mp4"
+  echo "==> [zmq] Verifying artifact"
+  size_mb=$(du -m "$MEDIA_DIR/$ZMQ_SLUG.mp4" | cut -f1)
+  duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$MEDIA_DIR/$ZMQ_SLUG.mp4")
+  printf '  %-45s %6sMB  %8.1fs\n' "$ZMQ_SLUG.mp4" "$size_mb" "$duration"
+  echo "==> Done (zmq). Artifact in $MEDIA_DIR (raw intermediate in $RAW_DIR, gitignored)"
+  exit 0
+fi
+
 declare -A SLUGS=(
   [order-processing-partial-payment-failure]="Ada's Beans Cafe — a failed payment doesn't sink the order (PARTIAL_SUCCESS)"
   [iot-double-fan-out]="Greenhouse 3 — double fan-out explodes into an N-by-M step tree (COMPLETED)"
@@ -89,6 +117,12 @@ for slug in "${!SLUGS[@]}"; do
   [ -f "$in" ] || { echo "ERROR: missing recording $in — the Playwright run above should have produced it" >&2; exit 1; }
   ffmpeg -y -i "$in" -c:v libx264 -pix_fmt yuv420p -crf 20 -preset slow -movflags +faststart -an "$raw"
 done
+# The zmq story demo's raw is produced by the DEMO_ZMQ=1 path (never this
+# invocation — the bus profile is process-wide); convert it opportunistically
+# when present so a default run on an aws stack can also refresh its publish.
+if [ -f "$VIDEO_DIR/zmq-bus-profile-zero-brokers.webm" ]; then
+  ffmpeg -y -i "$VIDEO_DIR/zmq-bus-profile-zero-brokers.webm" -c:v libx264 -pix_fmt yuv420p -crf 20 -preset slow -movflags +faststart -an "$RAW_DIR/zmq-bus-profile-zero-brokers.mp4"
+fi
 
 # Beat-manifest lookup — returns the timestamp (seconds, float) for a given
 # label in <slug>.beats.json, or empty string if the label is missing (a spec
@@ -184,6 +218,12 @@ else
 fi
 # iot has no comparable dead-air span (fan-out completes in seconds) — publish as-is.
 cp "$RAW_DIR/iot-double-fan-out.mp4" "$MEDIA_DIR/iot-double-fan-out.mp4"
+# zmq likewise: tasks land in milliseconds under the ROUTER/DEALER path, so the
+# recording is tight by construction — publish unramped when its raw exists (it
+# is produced via DEMO_ZMQ=1, never in the same invocation as the aws three).
+if [ -f "$RAW_DIR/zmq-bus-profile-zero-brokers.mp4" ]; then
+  cp "$RAW_DIR/zmq-bus-profile-zero-brokers.mp4" "$MEDIA_DIR/zmq-bus-profile-zero-brokers.mp4"
+fi
 if [ "$SPEED_RAMP" != "on" ]; then
   cp "$RAW_DIR/order-processing-partial-payment-failure.mp4" "$MEDIA_DIR/order-processing-partial-payment-failure.mp4"
   cp "$RAW_DIR/infra-cascade-failure.mp4" "$MEDIA_DIR/infra-cascade-failure.mp4"
