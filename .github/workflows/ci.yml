@@ -78,7 +78,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           # Per-runner dest — the default `~/setup-pnpm` is shared by both org runners (same
           # ghrunner $HOME) and they race on it. Rationale in this job's header comment.
@@ -116,7 +116,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           # Per-runner dest — the default `~/setup-pnpm` is shared by both org runners (same
           # ghrunner $HOME) and they race on it. Rationale in this job's header comment.
