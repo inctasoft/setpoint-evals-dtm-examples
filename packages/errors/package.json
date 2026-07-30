@@ -29,7 +29,7 @@
     "react"
   ],
   "peerDependencies": {
-    "@nestjs/common": "^11.0.0"
+    "@nestjs/common": "^11.1.28"
   },
   "peerDependenciesMeta": {
     "@nestjs/common": {
@@ -39,7 +39,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.18.0",
-    "@nestjs/common": "^11.0.0",
+    "@nestjs/common": "^11.1.28",
     "@types/express": "^4.17.21",
     "@types/node": "^20.16.15",
     "eslint": "^9.18.0",

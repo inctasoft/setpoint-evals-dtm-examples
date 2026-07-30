@@ -43,7 +43,7 @@
     "@dtm/kafka-producer": "workspace:*",
     "@google-cloud/tasks": "^6.2.3",
     "@nestjs/axios": "^4.0.1",
-    "@nestjs/common": "^11.0.1",
+    "@nestjs/common": "^11.1.28",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
