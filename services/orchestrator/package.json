@@ -80,7 +80,7 @@
     "@types/ws": "^8.18.1",
     "aws-sdk-client-mock": "^4.1.0",
     "eslint": "^9.18.0",
-    "eslint-config-prettier": "^10.0.1",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^16.0.0",
     "jest": "^30.0.0",
