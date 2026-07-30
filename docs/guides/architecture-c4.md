@@ -1,7 +1,8 @@
 # Architecture — C4 Context & Container Views
 
 Two orientation diagrams for a reader arriving fresh: **who/what talks to the system** (C1)
-and **what the system is made of** (C2). For the full mechanics — the callback protocol,
+and **what the system is made of** (C2), plus a pair of **deployment views** showing how the
+container set changes with the bus profile. For the full mechanics — the callback protocol,
 retry/ACK state machine, fan-out cascades — see [system-architecture.md](system-architecture.md)
 and the rest of this directory; this page stays deliberately shallow.
 
@@ -74,6 +75,69 @@ C4Container
     Rel(orchestrator, kafka, "Publishes completion events", "Kafka producer")
     Rel(kafka, orchestrator, "ACK events", "Kafka consumer")
 ```
+
+## C3 — Deployment views by bus profile
+
+The same engine deploys two ways (see [bus-profiles.md](bus-profiles.md) for the full
+runbook). **aws** (the default): tasks travel SQS via LocalStack with sqs-pollers
+invoking Lambda workers; events travel Kafka with Zookeeper. **full-zmq**
+(`BUS_PROFILE=zmq`): tasks travel a ZeroMQ ROUTER/DEALER pair between the orchestrator
+and per-workflow `zmq-worker-host` containers; events travel a ZeroMQ PUB/PULL pair
+between the orchestrator and the dev-ack-simulator's zmq client — no broker containers
+at all.
+
+```mermaid
+C4Deployment
+    title DTM — Deployment view, aws profile (default)
+
+    Deployment_Node(host, "Docker host", "docker compose: docker-compose.yml + .kafka.yml + .workers.yml") {
+        Deployment_Node(dtm, "Docker network 'dtm'") {
+            Container(orch, "dtm-orchestrator", "NestJS", "State machine; SqsTransport + KafkaEventBus")
+            Container(db, "dtm-db", "PostgreSQL", "dtm_jobs / dtm_steps / dtm_dead_letters")
+            Container(localstack, "dtm-localstack", "LocalStack", "SQS queues + Lambda workers (PERSISTENCE=0)")
+            Container(pollers, "dtm-sqs-poller-xN", "Node.js", "Polls SQS, invokes Lambdas (dev)")
+            Container(kafka, "dtm-kafka + dtm-zookeeper", "Kafka", "Completion/ACK topics")
+            Container(sim, "dtm-dev-ack-simulator", "NestJS", "Simulated target-system ACKs (Kafka)")
+        }
+    }
+
+    Rel(orch, localstack, "Delegates step work", "AWS SDK/SQS")
+    Rel(pollers, localstack, "Poll + invoke", "SQS + Lambda API")
+    Rel(localstack, orch, "Worker callbacks", "HTTP POST")
+    Rel(orch, kafka, "Publishes completion events", "producer")
+    Rel(sim, kafka, "Subscribe completions, publish ACKs", "consumer/producer")
+    Rel(kafka, orch, "ACK events", "consumer")
+```
+
+```mermaid
+C4Deployment
+    title DTM — Deployment view, full-zmq profile (BUS_PROFILE=zmq, zero brokers)
+
+    Deployment_Node(host, "Docker host", "docker compose: docker-compose.yml + .zmq.yml, profile zmq-tasks") {
+        Deployment_Node(dtm, "Docker network 'dtm'") {
+            Container(orch, "dtm-orchestrator", "NestJS", "ZmqTransport + ZmqEventBus; ROUTER :5557 tasks, PUB :5558 events, PULL :5559 acks")
+            Container(db, "dtm-db", "PostgreSQL", "dtm_jobs / dtm_steps / dtm_dead_letters — the durability anchor")
+            Container(wh1, "dtm-zmq-worker-host-order-processing", "Node.js DEALER", "In-process handlers, one container per workflow (scalable)")
+            Container(wh2, "dtm-zmq-worker-host-iot-sensor-pipeline", "Node.js DEALER", "Same host image, iot workflow")
+            Container(wh3, "dtm-zmq-worker-host-infra-provisioning", "Node.js DEALER", "Same host image, infra workflow")
+            Container(sim, "dtm-dev-ack-simulator", "NestJS zmq client", "SUB :5558, PUSH :5559")
+        }
+    }
+
+    Rel(wh1, orch, "HELLO/heartbeat; RECEIVED acks", "DEALER→ROUTER [topic, json] envelopes")
+    Rel(orch, wh1, "Task dispatch (fair-queue per queue)", "ROUTER→DEALER")
+    Rel(wh1, orch, "Step progress callbacks", "HTTP POST (unchanged)")
+    Rel(orch, sim, "Completion events", "PUB→SUB 'event' envelopes")
+    Rel(sim, orch, "ACK events", "PUSH→PULL 'event' envelopes")
+```
+
+Notes on the zmq view:
+
+- **Reliability is explicit, not brokered.** Task re-delivery comes from the redelivery
+  engine (`dtm_steps` delegation leases → `dtm_dead_letters`); event re-publish comes
+  from the event-republish scan. The sockets are fire-and-forget by design.
+- **Worker callbacks stay HTTP.** Only the task and event legs changed transports;
+  handler code is identical on both profiles.
 
 ## Notes for readers coming from the mechanics docs
 
