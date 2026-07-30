@@ -188,6 +188,7 @@ configService.get<boolean>("app.autoMigration.onConsumerCreated");
 | `ZMQ_ACKS_ENDPOINT` | PULL bind for zmq acks in (orchestrator, `EVENT_BUS=zmq` only) | `tcp://0.0.0.0:5559` |
 | `EVENT_REPUBLISH_LEASE_SECONDS` | Un-ACKed publish age before the event-republish scan re-publishes | `60` |
 | `EVENT_REPUBLISH_SCAN_FORCE_ENABLED` | Force the event-republish scan on (SE escape hatch) | `false` |
+| `BUS_PROFILE` | Umbrella: `zmq` expands to `QUEUE_TRANSPORT=zmq` + `EVENT_BUS=zmq` (explicit per-var env wins); `aws` = today | unset |
 
 The `zmq` profile additionally needs the `zmq-tasks` compose profile
 (`docker-compose.zmq.yml`) — one `zmq-worker-host` service per workflow.

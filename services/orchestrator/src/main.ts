@@ -1,3 +1,6 @@
+// BUS_PROFILE umbrella expansion MUST land before AppModule is evaluated:
+// TransportModule/EventBusModule read process.env in module-level consts.
+import './config/bus-profile';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';

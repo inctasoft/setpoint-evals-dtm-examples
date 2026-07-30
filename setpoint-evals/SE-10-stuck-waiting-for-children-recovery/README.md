@@ -2,7 +2,15 @@
 
 ## Setpoint Eval Metadata
 
-**Category**: maintenance · **Duration**: ~30s (per test.sh's own banner) · **Timeout**: 120s · **Isolation**: parallel-safe
+**Category**: maintenance · **Duration**: ~30s on aws · ~100s under zmq (redelivery-engine cadence) · **Timeout**: 240s · **Isolation**: destructive
+
+> Profile note (Phase 4): the SE's fan-out vehicle relies on fast redelivery of
+> deterministically-failing steps to reach a terminal state inside the poll
+> budget. On aws that is SQS visibility-timeout redelivery; under `BUS_PROFILE=zmq`
+> the SE flips `REDELIVERY_LEASE_SECONDS=5` (recreate + restore, SE-29 pattern) so
+> the redelivery engine exhausts those steps in time — hence `destructive` (it
+> mutates shared stack state under zmq). The stuck-WAITING_FOR_CHILDREN recovery
+> under test is profile-neutral.
 
 ## Scenario
 ```gherkin

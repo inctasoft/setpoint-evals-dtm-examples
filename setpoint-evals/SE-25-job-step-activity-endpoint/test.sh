@@ -19,7 +19,13 @@ source "$ROOT/workflows/order-processing/setpoint-evals/shared/helpers.sh"
 log_info "SE-25: GET jobs/:jobId/steps/:stepName/activity — activity endpoint contract"
 
 # --- preflight ---------------------------------------------------------------
-curl -s -o /dev/null -m 5 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/health" \
+# Profile gate (Phase 4): the retry_count>=3 activity fixture is produced only
+# by SE-01/SE-02, which are aws-only under zmq — the endpoint itself is neutral
+# but this SE's fixture is not.
+se_skip_if_zmq "retry-count activity fixture depends on SE-01/02 (aws-only under zmq)"
+
+# Retry-poll (loaded hosts boot the orchestrator slowly after recreate-heavy SEs)
+se_wait_orchestrator_health 90 2 \
   || se_skip "orchestrator is not reachable at ${ORCHESTRATOR_HOST}"
 command -v jq >/dev/null 2>&1 || se_skip "jq is required"
 DB_CONTAINER="${COMPOSE_PROJECT_NAME:-dtm}-db"

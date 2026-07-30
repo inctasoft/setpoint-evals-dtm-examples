@@ -62,8 +62,11 @@ JOB_ID=$(echo "$BODY" | jq -r '.jobId')
 [ -n "$JOB_ID" ] && [ "$JOB_ID" != "null" ] || se_skip "job submission response had no jobId: ${BODY}"
 log_info "1. submitted job ${JOB_ID}, waiting for DiscoverSensors to fan out..."
 
-# Give DiscoverSensors + its children a moment to run (short simDelay, no retries expected).
-for _ in $(seq 1 20); do
+# Give DiscoverSensors + its children a moment to run. 20s was tuned for an
+# idle aws stack; under zmq + parallel-wave contention the two preceding steps
+# (each with an ACK roundtrip) can take much longer (observed live SKIP:22 —
+# job was still running, not broken).
+for _ in $(seq 1 90); do
   DS_STATUS=$(psql_q "SELECT status FROM dtm_steps WHERE job_id='${JOB_ID}' AND step_value='DiscoverSensors';")
   [ "$DS_STATUS" = "completed" ] && break
   sleep 1

@@ -24,6 +24,8 @@ import "reflect-metadata";
 import type { SQSEvent, Context, SQSBatchResponse } from "aws-lambda";
 import type { DataSource } from "typeorm";
 
+import { getWorkflowConfig } from "./queue-discovery";
+
 export type LambdaHandler = (
   event: SQSEvent,
   context: Context,
@@ -42,9 +44,9 @@ function unknownWorkflow(workflowName: string, what: string): Error {
 }
 
 /**
- * Handler map for ONE workflow, loaded lazily (fail fast on unknown name).
+ * Load one workflow's handler map by name (lazy, per-case).
  */
-export function getHandlerMapForWorkflow(
+function loadWorkflowHandlerMap(
   workflowName: string,
 ): Record<string, LambdaHandler> {
   switch (workflowName) {
@@ -67,6 +69,73 @@ export function getHandlerMapForWorkflow(
     default:
       throw unknownWorkflow(workflowName, "handler map");
   }
+}
+
+/**
+ * Fallback handler loader for queues the workflow's handlerMap does NOT
+ * cover. The terminal archive/record steps of every workflow
+ * (order-archive-processed-order, iot-archive-processed-pipeline,
+ * infra-record-provisioned-infra) ship ONLY as esbuild Lambda bundles
+ * (workers/dist/<file>/index.js) and are intentionally absent from
+ * handlerMap — on aws they run as deployed Lambdas. The bundle is
+ * self-contained (typeorm + product-db entities compiled in), so loading it
+ * sidesteps both the tsx decorator-metadata wall and the relative
+ * product-db source import (both proven live). Directory convention:
+ * queueName = <prefix>-<file> (verified against all three workflow configs).
+ * Workflow handler code stays byte-untouched.
+ */
+function loadBundleFallbackHandler(
+  workflowName: string,
+  queueName: string,
+): LambdaHandler {
+  const file = queueName.split("-").slice(1).join("-");
+  const mod = require(`@dtm-workflows/${workflowName}-workers/dist/${file}/index.js`);
+  if (typeof mod.handler !== "function") {
+    throw new Error(
+      `Bundle fallback for queue '${queueName}' (dist/${file}/index.js) exports no 'handler'`,
+    );
+  }
+  return mod.handler as LambdaHandler;
+}
+
+/**
+ * Handler map for ONE workflow, loaded lazily (fail fast on unknown name).
+ * Covers every queue the workflow config declares: handlerMap entries first,
+ * then convention-based source fallbacks for queues the map doesn't cover
+ * (the archive/record terminal steps — without this those tasks are routed
+ * but have no handler and die silently, observed live as full happy-paths
+ * stalling on their final step).
+ */
+export function getHandlerMapForWorkflow(
+  workflowName: string,
+): Record<string, LambdaHandler> {
+  const handlerMap = { ...loadWorkflowHandlerMap(workflowName) };
+
+  const workflow = getWorkflowConfig(workflowName);
+  const fallbacks: string[] = [];
+  for (const variant of Object.keys(workflow.steps)) {
+    for (const step of workflow.steps[variant]) {
+      if (!step.queueName || step.queueName in handlerMap) continue;
+      try {
+        handlerMap[step.queueName] = loadBundleFallbackHandler(
+          workflowName,
+          step.queueName,
+        );
+        fallbacks.push(step.queueName);
+      } catch (error) {
+        console.warn(
+          `  ⚠️  No handler for queue '${step.queueName}' (not in handlerMap, bundle fallback failed: ${error instanceof Error ? error.message : error})`,
+        );
+      }
+    }
+  }
+  if (fallbacks.length > 0) {
+    console.log(
+      `  ➕ Bundle fallback handlers registered: ${fallbacks.join(", ")}`,
+    );
+  }
+
+  return handlerMap;
 }
 
 /** The served workflow's source-db DataSource, loaded lazily. */

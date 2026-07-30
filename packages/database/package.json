@@ -7,7 +7,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "rm -rf dist && tsc",
+    "build": "tsc --outDir .build-tmp && mkdir -p dist && rm -rf dist/* && cp -r .build-tmp/. dist/ && rm -rf .build-tmp",
     "build:watch": "tsc --watch",
     "clean": "rm -rf dist",
     "format": "prettier --write \"src/**/*.ts\"",

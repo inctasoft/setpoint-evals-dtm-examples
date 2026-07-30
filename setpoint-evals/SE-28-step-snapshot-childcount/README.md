@@ -2,7 +2,7 @@
 
 ## Setpoint Eval Metadata
 
-**Category**: monitor-backend · **Duration**: ~15s (one fast double-fan-out iot job + WS snapshot capture) · **Timeout**: 60s · **Isolation**: parallel-safe
+**Category**: monitor-backend · **Duration**: ~15s idle · ~60s under contention (one double-fan-out iot job + WS snapshot capture) · **Timeout**: 240s · **Isolation**: parallel-safe
 
 ## Scenario
 ```gherkin

@@ -28,7 +28,8 @@ PROJECT="${COMPOSE_PROJECT_NAME:-dtm}"
 # --- preflight ---------------------------------------------------------------
 [ -f "$ENV_FILE" ] || se_skip "no .env at repo root — cannot safely flip orchestrator env without one"
 [ -f "$COMPOSE_ZMQ" ] || se_skip "no docker-compose.zmq.yml at repo root — the zmq profiles are missing"
-curl -s -o /dev/null -m 5 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/health" \
+# Retry-poll (loaded hosts boot the orchestrator slowly after recreate-heavy SEs)
+se_wait_orchestrator_health 90 2 \
   || se_skip "orchestrator is not reachable at ${ORCHESTRATOR_HOST}"
 docker compose version >/dev/null 2>&1 || se_skip "docker compose CLI not available"
 docker image inspect dtm-zmq-worker-host:latest >/dev/null 2>&1 \
@@ -58,6 +59,20 @@ wait_for_orchestrator_health() {
   return 0
 }
 
+
+# Restore the worker fleet when the OUTER stack profile needs it: the trap
+# restores .env to its pre-SE state; if that state runs zmq tasks
+# (BUS_PROFILE=zmq or QUEUE_TRANSPORT=zmq), a bare `rm -sf` would leave every
+# SUBSEQUENT eval workerless (estate poisoning — observed live as SE-10/17
+# stalling after SE-34's trap). Under an aws restored .env the fleet stays
+# down, matching the pre-SE state.
+restore_workers_if_profile_needs() {
+  grep -qE '^BUS_PROFILE=zmq|^QUEUE_TRANSPORT=zmq' "$ENV_FILE" || return 0
+  zmq_compose up -d \
+    zmq-worker-host-order-processing \
+    zmq-worker-host-iot-sensor-pipeline \
+    zmq-worker-host-infra-provisioning >/dev/null 2>&1 || true
+}
 restore_all() {
   zmq_compose rm -sf \
     zmq-worker-host-order-processing \
@@ -71,6 +86,7 @@ restore_all() {
       --profile db --profile orchestrator --profile dev-tools \
       up -d --no-deps --force-recreate orchestrator dev-ack-simulator ) >/dev/null 2>&1 || true
   wait_for_orchestrator_health || log_warn "orchestrator did not confirm healthy during final restore"
+  restore_workers_if_profile_needs
 }
 trap restore_all EXIT
 
@@ -96,10 +112,18 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-# Give the simulator's SUB a moment to attach before any publish fires
+# Give the simulator's SUB a moment to attach before any publish fires.
+# Poll for the client's boot line instead of a one-shot capture — the
+# simulator boots slower than the orchestrator's health gate, and under the
+# full-suite matrix its recreate races the log read (observed FAIL live).
 sleep 5
 ORCH_LOGS="$(docker logs "${PROJECT}-orchestrator" 2>&1 | tail -300)"
-SIM_LOGS="$(docker logs "${PROJECT}-dev-ack-simulator" 2>&1 | tail -200)"
+SIM_LOGS=""
+for _ in $(seq 1 15); do
+  SIM_LOGS="$(docker logs "${PROJECT}-dev-ack-simulator" 2>&1 | tail -300)"
+  echo "$SIM_LOGS" | grep -q "ZmqEventBusClient connected" && break
+  sleep 2
+done
 
 # --- act: quick-order end-to-end over both zmq buses --------------------------
 EXTERNAL_SYSTEM_ID=$(uuidgen)

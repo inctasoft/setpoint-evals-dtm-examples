@@ -82,7 +82,7 @@ WS_URL="ws://localhost:${WS_PORT}/ws/events"
 API="${ORCHESTRATOR_HOST}/api/${API_VERSION}"
 
 log_info "27.2: connecting to ${WS_URL}, submitting an alert-gated iot-sensor-pipeline job..."
-CAPTURE=$(node "$HERE/watch-skip-broadcast.mjs" "$WS_URL" "$API" 30 2>/tmp/se27-watch.log)
+CAPTURE=$(node "$HERE/watch-skip-broadcast.mjs" "$WS_URL" "$API" 90 2>/tmp/se27-watch.log)
 WATCH_RC=$?
 
 if [ "$WATCH_RC" -ne 0 ]; then

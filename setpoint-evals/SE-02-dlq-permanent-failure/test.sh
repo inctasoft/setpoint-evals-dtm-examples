@@ -27,6 +27,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${REPO_ROOT}/workflows/order-processing/setpoint-evals/shared/helpers.sh"
 
+# Profile gate (Phase 4): SQS DLQ routing (redrive policy → DLQ) — aws profile only.
+# Under zmq, exhausted attempts dead-letter via the engine into dtm_dead_letters (SE-30/32).
+se_skip_if_zmq "SQS DLQ routing semantics — aws profile only (zmq dead-letters via dtm_dead_letters, see SE-30/32)"
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Parse Command Line Arguments
 # ═══════════════════════════════════════════════════════════════════════════

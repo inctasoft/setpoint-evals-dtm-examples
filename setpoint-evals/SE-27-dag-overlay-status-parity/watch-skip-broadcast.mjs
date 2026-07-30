@@ -48,8 +48,15 @@ const payload = {
 let jobId = null;
 let lastSnapshot = null;
 const seenTypes = [];
+let ws = null;
+let submitted = false;
 
-const ws = new WebSocket(wsUrl);
+// Reconnect-with-retry (Phase 4): the estate's package builds (this SE's own
+// 27.1a build included) make the orchestrator's nest --watch recompile and
+// restart the app mid-watch — the WS dies with ECONNRESET and a single-shot
+// connection turns that into a false FAIL. Reconnect until the deadline;
+// the job runs to completion server-side regardless, and a skip that fires
+// after the reconnect is still captured live.
 
 const timer = setTimeout(() => {
   console.error(`watch-skip-broadcast: timed out after ${timeoutSec}s (jobId=${jobId}, seenEventTypes=${JSON.stringify(seenTypes)})`);
@@ -61,7 +68,14 @@ const timer = setTimeout(() => {
   });
 }, timeoutSec * 1000);
 
+function connect() {
+  ws = new WebSocket(wsUrl);
+  wire(ws);
+}
+
+function wire(ws) {
 ws.on('open', async () => {
+  if (submitted) return; // job already in flight server-side — do not resubmit
   try {
     const res = await fetch(`${apiBase}/workflows/iot-sensor-pipeline/jobs`, {
       method: 'POST',
@@ -70,6 +84,7 @@ ws.on('open', async () => {
     });
     const body = await res.json();
     jobId = body.jobId || body.id;
+    submitted = true; // only after a jobId exists — a failed fetch must retry on next connect
     if (!jobId) {
       clearTimeout(timer);
       console.error(`watch-skip-broadcast: job submission did not return a jobId: ${JSON.stringify(body)}`);
@@ -104,7 +119,15 @@ ws.on('message', (raw) => {
 });
 
 ws.on('error', (err) => {
-  clearTimeout(timer);
-  console.error(`watch-skip-broadcast: WebSocket error: ${err.message}`);
-  process.exit(1);
+  console.error(`watch-skip-broadcast: WebSocket error: ${err.message} — reconnecting until deadline`);
 });
+
+ws.on('close', () => {
+  // Reconnect until the deadline (the outer setTimeout owns exit semantics).
+  setTimeout(() => {
+    try { connect(); } catch (err) { console.error(`watch-skip-broadcast: reconnect failed: ${err.message}`); }
+  }, 2000);
+});
+}
+
+connect();

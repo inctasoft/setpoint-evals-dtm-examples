@@ -31,7 +31,8 @@ REPUB_LEASE=10
 # --- preflight ---------------------------------------------------------------
 [ -f "$ENV_FILE" ] || se_skip "no .env at repo root — cannot safely flip orchestrator env without one"
 [ -f "$COMPOSE_ZMQ" ] || se_skip "no docker-compose.zmq.yml at repo root — the zmq profiles are missing"
-curl -s -o /dev/null -m 5 "${ORCHESTRATOR_HOST}/api/${API_VERSION}/health" \
+# Retry-poll (loaded hosts boot the orchestrator slowly after recreate-heavy SEs)
+se_wait_orchestrator_health 90 2 \
   || se_skip "orchestrator is not reachable at ${ORCHESTRATOR_HOST}"
 docker compose version >/dev/null 2>&1 || se_skip "docker compose CLI not available"
 docker image inspect dtm-zmq-worker-host:latest >/dev/null 2>&1 \
@@ -61,6 +62,20 @@ wait_for_orchestrator_health() {
   return 0
 }
 
+
+# Restore the worker fleet when the OUTER stack profile needs it: the trap
+# restores .env to its pre-SE state; if that state runs zmq tasks
+# (BUS_PROFILE=zmq or QUEUE_TRANSPORT=zmq), a bare `rm -sf` would leave every
+# SUBSEQUENT eval workerless (estate poisoning — observed live as SE-10/17
+# stalling after SE-34's trap). Under an aws restored .env the fleet stays
+# down, matching the pre-SE state.
+restore_workers_if_profile_needs() {
+  grep -qE '^BUS_PROFILE=zmq|^QUEUE_TRANSPORT=zmq' "$ENV_FILE" || return 0
+  zmq_compose up -d \
+    zmq-worker-host-order-processing \
+    zmq-worker-host-iot-sensor-pipeline \
+    zmq-worker-host-infra-provisioning >/dev/null 2>&1 || true
+}
 restore_all() {
   docker start "${PROJECT}-dev-ack-simulator" >/dev/null 2>&1 || true
   zmq_compose rm -sf \
@@ -75,6 +90,7 @@ restore_all() {
       --profile db --profile orchestrator --profile dev-tools \
       up -d --no-deps --force-recreate orchestrator dev-ack-simulator ) >/dev/null 2>&1 || true
   wait_for_orchestrator_health || log_warn "orchestrator did not confirm healthy during final restore"
+  restore_workers_if_profile_needs
 }
 trap restore_all EXIT
 

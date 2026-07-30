@@ -31,6 +31,9 @@ services:
   # Orchestrator ROUTER bind additions (merged over docker-compose.yml).
   orchestrator:
     environment:
+      # Umbrella passthrough (Phase 4): BUS_PROFILE=zmq ./scripts/local-env.sh
+      # start --zmq needs no .env edit — explicit per-var env still wins.
+      - BUS_PROFILE=${BUS_PROFILE:-aws}
       - ZMQ_TASKS_ENDPOINT=${ZMQ_TASKS_ENDPOINT:-tcp://0.0.0.0:5557}
       - ZMQ_TASK_ACK_TIMEOUT_MS=${ZMQ_TASK_ACK_TIMEOUT_MS:-2000}
       # Liveness tuning. Guideline: keep ZMQ_WORKER_SILENCE_MS comfortably
@@ -58,6 +61,7 @@ services:
   # Inert under EVENT_BUS unset/kafka.
   dev-ack-simulator:
     environment:
+      - BUS_PROFILE=${BUS_PROFILE:-aws}
       - ZMQ_EVENTS_ENDPOINT=${ZMQ_EVENTS_PEER_ENDPOINT:-tcp://orchestrator:5558}
       - ZMQ_ACKS_ENDPOINT=${ZMQ_ACKS_PEER_ENDPOINT:-tcp://orchestrator:5559}
 
@@ -74,6 +78,9 @@ services:
     # WORKER_ID from the container hostname.
     environment:
       - WORKFLOW_NAME=order-processing
+      # Source-DB identity (matches what the Lambda deploy env carries; the
+      # dtm-db copy is the one workers actually read — see CLAUDE.md).
+      - ORDER_PROCESSING_DB_NAME=order_processing_db
       - ZMQ_TASKS_ENDPOINT=tcp://orchestrator:5557
       - ZMQ_HEARTBEAT_INTERVAL_MS=${ZMQ_HEARTBEAT_INTERVAL_MS:-5000}
       # Same worker-sdk simulation gate the LocalStack Lambda env carries in dev
@@ -87,6 +94,9 @@ services:
       - ./workflows/order-processing/dist:/app/node_modules/@dtm-workflows/order-processing/dist:ro
       - ./workflows/order-processing/package.json:/app/node_modules/@dtm-workflows/order-processing/package.json:ro
       - ./workflows/order-processing/workers/src:/app/node_modules/@dtm-workflows/order-processing-workers/src:ro
+      # esbuild Lambda bundles — the bundle fallback for handlerMap-missing
+      # queues (archive/record terminal steps ship ONLY as bundles)
+      - ./workflows/order-processing/workers/dist:/app/node_modules/@dtm-workflows/order-processing-workers/dist:ro
       - ./workflows/order-processing/workers/package.json:/app/node_modules/@dtm-workflows/order-processing-workers/package.json:ro
       - ./workflows/order-processing/source-db/dist:/app/node_modules/@dtm-workflows/order-processing-typeorm/dist:ro
       - ./workflows/order-processing/source-db/package.json:/app/node_modules/@dtm-workflows/order-processing-typeorm/package.json:ro
@@ -107,6 +117,10 @@ services:
     image: dtm-zmq-worker-host:latest
     environment:
       - WORKFLOW_NAME=iot-sensor-pipeline
+      # CRITICAL: the DataSource default is iot_sensor_db, but dtm-db hosts
+      # iot_sensor_pipeline_db — without this every iot task fails
+      # 'database "iot_sensor_db" does not exist' (observed live).
+      - IOT_SENSOR_DB_NAME=iot_sensor_pipeline_db
       - ZMQ_TASKS_ENDPOINT=tcp://orchestrator:5557
       - ZMQ_HEARTBEAT_INTERVAL_MS=${ZMQ_HEARTBEAT_INTERVAL_MS:-5000}
       # Same worker-sdk simulation gate the LocalStack Lambda env carries in dev
@@ -120,6 +134,9 @@ services:
       - ./workflows/iot-sensor-pipeline/dist:/app/node_modules/@dtm-workflows/iot-sensor-pipeline/dist:ro
       - ./workflows/iot-sensor-pipeline/package.json:/app/node_modules/@dtm-workflows/iot-sensor-pipeline/package.json:ro
       - ./workflows/iot-sensor-pipeline/workers/src:/app/node_modules/@dtm-workflows/iot-sensor-pipeline-workers/src:ro
+      # esbuild Lambda bundles — the bundle fallback for handlerMap-missing
+      # queues (archive/record terminal steps ship ONLY as bundles)
+      - ./workflows/iot-sensor-pipeline/workers/dist:/app/node_modules/@dtm-workflows/iot-sensor-pipeline-workers/dist:ro
       - ./workflows/iot-sensor-pipeline/workers/package.json:/app/node_modules/@dtm-workflows/iot-sensor-pipeline-workers/package.json:ro
       - ./workflows/iot-sensor-pipeline/source-db/dist:/app/node_modules/@dtm-workflows/iot-sensor-pipeline-typeorm/dist:ro
       - ./workflows/iot-sensor-pipeline/source-db/package.json:/app/node_modules/@dtm-workflows/iot-sensor-pipeline-typeorm/package.json:ro
@@ -140,6 +157,7 @@ services:
     image: dtm-zmq-worker-host:latest
     environment:
       - WORKFLOW_NAME=infra-provisioning
+      - INFRA_PROVISIONING_DB_NAME=infra_provisioning_db
       - ZMQ_TASKS_ENDPOINT=tcp://orchestrator:5557
       - ZMQ_HEARTBEAT_INTERVAL_MS=${ZMQ_HEARTBEAT_INTERVAL_MS:-5000}
       # Same worker-sdk simulation gate the LocalStack Lambda env carries in dev
@@ -153,6 +171,9 @@ services:
       - ./workflows/infra-provisioning/dist:/app/node_modules/@dtm-workflows/infra-provisioning/dist:ro
       - ./workflows/infra-provisioning/package.json:/app/node_modules/@dtm-workflows/infra-provisioning/package.json:ro
       - ./workflows/infra-provisioning/workers/src:/app/node_modules/@dtm-workflows/infra-provisioning-workers/src:ro
+      # esbuild Lambda bundles — the bundle fallback for handlerMap-missing
+      # queues (archive/record terminal steps ship ONLY as bundles)
+      - ./workflows/infra-provisioning/workers/dist:/app/node_modules/@dtm-workflows/infra-provisioning-workers/dist:ro
       - ./workflows/infra-provisioning/workers/package.json:/app/node_modules/@dtm-workflows/infra-provisioning-workers/package.json:ro
       - ./workflows/infra-provisioning/source-db/dist:/app/node_modules/@dtm-workflows/infra-provisioning-typeorm/dist:ro
       - ./workflows/infra-provisioning/source-db/package.json:/app/node_modules/@dtm-workflows/infra-provisioning-typeorm/package.json:ro

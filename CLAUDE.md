@@ -76,6 +76,7 @@ Each workflow defines its own source database:
 - **Kafka**: port 9093 (host) → 29092 (internal broker)
 - **Dev ACK Simulator**: port 3003 (host) → 3001 (container)
 - **ZMQ Worker Hosts** (only under `QUEUE_TRANSPORT=zmq` + profile `zmq-tasks`): `dtm-zmq-worker-host-<workflow>-<n>` — DEALER task workers, one per workflow; no host port (ROUTER on orchestrator:5557 internal, optionally 5557 host)
+- **Full-zmq container set** (`BUS_PROFILE=zmq` / `start --zmq`): only `dtm-db`, `dtm-orchestrator`, `dtm-dev-ack-simulator` (zmq client), `dtm-zmq-worker-host-*` (+ per-workflow source DBs for local mode) — no kafka/zookeeper/kafka-ui/localstack/sqs-poller containers at all
 - **Kafka UI**: port 8090
 
 ### Lambda Worker Deployment Mode (IMPORTANT)
@@ -103,6 +104,17 @@ Step dispatch goes through a pluggable `QueueTransport` (`services/orchestrator/
   `redelivery: 'orchestrator'`); dead letters land in `dtm_dead_letters`. Fleet introspection:
   `GET /api/v1/workers`. Mixed mode (zmq tasks + Kafka events unchanged):
   `QUEUE_TRANSPORT=zmq` in `.env` + `docker-compose.zmq.yml` profile `zmq-tasks` (SE-31/32/33).
+
+### Bus Profile (`BUS_PROFILE`, Phase 4)
+The user-facing switch: `BUS_PROFILE=zmq` expands to `QUEUE_TRANSPORT=zmq` + `EVENT_BUS=zmq`
+(precedence: explicit per-var env > `BUS_PROFILE` > defaults — mixed modes stay one env away).
+Full-zmq bring-up needs NO LocalStack, NO Kafka/Zookeeper/Kafka-UI, NO sqs-pollers:
+`BUS_PROFILE=zmq ./scripts/local-env.sh start --zmq` (or compose `-f docker-compose.yml
+-f docker-compose.zmq.yml --profile db --profile orchestrator --profile dev-tools
+--profile zmq-tasks up -d`). Health/readiness degrade honestly with Kafka down
+(readiness stays 200 reporting `kafka: down`; `/api/v1/kafka/topics` returns
+`{topics: [], connected: false}`). Pinned by SE-36; the core estate runs green under
+BOTH profiles (SQS/Kafka-semantic SEs skip honestly under zmq: SE-01/02/20).
 
 ### Event Bus (`EVENT_BUS`, Phase 3)
 Events (transformed-data publishes, job lifecycle, acknowledgements) travel a pluggable `EventBus`
@@ -302,7 +314,7 @@ autodiscovered — no hand-maintained eval lists. Core SEs carry per-SE README m
 README (the pre-v2 legacy workflow-SE estate) degrades to defaults rather than erroring.
 Full contract: `server-config/docs/setpoint-eval-conventions.md`.
 
-### Core SEs (`setpoint-evals/`) -- 35 tests
+### Core SEs (`setpoint-evals/`) -- 36 tests
 Test generic engine capabilities (retry, DLQ, deduplication, concurrency, maintenance tasks,
 leader election, schema integrity, Setpoint Evals discovery/run API, DAG/activity endpoints,
 redelivery engine, zmq task transport).
@@ -641,6 +653,7 @@ Example: `enableDeduplication` → `FEATURE_FLAG_ENABLE_DEDUPLICATION`
 | `ZMQ_WORKER_SWEEP_INTERVAL_MS` | `5000` | Zmq worker-registry sweeper cadence |
 | `ZMQ_HEARTBEAT_INTERVAL_MS` | `5000` | Worker-host heartbeat cadence (containers in `docker-compose.zmq.yml`) |
 | `EVENT_BUS` | `kafka` | Event bus profile: `kafka` (default) · `zmq` (ZeroMQ events: PUB 5558 / PULL 5559 via `docker-compose.zmq.yml`) |
+| `BUS_PROFILE` | unset | Umbrella switch (Phase 4): `zmq` expands to `QUEUE_TRANSPORT=zmq` + `EVENT_BUS=zmq`; `aws` = today. Explicit per-var env wins over the umbrella |
 | `ZMQ_EVENTS_ENDPOINT` | `tcp://0.0.0.0:5558` | PUB bind (orchestrator, zmq events); subscribers connect to `tcp://orchestrator:5558` |
 | `ZMQ_ACKS_ENDPOINT` | `tcp://0.0.0.0:5559` | PULL bind (orchestrator, zmq acks); ack publishers connect to `tcp://orchestrator:5559` |
 | `EVENT_REPUBLISH_LEASE_SECONDS` | `60` | Un-ACKed publish age before the event-republish scan re-publishes (zmq events) |
