@@ -1,0 +1,108 @@
+{
+  "name": "active\u2192error on RECONCILE_LOST; a later authoritative snapshot SUPERSEDES local state",
+  "initial": {
+    "forests": {}
+  },
+  "steps": [
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000033",
+          "ts": "2026-07-30T18:00:08Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "spawn",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ]
+    },
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000034",
+          "ts": "2026-07-30T18:00:09Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "active",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ]
+    },
+    {
+      "action": "reconcileForest",
+      "args": [
+        {
+          "schema": "agent-forest/1",
+          "ts": "2026-07-30T18:30:00Z",
+          "root_id": "r1",
+          "roots": [],
+          "nodes": []
+        }
+      ],
+      "expect": {
+        "forests": {
+          "r1": {
+            "nodes": {
+              "a1": {
+                "lifecycle": "error",
+                "error_reason": "lost_connection"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "action": "reconcileForest",
+      "args": [
+        {
+          "schema": "agent-forest/1",
+          "ts": "2026-07-30T18:30:00Z",
+          "root_id": "r1",
+          "roots": [
+            "a1"
+          ],
+          "nodes": [
+            {
+              "agent_id": "a1",
+              "parent_id": null,
+              "provider": "claude",
+              "kind": "subagent",
+              "lifecycle": "done"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "forests": {
+          "r1": {
+            "nodes": {
+              "a1": {
+                "lifecycle": "done"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "final": {
+    "forests": {
+      "r1": {
+        "nodes": {
+          "a1": {
+            "lifecycle": "done"
+          }
+        }
+      }
+    }
+  }
+}

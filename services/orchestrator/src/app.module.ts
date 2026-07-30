@@ -18,6 +18,7 @@ import { CorrelationModule } from './common/correlation/correlation.module';
 import { CorrelationMiddleware } from './common/middleware/correlation.middleware';
 import { WorkflowLoaderModule } from './workflow-loader';
 import { WebSocketModule } from './websocket';
+import { AgentEventsModule } from './agent-events/agent-events.module';
 import { AuthModule } from './auth/auth.module';
 import { MetricsModule } from './metrics/metrics.module';
 
@@ -100,6 +101,8 @@ logRuntimeMode();
     MaintenanceModule,
     CorrelationModule,
     WebSocketModule,
+    // Phase-C agent-event/1 ingest plane (HTTP POST → forest merge → WS relay)
+    AgentEventsModule,
     AuthModule.forRoot(),
     EvalsModule,
     MetricsModule,

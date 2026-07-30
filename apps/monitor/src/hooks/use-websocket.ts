@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
-import type { DtmEvent, JobState, StepState, StepStatus, SqsQueueStatus, EventLogEntry } from '../types/events';
+import type {
+  DtmEvent,
+  JobState,
+  StepState,
+  StepStatus,
+  SqsQueueStatus,
+  EventLogEntry,
+} from '../types/events';
+import { useAgentForestStore } from '../state/agent-forest.store';
 
 const MAX_LOG_ENTRIES = 200;
 const MAX_RECONNECT_DELAY = 30000;
@@ -46,7 +54,7 @@ export function useWebSocket(url: string) {
     [entry, ...prev.eventLog].slice(0, MAX_LOG_ENTRIES);
 
   const handleEvent = useCallback((event: DtmEvent) => {
-    setState(prev => {
+    setState((prev) => {
       const jobs = new Map(prev.jobs);
 
       switch (event.type) {
@@ -70,62 +78,145 @@ export function useWebSocket(url: string) {
             steps: event.steps || [],
             createdAt: event.timestamp,
           });
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('job_created', event.jobId, event.workflow, event.correlationId)) };
+          return {
+            ...prev,
+            jobs,
+            eventLog: appendLog(
+              prev,
+              makeLogEntry('job_created', event.jobId, event.workflow, event.correlationId),
+            ),
+          };
         }
 
         case 'job_completed': {
           const job = jobs.get(event.jobId);
           if (job) {
-            jobs.set(event.jobId, { ...job, status: event.status, completedAt: event.timestamp, results: event.results });
+            jobs.set(event.jobId, {
+              ...job,
+              status: event.status,
+              completedAt: event.timestamp,
+              results: event.results,
+            });
           }
           const detail = event.results
             ? `${event.status} (${(event.results.durationMs / 1000).toFixed(1)}s)`
             : event.status;
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('job_completed', event.jobId, detail, event.correlationId)) };
+          return {
+            ...prev,
+            jobs,
+            eventLog: appendLog(
+              prev,
+              makeLogEntry('job_completed', event.jobId, detail, event.correlationId),
+            ),
+          };
         }
 
         case 'step_started': {
           const job = jobs.get(event.jobId);
           if (job) {
-            const steps = job.steps.map(s =>
-              s.step === event.step ? { ...s, status: 'in_progress' as const } : s
+            const steps = job.steps.map((s) =>
+              s.step === event.step ? { ...s, status: 'in_progress' as const } : s,
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_started', event.jobId, event.step, event.correlationId, event.step)) };
+          return {
+            ...prev,
+            jobs,
+            eventLog: appendLog(
+              prev,
+              makeLogEntry(
+                'step_started',
+                event.jobId,
+                event.step,
+                event.correlationId,
+                event.step,
+              ),
+            ),
+          };
         }
 
         case 'step_completed': {
           const job = jobs.get(event.jobId);
           if (job) {
-            const steps = job.steps.map(s =>
-              s.step === event.step ? { ...s, status: 'completed' as const, duration: event.duration } : s
+            const steps = job.steps.map((s) =>
+              s.step === event.step
+                ? {
+                    ...s,
+                    status: 'completed' as const,
+                    duration: event.duration,
+                  }
+                : s,
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_completed', event.jobId, `${event.step} (${event.duration}ms)`, event.correlationId, event.step)) };
+          return {
+            ...prev,
+            jobs,
+            eventLog: appendLog(
+              prev,
+              makeLogEntry(
+                'step_completed',
+                event.jobId,
+                `${event.step} (${event.duration}ms)`,
+                event.correlationId,
+                event.step,
+              ),
+            ),
+          };
         }
 
         case 'step_failed': {
           const job = jobs.get(event.jobId);
           if (job) {
-            const steps = job.steps.map(s =>
-              s.step === event.step ? { ...s, status: 'failed' as const, error: event.error } : s
+            const steps = job.steps.map((s) =>
+              s.step === event.step ? { ...s, status: 'failed' as const, error: event.error } : s,
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_failed', event.jobId, `${event.step}: ${event.error}`, event.correlationId, event.step)) };
+          return {
+            ...prev,
+            jobs,
+            eventLog: appendLog(
+              prev,
+              makeLogEntry(
+                'step_failed',
+                event.jobId,
+                `${event.step}: ${event.error}`,
+                event.correlationId,
+                event.step,
+              ),
+            ),
+          };
         }
 
         case 'step_retrying': {
           const job = jobs.get(event.jobId);
           if (job) {
-            const steps = job.steps.map(s =>
-              s.step === event.step ? { ...s, status: 'in_progress_retrying' as const, attempt: event.attempt } : s
+            const steps = job.steps.map((s) =>
+              s.step === event.step
+                ? {
+                    ...s,
+                    status: 'in_progress_retrying' as const,
+                    attempt: event.attempt,
+                  }
+                : s,
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_retrying', event.jobId, `${event.step} attempt #${event.attempt}`, event.correlationId, event.step)) };
+          return {
+            ...prev,
+            jobs,
+            eventLog: appendLog(
+              prev,
+              makeLogEntry(
+                'step_retrying',
+                event.jobId,
+                `${event.step} attempt #${event.attempt}`,
+                event.correlationId,
+                event.step,
+              ),
+            ),
+          };
         }
 
         case 'step_skipped': {
@@ -135,35 +226,80 @@ export function useWebSocket(url: string) {
           // the backend broadcasts this; this case is what makes the frontend actually apply it).
           const job = jobs.get(event.jobId);
           if (job) {
-            const steps = job.steps.map(s =>
-              s.step === event.step ? { ...s, status: 'skipped' as const, reason: event.reason } : s
+            const steps = job.steps.map((s) =>
+              s.step === event.step
+                ? { ...s, status: 'skipped' as const, reason: event.reason }
+                : s,
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('step_skipped', event.jobId, `${event.step}: ${event.reason}`, event.correlationId, event.step)) };
+          return {
+            ...prev,
+            jobs,
+            eventLog: appendLog(
+              prev,
+              makeLogEntry(
+                'step_skipped',
+                event.jobId,
+                `${event.step}: ${event.reason}`,
+                event.correlationId,
+                event.step,
+              ),
+            ),
+          };
         }
 
         case 'step_ack_waiting': {
           const job = jobs.get(event.jobId);
           if (job) {
-            const steps = job.steps.map(s =>
-              s.step === event.step ? { ...s, status: 'waiting_for_ack' as const } : s
+            const steps = job.steps.map((s) =>
+              s.step === event.step ? { ...s, status: 'waiting_for_ack' as const } : s,
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('ack_waiting', event.jobId, event.step, event.correlationId, event.step)) };
+          return {
+            ...prev,
+            jobs,
+            eventLog: appendLog(
+              prev,
+              makeLogEntry('ack_waiting', event.jobId, event.step, event.correlationId, event.step),
+            ),
+          };
         }
 
         case 'step_ack_received': {
           const job = jobs.get(event.jobId);
           if (job) {
-            const steps = job.steps.map(s =>
-              s.step === event.step ? { ...s, status: 'completed' as const } : s
+            const steps = job.steps.map((s) =>
+              s.step === event.step ? { ...s, status: 'completed' as const } : s,
             );
             jobs.set(event.jobId, { ...job, steps });
           }
-          return { ...prev, jobs, eventLog: appendLog(prev, makeLogEntry('ack_received', event.jobId, event.step, event.correlationId, event.step)) };
+          return {
+            ...prev,
+            jobs,
+            eventLog: appendLog(
+              prev,
+              makeLogEntry(
+                'ack_received',
+                event.jobId,
+                event.step,
+                event.correlationId,
+                event.step,
+              ),
+            ),
+          };
         }
+
+        // Phase-C agent-tree plane: both envelopes route straight into the agent-forest FSM
+        // store (live ingest / server-authoritative reconcile); the jobs state is untouched.
+        case 'agent_event':
+          useAgentForestStore.getState().actions.ingestEvent(event.event);
+          return prev;
+
+        case 'agent_forest':
+          useAgentForestStore.getState().actions.reconcileForest(event.forest);
+          return prev;
 
         default:
           return prev;
@@ -179,7 +315,7 @@ export function useWebSocket(url: string) {
 
     ws.onopen = () => {
       reconnectAttemptRef.current = 0;
-      setState(prev => ({ ...prev, connected: true, reconnecting: false }));
+      setState((prev) => ({ ...prev, connected: true, reconnecting: false }));
       ws.send(JSON.stringify({ type: 'request_snapshot' }));
     };
 
@@ -193,7 +329,7 @@ export function useWebSocket(url: string) {
     };
 
     ws.onclose = () => {
-      setState(prev => ({ ...prev, connected: false, reconnecting: true }));
+      setState((prev) => ({ ...prev, connected: false, reconnecting: true }));
       const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current), MAX_RECONNECT_DELAY);
       reconnectAttemptRef.current++;
       reconnectTimerRef.current = setTimeout(connect, delay);
@@ -256,22 +392,26 @@ export function useWebSocket(url: string) {
           const res = await fetch(`/api/api/v1/jobs/${j.id}`);
           if (!res.ok) return null;
           return res.json();
-        } catch { return null; }
+        } catch {
+          return null;
+        }
       });
       const details = await Promise.all(detailPromises);
 
-      setState(prev => {
+      setState((prev) => {
         const jobs = new Map(prev.jobs);
         for (const detail of details) {
           if (!detail?.id) continue;
-          const steps: StepState[] = (detail.steps || []).map((s: Record<string, unknown>, i: number) => ({
-            step: (s.stepNumber as string) || `Step${i + 1}`,
-            description: (s.description as string) || '',
-            status: mapStepStatus(s.status as string),
-            stepNumber: i + 1,
-            error: (s.error as string) || undefined,
-            attempt: (s.retryCount as number) || undefined,
-          }));
+          const steps: StepState[] = (detail.steps || []).map(
+            (s: Record<string, unknown>, i: number) => ({
+              step: (s.stepNumber as string) || `Step${i + 1}`,
+              description: (s.description as string) || '',
+              status: mapStepStatus(s.status as string),
+              stepNumber: i + 1,
+              error: (s.error as string) || undefined,
+              attempt: (s.retryCount as number) || undefined,
+            }),
+          );
           jobs.set(detail.id, {
             id: detail.id,
             workflow: detail.workflowName || 'unknown',

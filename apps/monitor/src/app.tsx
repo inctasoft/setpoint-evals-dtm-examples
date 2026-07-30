@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import Session from 'supertokens-auth-react/recipe/session';
-import {
-  canHandleRoute,
-  getRoutingComponent,
-} from 'supertokens-auth-react/ui';
+import { canHandleRoute, getRoutingComponent } from 'supertokens-auth-react/ui';
 import { ThirdPartyPreBuiltUI } from 'supertokens-auth-react/recipe/thirdparty/prebuiltui';
 import { AuthPage } from './auth/AuthPage';
 import { useWebSocket } from './hooks/use-websocket';
@@ -23,11 +20,12 @@ import { WorkflowDag } from './components/workflow-dag';
 import { DagFullscreen } from './components/dag-fullscreen';
 import { ConnectionStatus } from './components/connection-status';
 import { ScenariosView } from './components/scenarios/scenarios-view';
+import { AgentTree } from './components/agent-tree';
 
 const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/events`;
 const SELECTED_WORKFLOW_KEY = 'dtm-monitor:selectedWorkflow';
 
-type View = 'dashboard' | 'scenarios';
+type View = 'dashboard' | 'scenarios' | 'agents';
 
 function loadPersistedWorkflow(): string | null {
   try {
@@ -80,7 +78,10 @@ export function App() {
   );
   const [dagFullscreen, setDagFullscreen] = useState(false);
   const [eventFilterStep, setEventFilterStep] = useState<string | null>(null);
-  const [flashToken, setFlashToken] = useState<{ step: string; nonce: number } | null>(null);
+  const [flashToken, setFlashToken] = useState<{
+    step: string;
+    nonce: number;
+  } | null>(null);
 
   useEffect(() => {
     // Dev-only escape hatch, mirrors the backend's DISABLE_AUTH (auth.guard.ts) —
@@ -138,7 +139,10 @@ export function App() {
 
   if (loading) {
     return (
-      <div class="dashboard" style="display:flex;align-items:center;justify-content:center;min-height:100vh">
+      <div
+        class="dashboard"
+        style="display:flex;align-items:center;justify-content:center;min-height:100vh"
+      >
         <span style="color:#8b949e;font-family:monospace">Authenticating...</span>
       </div>
     );
@@ -146,8 +150,8 @@ export function App() {
 
   if (!authenticated) return null;
 
-  const allJobsUnfiltered = Array.from(state.jobs.values()).sort((a, b) =>
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  const allJobsUnfiltered = Array.from(state.jobs.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
   const allJobs = demoMode
     ? allJobsUnfiltered.filter((j) => new Date(j.createdAt).getTime() >= pageLoadTime)
@@ -171,9 +175,12 @@ export function App() {
     setView('dashboard');
   };
 
-  const handleRowStepClick = (step: string) => setFlashToken((prev) => ({ step, nonce: (prev?.nonce ?? 0) + 1 }));
+  const handleRowStepClick = (step: string) =>
+    setFlashToken((prev) => ({ step, nonce: (prev?.nonce ?? 0) + 1 }));
 
-  const scopedEventLog = eventFilterStep ? state.eventLog.filter((e) => e.step === eventFilterStep) : state.eventLog;
+  const scopedEventLog = eventFilterStep
+    ? state.eventLog.filter((e) => e.step === eventFilterStep)
+    : state.eventLog;
 
   return (
     <>
@@ -195,6 +202,12 @@ export function App() {
           >
             Scenarios
           </button>
+          <button
+            class={`view-tab ${view === 'agents' ? 'active' : ''}`}
+            onClick={() => setView('agents')}
+          >
+            Agents
+          </button>
           <WorkflowSelector
             workflows={workflows}
             selected={selectedWorkflow}
@@ -202,8 +215,13 @@ export function App() {
           />
         </div>
 
-        {view === 'scenarios' ? (
-          <ScenariosView onJobCreated={handleJobCreatedFromScenario} presetWorkflow={selectedWorkflow} />
+        {view === 'agents' ? (
+          <AgentTree />
+        ) : view === 'scenarios' ? (
+          <ScenariosView
+            onJobCreated={handleJobCreatedFromScenario}
+            presetWorkflow={selectedWorkflow}
+          />
         ) : (
           <>
             {selectedWorkflow && (
@@ -233,7 +251,11 @@ export function App() {
                 {/* Whole strip is a "see it properly" affordance — click anywhere on the
                     background to expand (ux-storyboards.md §3.1 entry point 3). */}
                 <div onClick={() => setDagFullscreen(true)}>
-                  <WorkflowDag workflowName={selectedWorkflow} selectedJob={selectedJob} flashToken={flashToken} />
+                  <WorkflowDag
+                    workflowName={selectedWorkflow}
+                    selectedJob={selectedJob}
+                    flashToken={flashToken}
+                  />
                 </div>
               </div>
             )}
@@ -264,7 +286,11 @@ export function App() {
                   storageKey={demoMode ? undefined : 'right-panel'}
                   initialTabId={demoMode ? 'events' : undefined}
                   tabs={[
-                    { id: 'sqs', label: 'SQS', content: <SqsPanel queues={state.queues} demoMode={demoMode} /> },
+                    {
+                      id: 'sqs',
+                      label: 'SQS',
+                      content: <SqsPanel queues={state.queues} demoMode={demoMode} />,
+                    },
                     { id: 'kafka', label: 'Kafka', content: <KafkaPanel /> },
                     {
                       id: 'events',
@@ -290,7 +316,11 @@ export function App() {
                       label: 'Throughput',
                       content: <ThroughputPanel workflow={selectedWorkflow} />,
                     },
-                    { id: 'flags', label: 'Flags', content: <FlagsPanel workflow={selectedWorkflow} /> },
+                    {
+                      id: 'flags',
+                      label: 'Flags',
+                      content: <FlagsPanel workflow={selectedWorkflow} />,
+                    },
                   ]}
                 />
               </div>
@@ -300,7 +330,9 @@ export function App() {
 
         <div class="bottom-bar">
           <ConnectionStatus connected={state.connected} reconnecting={state.reconnecting} />
-          <span>Jobs: {jobs.length} | Events: {state.eventLog.length}</span>
+          <span>
+            Jobs: {jobs.length} | Events: {state.eventLog.length}
+          </span>
         </div>
       </div>
 

@@ -1,0 +1,109 @@
+{
+  "name": "spawned\u2192active on AGENT_ACTIVE + transient-orphan (pending) absorption",
+  "initial": {
+    "forests": {}
+  },
+  "steps": [
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000001",
+          "ts": "2026-07-30T18:00:00Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "spawn",
+          "agent_id": "c1",
+          "parent_id": "p1",
+          "root_id": "r1"
+        }
+      ],
+      "expect": {
+        "forests": {
+          "r1": {
+            "nodes": {
+              "c1": {
+                "lifecycle": "spawned",
+                "pendingParent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000002",
+          "ts": "2026-07-30T18:00:01Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "spawn",
+          "agent_id": "p1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ],
+      "expect": {
+        "forests": {
+          "r1": {
+            "nodes": {
+              "c1": {
+                "pendingParent": false
+              },
+              "p1": {
+                "lifecycle": "spawned",
+                "pendingParent": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000003",
+          "ts": "2026-07-30T18:00:02Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "active",
+          "agent_id": "p1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ],
+      "expect": {
+        "forests": {
+          "r1": {
+            "nodes": {
+              "p1": {
+                "lifecycle": "active"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "final": {
+    "forests": {
+      "r1": {
+        "nodes": {
+          "p1": {
+            "lifecycle": "active",
+            "event_count": 2
+          },
+          "c1": {
+            "event_count": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "name": "spawned\u2192done on AGENT_DONE; done is terminal (later AGENT_ACTIVE rejected by the FSM guard)",
+  "initial": {
+    "forests": {}
+  },
+  "steps": [
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000011",
+          "ts": "2026-07-30T18:00:10Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "spawn",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ]
+    },
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000012",
+          "ts": "2026-07-30T18:00:11Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "done",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ],
+      "expect": {
+        "forests": {
+          "r1": {
+            "nodes": {
+              "a1": {
+                "lifecycle": "done"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000013",
+          "ts": "2026-07-30T18:00:00Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "active",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ],
+      "expect": {
+        "forests": {
+          "r1": {
+            "nodes": {
+              "a1": {
+                "lifecycle": "done",
+                "event_count": 3
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "final": {
+    "forests": {
+      "r1": {
+        "nodes": {
+          "a1": {
+            "lifecycle": "done"
+          }
+        }
+      }
+    }
+  }
+}

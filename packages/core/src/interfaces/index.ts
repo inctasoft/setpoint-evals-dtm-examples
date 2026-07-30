@@ -68,3 +68,15 @@ export type {
   ZmqEventEnvelope,
   ZmqEnvelope,
 } from "./zmq-envelope.interface";
+
+// agent-event/1 + agent-forest/1 — TS mirror of the canonical server-config schema
+// (setpoint-evals/agent-event-schema/; conformance checked both ways by SE-40).
+export type {
+  AgentLifecycle,
+  AgentErrorReason,
+  KnownProvider,
+  KnownKind,
+  AgentEvent,
+  AgentForestNode,
+  AgentForest,
+} from "./agent-event.interface";
