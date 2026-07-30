@@ -5,11 +5,11 @@ Setpoint Evals verify orchestrator engine behavior through end-to-end tests that
 ## Directory Structure
 
 ```
-setpoint-evals/                                    # Core engine SEs (13 tests)
+setpoint-evals/                                    # Core engine SEs (36 tests)
   SE-01-retry-transient-failure/
   SE-02-dlq-permanent-failure/
   ...
-  SE-13-in-progress-auto-timeout/
+  SE-36-full-zmq-bus-profile/
   shared/helpers.sh                     # Generic helper functions
   run-all.sh                            # Core SE runner
   preflight-check.sh                    # Pre-flight checks
@@ -32,8 +32,12 @@ Active workflow SE directories:
 
 Test generic orchestrator capabilities that apply to ANY workflow:
 - Retry/DLQ behavior, deduplication, concurrency
-- Maintenance task recovery (stuck states, orphaned jobs, auto-timeout)
+- Maintenance task recovery (stuck states, orphaned jobs, auto-timeout,
+  redelivery engine, event-republish scan)
 - Health metrics, acknowledgement handling
+- Bus profiles (aws / zmq tasks / zmq events / full-zmq — see
+  ../docs/guides/bus-profiles.md). SQS/Kafka-semantic SEs skip honestly under
+  BUS_PROFILE=zmq; the estate runs green under both profiles.
 
 These tests use the `order-processing` workflow as their test vehicle but verify engine-level behavior.
 

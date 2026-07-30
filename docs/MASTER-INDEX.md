@@ -69,6 +69,11 @@ Quick navigation to all DTM documentation, organized by use case.
 - **[guides/LOCALSTACK-CONFIGURATION.md](guides/LOCALSTACK-CONFIGURATION.md)** - LocalStack parameters
 - **[guides/DEPLOYMENT-MODES.md](guides/DEPLOYMENT-MODES.md)** - ESM vs Poller modes
 
+### I want to run the engine on a different bus (aws primitives vs zero brokers)
+
+- **[guides/bus-profiles.md](guides/bus-profiles.md)** - Bus profiles runbook: aws / mixed modes / full-zmq, BUS_PROFILE precedence, capability matrix, env reference, dual-profile SE matrix procedure, shared-stack hazards
+- **[guides/architecture-c4.md](guides/architecture-c4.md)** - C4 views including per-profile deployment views (aws vs full-zmq)
+
 ### I want to understand fan-out and cascade
 
 - **[guides/system-architecture.md](guides/system-architecture.md)** - Fan-out pattern section
@@ -92,7 +97,7 @@ Quick navigation to all DTM documentation, organized by use case.
 
 ## By Directory
 
-### `docs/guides/` (27 guides)
+### `docs/guides/` (29 guides)
 
 **Architecture & Orchestration:**
 - **[architecture-c4.md](guides/architecture-c4.md)** - C4 context + container diagrams (system boundary, monitor, evals module)
@@ -115,6 +120,7 @@ Quick navigation to all DTM documentation, organized by use case.
 - **[retry-testing-examples.md](guides/retry-testing-examples.md)** - Retry testing patterns
 
 **Infrastructure & Operations:**
+- **[bus-profiles.md](guides/bus-profiles.md)** - Bus profiles runbook (aws / zmq tasks / zmq events / full-zmq)
 - **[DEPLOYMENT-MODES.md](guides/DEPLOYMENT-MODES.md)** - ESM vs Poller, scaling
 - **[DOCKER-ECOSYSTEM.md](guides/DOCKER-ECOSYSTEM.md)** - Docker layering, compose files
 - **[LOCALSTACK-CONFIGURATION.md](guides/LOCALSTACK-CONFIGURATION.md)** - AWS emulation tuning
@@ -159,9 +165,9 @@ Located in `../.cursor/`:
 
 | Category | Location | Count |
 |----------|----------|-------|
-| Core Guides | `docs/guides/` | 28 files |
+| Core Guides | `docs/guides/` | 29 files |
 | Core Diagrams | `docs/diagrams/` | 13 mermaid files |
-| Core SEs | `setpoint-evals/` | 28 tests |
+| Core SEs | `setpoint-evals/` | 36 tests |
 | Workflow SEs | `workflows/*/setpoint-evals/` | 27 tests (9+9+9) |
 | AI Rules (core) | `.cursor/` | 14 .mdc files |
 | AI Rules (workflow) | `workflows/*/.cursor/` | Per-workflow agent guides |
@@ -172,5 +178,5 @@ filesystem (`ls setpoint-evals/ | grep ^SE-`) as the source of truth.
 
 ---
 
-**Last Updated:** 2026-07-18 (Phase 6 documentation closeout)
+**Last Updated:** 2026-07-29 (bus-agnosticism program closeout, Phases 1-5)
 **Organization:** Use-case-based navigation

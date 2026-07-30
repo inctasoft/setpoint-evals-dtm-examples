@@ -115,6 +115,8 @@ Full-zmq bring-up needs NO LocalStack, NO Kafka/Zookeeper/Kafka-UI, NO sqs-polle
 (readiness stays 200 reporting `kafka: down`; `/api/v1/kafka/topics` returns
 `{topics: [], connected: false}`). Pinned by SE-36; the core estate runs green under
 BOTH profiles (SQS/Kafka-semantic SEs skip honestly under zmq: SE-01/02/20).
+**Full runbook: `docs/guides/bus-profiles.md`** (profiles, bring-up, capability matrix,
+env reference, dual-profile SE matrix procedure, shared-stack hazards).
 
 ### Event Bus (`EVENT_BUS`, Phase 3)
 Events (transformed-data publishes, job lifecycle, acknowledgements) travel a pluggable `EventBus`

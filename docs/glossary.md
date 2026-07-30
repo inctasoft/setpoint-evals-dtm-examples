@@ -55,3 +55,17 @@ Canonical terms used throughout the DTM (Distributed Task Manager) codebase.
 | `PARTIAL_SUCCESS` | Yes | Fan-out parent where some children failed |
 
 *`WAITING_FOR_ACK` is terminal for callbacks (rejects new callbacks) but dependent steps must wait for ACK to arrive before proceeding.
+
+## Bus-Agnosticism (Phases 1–4)
+
+| Term | Definition |
+|------|-----------|
+| **QueueTransport** | Pluggable task-dispatch abstraction (`services/orchestrator/src/transport/`). Implementations: `SqsTransport` (default), `CloudTasksTransport`, `ZmqTransport`. Selected by `QUEUE_TRANSPORT`. |
+| **EventBus** | Pluggable event abstraction (`services/orchestrator/src/event-bus/`) for transformed-data publishes, job lifecycle events, and ACKs. Implementations: `KafkaEventBus` (default), `ZmqEventBus`. Selected by `EVENT_BUS`. Disjoint from QueueTransport. |
+| **BUS_PROFILE** | Umbrella env switch. `zmq` expands to `QUEUE_TRANSPORT=zmq` + `EVENT_BUS=zmq`; `aws` is the default world. Explicit per-var env wins over the umbrella. |
+| **zmq-worker-host** | Per-workflow DEALER container (`tools/zmq-worker-host/`) that HELLO-registers its queues with the orchestrator's ROUTER, heartbeats, receipt-acks tasks, and runs the same workflow handlers in-process. |
+| **Worker Registry** | Orchestrator-side zmq worker fleet table (HELLO → alive, heartbeat → refresh, silence → dead/unroutable). Exposed at `GET /api/v1/workers` under `QUEUE_TRANSPORT=zmq`. |
+| **Redelivery Engine** | Orchestrator-driven task redelivery (maintenance task). Re-dispatches steps whose delegation lease (`dtm_steps.lease_expires_at`) expired; dead-letters attempt-exhausted steps into `dtm_dead_letters`. Active when the task transport declares `redelivery: 'orchestrator'` (zmq) or `REDELIVERY_ENGINE_FORCE_ENABLED=true`. |
+| **Event-Republish Scan** | Orchestrator-driven dropped-publish recovery (maintenance task). Re-publishes un-ACKed steps past `EVENT_REPUBLISH_LEASE_SECONDS`. Active when the event bus declares `droppedPublishRecovery: 'orchestrator'` (zmq) or `EVENT_REPUBLISH_SCAN_FORCE_ENABLED=true`. |
+| **taskHandle / attemptNumber** | Bus-neutral wire names for a task dispatch (compat aliases: `sqsMessageId` / `sqsReceiveCount`). Under zmq, taskHandle is an orchestrator-minted uuid and attemptNumber is the synthetic `dtm_steps.attempt_count`. |
+| **eventTopic** | Bus-neutral primary name for a cascade's publish topic (compat alias: `kafkaTopic`). Readers resolve `eventTopic ?? kafkaTopic`. |
