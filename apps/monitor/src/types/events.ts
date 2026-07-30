@@ -1,4 +1,5 @@
 import type { StepStatus as CoreStepStatus } from '@dtm/core';
+import type { AgentEvent, AgentForest } from './agent-events';
 
 /**
  * Frontend-facing step status — derived from @dtm/core's StepStatus enum (the
@@ -16,12 +17,7 @@ import type { StepStatus as CoreStepStatus } from '@dtm/core';
  */
 export type StepStatus = `${CoreStepStatus}`;
 
-export type JobStatus =
-  | 'pending'
-  | 'processing'
-  | 'completed'
-  | 'failed'
-  | 'partial_success';
+export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'partial_success';
 
 export interface StepState {
   step: string;
@@ -87,14 +83,50 @@ interface BaseEvent {
 }
 
 export type DtmEvent =
-  | (BaseEvent & { type: 'job_created'; jobId: string; workflow: string; variant: string; steps: StepState[] })
-  | (BaseEvent & { type: 'job_completed'; jobId: string; status: JobStatus; results?: JobResults })
+  | (BaseEvent & {
+      type: 'job_created';
+      jobId: string;
+      workflow: string;
+      variant: string;
+      steps: StepState[];
+    })
+  | (BaseEvent & {
+      type: 'job_completed';
+      jobId: string;
+      status: JobStatus;
+      results?: JobResults;
+    })
   | (BaseEvent & { type: 'step_started'; jobId: string; step: string })
-  | (BaseEvent & { type: 'step_completed'; jobId: string; step: string; duration: number })
-  | (BaseEvent & { type: 'step_failed'; jobId: string; step: string; error: string })
-  | (BaseEvent & { type: 'step_retrying'; jobId: string; step: string; attempt: number })
-  | (BaseEvent & { type: 'step_skipped'; jobId: string; step: string; reason: string })
+  | (BaseEvent & {
+      type: 'step_completed';
+      jobId: string;
+      step: string;
+      duration: number;
+    })
+  | (BaseEvent & {
+      type: 'step_failed';
+      jobId: string;
+      step: string;
+      error: string;
+    })
+  | (BaseEvent & {
+      type: 'step_retrying';
+      jobId: string;
+      step: string;
+      attempt: number;
+    })
+  | (BaseEvent & {
+      type: 'step_skipped';
+      jobId: string;
+      step: string;
+      reason: string;
+    })
   | (BaseEvent & { type: 'step_ack_waiting'; jobId: string; step: string })
   | (BaseEvent & { type: 'step_ack_received'; jobId: string; step: string })
   | (BaseEvent & { type: 'sqs_status'; queues: SqsQueueStatus[] })
-  | (BaseEvent & { type: 'snapshot'; jobs: JobState[] });
+  | (BaseEvent & { type: 'snapshot'; jobs: JobState[] })
+  // Phase-C agent-tree plane (agent-event/1, canonical schema in server-config): a live
+  // envelope pass-through + the server-authoritative per-root forest snapshot the
+  // agent-forest store reconciles against. SE-39 pins both variants across the wire.
+  | (BaseEvent & { type: 'agent_event'; event: AgentEvent })
+  | (BaseEvent & { type: 'agent_forest'; forest: AgentForest });

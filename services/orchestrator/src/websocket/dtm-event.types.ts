@@ -6,6 +6,7 @@
  */
 
 import type { StepStatus as CoreStepStatus } from '@dtm/core';
+import type { AgentEvent, AgentForest } from '@dtm/core';
 
 /**
  * WS-facing step status — derived from @dtm/core's StepStatus enum (the DB-canonical
@@ -89,4 +90,9 @@ export type DtmEvent =
   | (BaseEvent & { type: 'step_ack_waiting'; jobId: string; step: string })
   | (BaseEvent & { type: 'step_ack_received'; jobId: string; step: string })
   | (BaseEvent & { type: 'sqs_status'; queues: SqsQueueStatus[] })
-  | (BaseEvent & { type: 'snapshot'; jobs: JobSnapshot[] });
+  | (BaseEvent & { type: 'snapshot'; jobs: JobSnapshot[] })
+  // Phase-C agent-tree plane (agent-event/1, canonical schema in server-config
+  // setpoint-evals/agent-event-schema/): live envelope pass-through + the
+  // server-authoritative per-root snapshot. SE-39 pins both variants across the wire.
+  | (BaseEvent & { type: 'agent_event'; event: AgentEvent })
+  | (BaseEvent & { type: 'agent_forest'; forest: AgentForest });

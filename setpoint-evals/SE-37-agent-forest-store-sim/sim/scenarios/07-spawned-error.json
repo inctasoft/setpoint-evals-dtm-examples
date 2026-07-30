@@ -1,0 +1,65 @@
+{
+  "name": "spawned\u2192error on AGENT_ERROR with the typed reason carried",
+  "initial": {
+    "forests": {}
+  },
+  "steps": [
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000021",
+          "ts": "2026-07-30T18:00:08Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "spawn",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ]
+    },
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000022",
+          "ts": "2026-07-30T18:00:09Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "error",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1",
+          "error_reason": "timeout"
+        }
+      ],
+      "expect": {
+        "forests": {
+          "r1": {
+            "nodes": {
+              "a1": {
+                "lifecycle": "error",
+                "error_reason": "timeout"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "final": {
+    "forests": {
+      "r1": {
+        "nodes": {
+          "a1": {
+            "lifecycle": "error",
+            "error_reason": "timeout"
+          }
+        }
+      }
+    }
+  }
+}
