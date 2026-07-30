@@ -52,6 +52,20 @@ jobs:
     #      free because node is preinstalled, which is exactly why the old order worked there and
     #      would not work here. The pnpm-before-setup-node order is only REQUIRED when
     #      `cache: pnpm` is present, and it no longer is.
+    #   3. `dest:` is pinned to `${{ runner.temp }}/setup-pnpm`. pnpm/action-setup's DEFAULT dest is
+    #      the fixed, HOME-relative `~/setup-pnpm` — and BOTH org runners execute as the SAME
+    #      `ghrunner` user, so they share one $HOME. Two jobs of the same run landing on org-1 and
+    #      org-2 concurrently therefore race on ONE directory. Observed on the first self-hosted run
+    #      (30515007364), both halves of the race in a single run: org-1's self-installer died
+    #      `ENOTEMPTY: rmdir '/home/ghrunner/setup-pnpm/node_modules'`, and org-2 — which had just
+    #      installed pnpm 10.13.1 successfully — died mid-`pnpm install` with `Cannot find module
+    #      '/home/ghrunner/setup-pnpm/node_modules/pnpm/dist/worker.js'` because the other job's
+    #      cleanup deleted the module out from under it. `runner.temp` is per-runner
+    #      (`<runner-dir>/_work/_temp`), so it cannot collide. This hazard is invisible on hosted
+    #      runners, where every job gets a private VM, and it applies to ANY repo in the pool that
+    #      uses pnpm — not just this one. The pnpm STORE is deliberately still shared: pnpm's
+    #      content-addressable store is concurrency-safe by design, and sharing it is exactly what
+    #      makes dropping the GHA `cache:` key a win here.
     runs-on: self-hosted
     steps:
       - name: Checkout
@@ -65,6 +79,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          # Per-runner dest — the default `~/setup-pnpm` is shared by both org runners (same
+          # ghrunner $HOME) and they race on it. Rationale in this job's header comment.
+          dest: ${{ runner.temp }}/setup-pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -99,6 +117,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          # Per-runner dest — the default `~/setup-pnpm` is shared by both org runners (same
+          # ghrunner $HOME) and they race on it. Rationale in this job's header comment.
+          dest: ${{ runner.temp }}/setup-pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
