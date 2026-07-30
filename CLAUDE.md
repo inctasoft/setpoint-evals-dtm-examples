@@ -375,8 +375,8 @@ green `XFAIL`, unexpectedly passing is a red `UPASS` and fails the run).
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` runs 4 real jobs on every PR + push to `master`, plus one
-scheduled placeholder:
+`.github/workflows/ci.yml` runs **4 real jobs and nothing else** on every PR + push to
+`master`. There is no scheduled run and no placeholder job — see "What was deleted" below.
 
 | Job | What it checks | Local equivalent |
 |-----|-----------------|-------------------|
@@ -384,16 +384,49 @@ scheduled placeholder:
 | `unit-tests` | Orchestrator Jest suite | `cd services/orchestrator && npx jest` |
 | `hygiene` | Public-repo vocabulary denylist scan, diff-scoped on PR/push (self-tests it can actually fail first) | `bash scripts/hygiene/scan.sh --self-test` then pipe a diff through `scripts/hygiene/scan.sh` |
 | `se-structure` | SE README/mermaid layout, diff-scoped | `bash scripts/validate-se-readmes.sh --base <sha>` (or `--all` for the whole estate) |
-| `se-full-stack-quick` | **Placeholder only** — echoes why it can't run (GitHub-hosted runners can't reliably host Kafka + 4x Postgres + LocalStack + Lambda). It intentionally claims nothing. | — |
 
-**The real SE gate is NOT CI** — no GitHub-hosted job actually boots the stack and runs
-the 55-eval estate. Per `docs/setpoint-eval-conventions.md`, that evidence is local
-execution output pasted into the PR body: run
-`./scripts/local-env.sh start --standalone --orchestrator`,
+### Where CI runs (local-first Phase 4)
+
+All 4 jobs are `runs-on: self-hosted` — the **org `local-first` runner group**, 2 runners on
+192.168.1.13 as the isolated `ghrunner` user with rootless Docker. The group is
+`visibility: selected`, so only explicitly-added repos land there; this repo has zero repo-level
+runners, so bare `self-hosted` is unambiguous. Plan:
+`server-config/plans/local-first-ci-runners-2026-07-27.md`; issue #74.
+
+Two host facts to know before editing `ci.yml`:
+
+- **`node`, `npm`, `corepack` and `pnpm` are all ABSENT from that host's PATH.** Only
+  `actions/setup-node` supplies them, so any job that shells out to `node` needs it — `hygiene`
+  does (`scripts/hygiene/scan.sh` runs `node scripts/hygiene/scan.js`). `se-structure` does not:
+  `validate-se-readmes.sh` is pure bash + git.
+- **`actions/setup-node` must come BEFORE `pnpm/action-setup`**, because pnpm/action-setup needs a
+  Node/npm toolchain to install pnpm and cannot bootstrap itself on a bare host. The reverse order
+  is only required when `cache: pnpm` is in play, and the GHA `cache:` keys are deliberately gone
+  (a store round-trip over the box's ~19 KB/s uplink costs more than it saves, and pnpm's on-disk
+  store already persists between runs on the same host).
+
+`dependabot-auto-merge.yml` stays on `ubuntu-latest` **on purpose**: its job `sleep 60`s then polls
+check-runs with a 1800 s deadline, holding a runner while idle. Free and parallel on hosted; on a
+2-runner pool one dependabot batch can pin the estate's whole CI capacity.
+
+### What was deleted, and what has to happen before it comes back
+
+A `se-full-stack-quick` job and a Monday 06:00 UTC `schedule:` cron used to live here. The job was
+**echo-only**: it printed prose about why it could not run and ended with "it intentionally does not
+claim to have run anything", and the cron existed only to fire it. Both are gone (#74) — migrating a
+fake gate to a self-hosted runner would only have made it cheaper. Follow-up: **issue #75**, which
+carries the full checklist (pre-built images, mandatory `if: always()` teardown, `--max-parallel=2`,
+hard `timeout-minutes`, `workflow_dispatch`-only, and one PROVEN green dispatch asserting
+`run-all.sh`'s pass/fail/skip counts). Note `--quick` only exports `SE_QUICK=1` so opt-in SEs
+shorten internal waits — it does **not** subset the corpus.
+
+**The real SE gate is still NOT CI** — no CI job boots the stack and runs the eval estate yet. Per
+`docs/setpoint-eval-conventions.md`, that evidence is local execution output pasted into the PR
+body: run `./scripts/local-env.sh start --standalone --orchestrator`,
 `./scripts/local-env.sh deploy-workers`, then
-`./setpoint-evals/run-all.sh --all-workflows --quick` (or a workflow-scoped subset),
-and paste the summary table. A PR with 4/4 CI jobs green but no pasted SE evidence has
-NOT been verified — CI alone proves lint/build/unit/hygiene, not orchestration behavior.
+`./setpoint-evals/run-all.sh --all-workflows --quick` (or a workflow-scoped subset), and paste the
+summary table. A PR with 4/4 CI jobs green but no pasted SE evidence has NOT been verified — CI
+alone proves lint/build/unit/hygiene, not orchestration behavior.
 
 ## Scripts
 
