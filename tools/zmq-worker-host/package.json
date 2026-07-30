@@ -11,9 +11,9 @@
     "test": "jest"
   },
   "dependencies": {
-    "axios": "^1.7.9",
-    "pg": "^8.16.3",
-    "reflect-metadata": "^0.2.0",
+    "axios": "^1.19.0",
+    "pg": "^8.22.0",
+    "reflect-metadata": "^0.2.2",
     "typeorm": "^0.3.27",
     "zeromq": "^6.5.0"
   },
@@ -31,12 +31,12 @@
     "@dtm-workflows/infra-provisioning-typeorm": "workspace:*"
   },
   "devDependencies": {
-    "@types/aws-lambda": "^8.10.131",
+    "@types/aws-lambda": "^8.10.162",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.10.0",
     "jest": "^30.0.0",
-    "ts-jest": "^29.2.5",
-    "tsx": "^4.7.0",
+    "ts-jest": "^29.4.12",
+    "tsx": "^4.23.1",
     "typescript": "^5.3.0"
   },
   "jest": {
