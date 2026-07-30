@@ -96,6 +96,24 @@ graph LR
 **Flow**: Steps Delegate → Process → Callback repeat for each step in the workflow configuration.
 Steps that publish to Kafka enter `WAITING_FOR_ACK`, blocking until the target system acknowledges.
 
+### Two ways to run it
+
+The engine's two messaging legs — **tasks** (orchestrator → worker) and **events**
+(publish/ack) — are pluggable. It runs on **AWS primitives** (SQS + Lambda via
+LocalStack, Kafka via Zookeeper — the default above), or on **a single docker network
+with zero brokers**: one environment variable swaps both legs to ZeroMQ.
+
+```bash
+BUS_PROFILE=zmq ./scripts/local-env.sh start --zmq
+```
+
+That profile replaces the SQS pollers with per-workflow `zmq-worker-host` containers
+(ROUTER/DEALER task dispatch) and the Kafka ACK path with a PUB/PULL event bus —
+Postgres stays the durability anchor, so nothing is silently lost. Mixed modes (zmq
+tasks + Kafka events, or the reverse) are first-class. See
+[docs/guides/bus-profiles.md](docs/guides/bus-profiles.md) for the full runbook:
+profiles, capability matrix, env reference, and the dual-profile test procedure.
+
 ### Key Features
 - Parallel execution of independent steps
 - Configurable step dependencies with domain-specific verbs
@@ -114,6 +132,7 @@ This is a **pnpm monorepo**:
 - **Orchestrator** (`services/orchestrator/`) — NestJS workflow engine
 - **Lambda Workers** (`workflows/*/workers/`) — per-workflow Lambda handlers
 - **SQS Poller** (`tools/sqs-poller/`) — DEV ONLY: polls SQS for local development
+- **ZMQ Worker Host** (`tools/zmq-worker-host/`) — DEV ONLY: runs the same handlers in-process over ZeroMQ (`QUEUE_TRANSPORT=zmq`)
 - **Dev ACK Simulator** (`tools/dev-ack-simulator/`) — DEV ONLY: simulates target-system ACKs
 - **Core Packages** (`packages/`) — shared entities, Kafka producer/consumer, worker SDK
 - **Workflows** (`workflows/`) — pluggable workflow definitions with workers and tests
@@ -139,7 +158,7 @@ pnpm run build
 # 3. Deploy Lambda workers (poller mode = default; ESM mode requires LocalStack Pro)
 ./scripts/local-env.sh deploy-workers
 
-# 4. Run the full Setpoint Eval suite (28 evals: 13 core + 5 per workflow × 3 workflows)
+# 4. Run the full Setpoint Eval suite (63 evals: 36 core + 9 per workflow × 3 workflows)
 ./setpoint-evals/run-all.sh --all-workflows
 
 # 5. Access services (host ports)
@@ -213,15 +232,15 @@ post real requests to the running orchestrator, poll for state changes, and asse
 end-to-end behaviour. They run on the live Docker stack, not on mocks.
 
 ```bash
-# Core engine SEs (13 tests — retries, DLQ, deduplication, concurrency, maintenance)
+# Core engine SEs (36 tests — retries, DLQ, deduplication, concurrency, maintenance, bus profiles)
 ./setpoint-evals/run-all.sh
 
-# Per-workflow SEs (5 tests each)
+# Per-workflow SEs (9 tests each)
 ./workflows/order-processing/setpoint-evals/run-all.sh
 ./workflows/iot-sensor-pipeline/setpoint-evals/run-all.sh
 ./workflows/infra-provisioning/setpoint-evals/run-all.sh
 
-# Everything (28 evals total)
+# Everything (63 evals total)
 ./setpoint-evals/run-all.sh --all-workflows
 ```
 
@@ -272,7 +291,8 @@ curl http://localhost:3002/api/v1/health
 │       └── test/
 ├── tools/
 │   ├── dev-ack-simulator/          # DEV: simulates target-system ACKs
-│   └── sqs-poller/                 # DEV: polls SQS, dispatches to Lambdas
+│   ├── sqs-poller/                 # DEV: polls SQS, dispatches to Lambdas
+│   ├── zmq-worker-host/            # DEV: in-process workers over ZeroMQ (zmq task profile)
 ├── packages/
 │   ├── core/                       # Shared interfaces, enums, DTOs
 │   ├── database/                   # TypeORM entities for the core DB
@@ -286,10 +306,10 @@ curl http://localhost:3002/api/v1/health
 │   ├── iot-sensor-pipeline/        # Nested fan-out, feature flags, conditional steps
 │   ├── infra-provisioning/         # Deep cascade, long ACK timeouts, wide parallel branches
 │   └── plan-execution/             # Plan-execution workflow (chunked execution)
-├── setpoint-evals/                 # Core engine SEs (13)
+├── setpoint-evals/                 # Core engine SEs (36)
 │   ├── run-all.sh                  # Suite runner (parallel + destructive phases)
 │   ├── analyze-results.sh          # Result compactor
-│   └── SE-01-retry-transient-failure/ # ... 13 individual evals
+│   └── SE-01-retry-transient-failure/ # ... 36 individual evals
 ├── setpoint-evals-playwright/      # Optional Playwright-based UI evals
 ├── docs/                           # Architecture & operations guides
 ├── scripts/                        # CLI tools
@@ -334,6 +354,7 @@ docker restart dtm-orchestrator
 ## Documentation
 
 - [docs/MASTER-INDEX.md](docs/MASTER-INDEX.md) — use-case-based navigation
+- [docs/guides/bus-profiles.md](docs/guides/bus-profiles.md) — aws / mixed / full-zmq profiles runbook
 - [docs/guides/system-architecture.md](docs/guides/system-architecture.md) — engine architecture
 - [docs/guides/race-condition-prevention.md](docs/guides/race-condition-prevention.md) — callback protocol & race-condition guards
 - [docs/guides/database-schema.md](docs/guides/database-schema.md) — schema reference
