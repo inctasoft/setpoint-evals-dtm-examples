@@ -73,7 +73,7 @@ jobs:
 
       # MUST precede "Setup pnpm" — see the ordering note in this job's header comment.
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -111,7 +111,7 @@ jobs:
 
       # MUST precede "Setup pnpm" — see the ordering note in `format-lint`'s header comment.
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -144,7 +144,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
 
