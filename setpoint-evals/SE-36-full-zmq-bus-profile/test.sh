@@ -28,6 +28,9 @@ PROJECT="${COMPOSE_PROJECT_NAME:-dtm}"
 BROKER_CONTAINERS="${PROJECT}-kafka ${PROJECT}-zookeeper ${PROJECT}-kafka-ui ${PROJECT}-localstack"
 
 # --- preflight ---------------------------------------------------------------
+# GATE: aws-profile runs must skip — this SE stops LocalStack mid-suite and
+# PERSISTENCE=0 wipes every deployed Lambda, poisoning later aws-leg SEs.
+se_skip_if_aws "full-zmq bring-up stops LocalStack mid-suite (Lambda wipe) — run under BUS_PROFILE=zmq only"
 [ -f "$ENV_FILE" ] || se_skip "no .env at repo root — cannot safely flip orchestrator env without one"
 [ -f "$COMPOSE_ZMQ" ] || se_skip "no docker-compose.zmq.yml at repo root — the zmq profiles are missing"
 # Retry-poll (loaded hosts boot the orchestrator slowly after recreate-heavy SEs)

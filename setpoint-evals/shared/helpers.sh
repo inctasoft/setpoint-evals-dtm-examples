@@ -154,6 +154,17 @@ se_skip_if_zmq() {
   fi
 }
 
+# se_skip_if_aws "<reason>" — one-liner gate for zmq-profile SEs. SE-36 class:
+# a full-zmq bring-up stops LocalStack mid-suite and PERSISTENCE=0 wipes every
+# deployed Lambda function — under the aws profile that poisons every
+# Lambda-dependent SE running later in the wave (invoke 404s). These SEs only
+# run when the caller asked for the zmq profile.
+se_skip_if_aws() {
+  if [ "$(se_bus_profile)" != "zmq" ]; then
+    se_skip "${1:-zmq-profile eval — aws profile poisons the shared estate (LocalStack Lambda wipe)}"
+  fi
+}
+
 # se_wait_orchestrator_health [tries] [interval] — poll /health until it answers
 # 200. One-shot preflight probes se_skip falsely when an SE runs right after a
 # recreate-heavy SE (env flips): the orchestrator can take minutes to boot on a

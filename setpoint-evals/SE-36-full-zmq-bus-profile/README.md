@@ -4,6 +4,12 @@
 
 **Category**: transport · **Duration**: ~120s (fleet registration + broker shutdown + job) · **Timeout**: 360s · **Isolation**: destructive
 
+> ⚠️ **zmq-profile-only eval** (gated via `se_skip_if_aws` in preflight): under
+> the aws profile this SE SKIPs. Stopping `dtm-localstack` mid-suite wipes
+> every deployed Lambda function (`PERSISTENCE=0`), which poisons any
+> Lambda-dependent SE running later in an aws-leg wave (invoke 404s). Run it
+> under `BUS_PROFILE=zmq` — the profile it exists to prove.
+
 The Phase 4 acceptance eval: `BUS_PROFILE=zmq` (the umbrella — NO explicit
 `QUEUE_TRANSPORT`/`EVENT_BUS` anywhere) with every broker container
 **stopped** (`dtm-kafka`, `dtm-zookeeper`, `dtm-kafka-ui`, `dtm-localstack`)
