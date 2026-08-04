@@ -18,17 +18,27 @@
 #   --files f1 f2 ...       treat exactly these paths as the "added" set (CI passes the PR diff;
 #                           the SE fixtures pass synthetic paths). Implies diff-scoped rules.
 #
-#   --base <ref>            base ref for the diff (default: origin/main, else main).
+#   --base <ref>            base ref for the diff.
+#                           GIVEN → must be non-empty AND resolve to a commit, and the diff
+#                             itself must succeed, or the script REFUSES with exit 2. A caller
+#                             that failed to resolve a base must not get a silent pass.
+#                           OMITTED → legacy behavior, unchanged: defaults to origin/main (else
+#                             main) and stays lenient if that default does not resolve.
+#                           Unspecified ≠ specified-as-nothing. The asymmetry is deliberate:
+#                           fail-closed is scoped to callers that PASS a base (CI, which gates
+#                           main), so the flag-omitting callers — the /plan and /docs-update
+#                           skills, akb-evals, new-se, preflight-authoring-gates, and the copies
+#                           sync-se-tooling.sh pushes into sibling repos — are untouched.
 #   --root <dir>            repo root to operate in (default: cwd).
 #
 # EXIT: 0 = compliant, 1 = violation(s) (prints them).
 set -uo pipefail
 
-BASE=""; ALL=0; ROOT="."; MODE="diff"; declare -a EXPLICIT=()
+BASE=""; BASE_GIVEN=0; ALL=0; ROOT="."; MODE="diff"; declare -a EXPLICIT=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --all)   ALL=1; MODE="all" ;;
-    --base)  BASE="$2"; shift ;;
+    --base)  BASE="$2"; BASE_GIVEN=1; shift ;;
     --root)  ROOT="$2"; shift ;;
     --files) MODE="files"; shift; while [ $# -gt 0 ] && [ "$1" != "--" ]; do EXPLICIT+=("$1"); shift; done ;;
     --)      shift; while [ $# -gt 0 ]; do EXPLICIT+=("$1"); shift; done ;;
@@ -130,10 +140,48 @@ case "$MODE" in
     for p in "${EXPLICIT[@]}"; do check_added_path "${p#"$ROOT"/}"; done
     ;;
   diff)
-    if [ -z "$BASE" ]; then
-      git -C "$ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1 && BASE="origin/main" || BASE="main"
+    # AN EXPLICIT --base MUST RESOLVE — an unresolvable one is an ERROR, never "nothing changed".
+    # Measured specimens this closes (fold-3 lane, 2026-08-04):
+    #   --base ''       → fell through to the origin/main default, i.e. SILENTLY SUBSTITUTED a
+    #                     base the caller never asked for and reported the substitute as its own.
+    #   --base deadbeef… → the diff failed, its stderr was swallowed by 2>/dev/null, the file list
+    #                     came back empty, and this gate printed "nothing to check" + EXIT 0 while
+    #                     naming the bogus sha. A VACUOUS PASS: a required check validating nothing.
+    # Reachable from any caller that fails to resolve a base — ci.yml's merge_group expansion is
+    # just the first one found. OMITTING --base entirely keeps the origin/main default: that is a
+    # deliberate local-dev convenience, and the distinction between "unspecified" and "specified
+    # as nothing" is the whole point of BASE_GIVEN.
+    if [ "$BASE_GIVEN" -eq 1 ]; then
+      if [ -z "$BASE" ]; then
+        echo "❌ --base was given but is EMPTY. Refusing: an empty base silently becomes origin/main," >&2
+        echo "   so the gate would validate a diff nobody asked for and call it a pass." >&2
+        exit 2
+      fi
+      if ! git -C "$ROOT" rev-parse --verify -q "${BASE}^{commit}" >/dev/null 2>&1; then
+        echo "❌ --base '$BASE' does not resolve to a commit in $ROOT. Refusing rather than" >&2
+        echo "   reporting 'nothing to check': an unresolvable base makes this gate pass vacuously." >&2
+        exit 2
+      fi
+      # Explicit path only: the diff's own exit status is a hard error too. With the base verified
+      # above it should not fail — but swallowing it is exactly how the vacuous pass was built.
+      if ! diff_out="$(git -C "$ROOT" diff --name-only --diff-filter=A "$BASE"...HEAD 2>&1)"; then
+        echo "❌ git diff against base '$BASE' FAILED: $diff_out" >&2
+        exit 2
+      fi
+    else
+      # LEGACY DEFAULT PATH — byte-for-byte the pre-2026-08-04 behavior, deliberately.
+      # The fail-closed change above is scoped to callers that PASS a base (CI, which is what
+      # gates main). Extending it here would change behavior for every caller that omits the flag
+      # — the /plan and /docs-update skills, akb-evals, new-se, preflight, and the copies
+      # sync-se-tooling.sh pushes into sibling repos — in situations that have nothing to do with
+      # merge_group. CI caught the overreach: on a runner whose `git init` defaults to `master`,
+      # neither origin/main nor main resolves, and the stricter version exited 2 on a path whose
+      # documented contract is "fall back to a default". An unresolvable DEFAULT is still a latent
+      # vacuous pass; it is filed as the wider finding on #758, not fixed inside this lane.
+      [ -z "$BASE" ] && { git -C "$ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1 && BASE="origin/main" || BASE="main"; }
+      diff_out="$(git -C "$ROOT" diff --name-only --diff-filter=A "$BASE"...HEAD 2>/dev/null)" || true
     fi
-    mapfile -t added < <(git -C "$ROOT" diff --name-only --diff-filter=A "$BASE"...HEAD 2>/dev/null)
+    added=(); while IFS= read -r _l; do [ -n "$_l" ] && added+=("$_l"); done <<< "$diff_out"
     if [ "${#added[@]}" -eq 0 ]; then
       echo "  (no added files vs $BASE — nothing to check)"
     fi

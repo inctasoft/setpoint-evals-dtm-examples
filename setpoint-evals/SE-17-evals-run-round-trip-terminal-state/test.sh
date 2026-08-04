@@ -59,7 +59,10 @@ run_and_check() {
   ck "${suite}/${id}: response has a non-empty jobId" test -n "$job_id"
 
   if [ -z "$job_id" ]; then
-    log_fail "${suite}/${id}: no jobId returned — skipping poll (already counted as a failed assertion above)"
+    # log_warn, NOT log_fail (server-config #755): the message says it itself — the
+    # `ck "...: response has a non-empty jobId"` above ALREADY counted this. Since #755 made
+    # log_fail increment _SE_FAIL, a log_fail here is a literal double-count.
+    log_warn "${suite}/${id}: no jobId returned — skipping poll (already counted as a failed assertion above)"
     return
   fi
 

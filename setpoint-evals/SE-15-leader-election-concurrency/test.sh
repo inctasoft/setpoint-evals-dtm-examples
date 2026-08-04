@@ -65,7 +65,10 @@ ck "seeded exactly ${STUCK_STEPS} synthetic WAITING_FOR_ACK steps" \
   test "$SEEDED_COUNT" -eq "$STUCK_STEPS"
 
 if [ "$SEEDED_COUNT" -ne "$STUCK_STEPS" ]; then
-  log_fail "seeding failed — dumping psql output for diagnosis:"
+  # log_warn, NOT log_fail (server-config #755): the `ck "seeded exactly ..."` immediately above
+  # already recorded the failure, and se_summary below turns it into a non-zero exit. A log_fail
+  # here would DOUBLE-COUNT the identical defect. This is the forensic dump, not the verdict.
+  log_warn "seeding failed — dumping psql output for diagnosis:"
   echo "$SEED_OUT"
   se_summary
 fi
