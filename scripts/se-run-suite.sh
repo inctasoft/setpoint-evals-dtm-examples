@@ -264,7 +264,7 @@ if [ "$NOLOG" -eq 0 ]; then
     (IFS=,; echo "${ROWS[*]}"); echo "]}"; } > "$RES/results.json"
   echo "    logs: $RES/"
 fi
-# EXIT 77 IS THE ONLY SKIP (canonical port of voice-assistant #1937). If EVERY discovered SE
+# EXIT 77 IS THE ONLY SKIP (canonical port of upstream #1937). If EVERY discovered SE
 # skipped, the suite exercised ZERO real assertions — total_bad is 0, so a bare `exit 0` would
 # fake-green the suite to a caller that only checks the rc. Report SKIP (77) instead. A MIX of
 # pass+skip still exits via total_bad (0 = a legitimate pass: real assertions ran; the skip count
