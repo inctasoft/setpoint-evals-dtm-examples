@@ -71,7 +71,10 @@ BUILD_CMD="$(node -e "console.log(require('$SCRATCH/package.json').scripts.build
 # nothing to do with the orphan-cleanup behavior this SE actually guards.
 ( cd "$SCRATCH" && PATH="$ROOT/node_modules/.bin:$PATH" eval "$BUILD_CMD" ) >"$SCRATCH.buildlog" 2>&1
 BUILD_RC=$?
-[ "$BUILD_RC" -eq 0 ] || { log_fail "build exited $BUILD_RC — see below"; tail -n 30 "$SCRATCH.buildlog"; }
+# log_warn, NOT log_fail (server-config #755): the verdict is carried by
+# `ck "build script (package.json \"build\") ran cleanly" test "$BUILD_RC" -eq 0` below; this
+# line only surfaces the build log. log_fail now increments _SE_FAIL, so it would double-count.
+[ "$BUILD_RC" -eq 0 ] || { log_warn "build exited $BUILD_RC — see below"; tail -n 30 "$SCRATCH.buildlog"; }
 
 ORPHAN_SURVIVED=0
 [ -f "$SCRATCH/dist/migrations/1765443716000-InitialMigrationSchema.js" ] && ORPHAN_SURVIVED=1

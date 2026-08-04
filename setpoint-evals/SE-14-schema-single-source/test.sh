@@ -86,7 +86,11 @@ trap cleanup EXIT
 # Path A: the REAL bootstrap path a developer/CI actually runs.
 bash "$ROOT/scripts/init-clean-database.sh" >"$tmp/bootstrap.log" 2>&1
 BOOTSTRAP_RC=$?
-[ "$BOOTSTRAP_RC" -eq 0 ] || { log_fail "bootstrap path exited $BOOTSTRAP_RC — see $tmp/bootstrap.log"; tail -n 40 "$tmp/bootstrap.log"; }
+# log_warn, NOT log_fail: this is forensic narration for a verdict already carried by
+# `ck "bootstrap path (init-clean-database.sh) ran cleanly" test "$BOOTSTRAP_RC" -eq 0` below.
+# Since server-config #755 log_fail increments _SE_FAIL, a log_fail here would DOUBLE-COUNT the
+# same defect. log_warn is the established "prints, increments no counter" idiom.
+[ "$BOOTSTRAP_RC" -eq 0 ] || { log_warn "bootstrap path exited $BOOTSTRAP_RC — see $tmp/bootstrap.log"; tail -n 40 "$tmp/bootstrap.log"; }
 
 # --- ISOLATION GUARD ---------------------------------------------------------
 # A destructive SE (this one drops and rebuilds the ENTIRE schema) must never
@@ -105,7 +109,12 @@ if [ "$BOOTSTRAP_RC" -ne 0 ] && ! dtm_jobs_exists; then
   if [ "$RESTORE_RC" -eq 0 ] && dtm_jobs_exists; then
     log_warn "restore succeeded — dtm_jobs exists again; downstream SEs can proceed"
   else
-    log_fail "RESTORE FAILED (exit $RESTORE_RC) — dtm_jobs still missing, downstream SEs WILL cascade-fail — see $tmp/restore.log"
+    # log_warn, NOT log_fail (server-config #755): this block is only reachable when
+    # BOOTSTRAP_RC != 0, which the `ck "bootstrap path ... ran cleanly"` below ALWAYS fails on,
+    # so this can never be the sole signal — and the restore outcome itself is separately
+    # asserted by `ck "dtm_jobs exists on exit (isolation ...)" dtm_jobs_exists`. Its two
+    # sibling narrations in this same block are already log_warn.
+    log_warn "RESTORE FAILED (exit $RESTORE_RC) — dtm_jobs still missing, downstream SEs WILL cascade-fail — see $tmp/restore.log"
     tail -n 40 "$tmp/restore.log"
   fi
 fi
@@ -132,7 +141,9 @@ docker exec "$DB_CONTAINER" psql -U "$PGUSER" -d "$PGDB" -tA -c "$DUMP_SQL" >"$t
   npx typeorm-ts-node-commonjs migration:run -d dataSource.ts
 ) >"$tmp/migrate.log" 2>&1
 MIGRATE_RC=$?
-[ "$MIGRATE_RC" -eq 0 ] || { log_fail "fresh migration:run exited $MIGRATE_RC — see $tmp/migrate.log"; tail -n 40 "$tmp/migrate.log"; }
+# log_warn, NOT log_fail (server-config #755): the verdict is carried by
+# `ck "fresh migration:run against empty DB ran cleanly" test "$MIGRATE_RC" -eq 0` below.
+[ "$MIGRATE_RC" -eq 0 ] || { log_warn "fresh migration:run exited $MIGRATE_RC — see $tmp/migrate.log"; tail -n 40 "$tmp/migrate.log"; }
 docker exec "$DB_CONTAINER" psql -U "$PGUSER" -d "$VERIFY_DB" -tA -c "$DUMP_SQL" >"$tmp/migrate.schema" 2>"$tmp/migrate.err"
 
 diff -u "$tmp/bootstrap.schema" "$tmp/migrate.schema" >"$tmp/schema.diff" || true

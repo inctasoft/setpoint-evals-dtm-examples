@@ -20,7 +20,7 @@ else
 fi
 log_info() { echo "${C_B}ℹ${C_0} $*"; }
 log_pass() { echo "${C_G}✓${C_0} $*"; }
-log_fail() { echo "${C_R}✗${C_0} $*"; }
+log_fail() { _SE_FAIL=$((_SE_FAIL+1)); echo "${C_R}✗${C_0} $*"; }
 log_warn() { echo "${C_Y}⚠${C_0} $*"; }
 
 # ── verdict plumbing ────────────────────────────────────────────────────────
@@ -38,30 +38,55 @@ se_summary() {
 ck() {
   local label="$1"; shift
   if "$@" >/dev/null 2>&1; then _SE_PASS=$((_SE_PASS+1)); log_pass "$label"
-  else _SE_FAIL=$((_SE_FAIL+1)); log_fail "$label  (cmd: $*)"; fi
+  else log_fail "$label  (cmd: $*)"; fi
 }
 # ck_eq "<label>" "<actual>" "<expected>"
 ck_eq() {
   if [ "$2" = "$3" ]; then _SE_PASS=$((_SE_PASS+1)); log_pass "$1"
-  else _SE_FAIL=$((_SE_FAIL+1)); log_fail "$1  (actual='$2' expected='$3')"; fi
+  else log_fail "$1  (actual='$2' expected='$3')"; fi
 }
 # ck_has "<label>" "<haystack-string>" "<needle>"   — substring, pipefail-safe
 ck_has() {
   local n; n=$(printf '%s' "$2" | grep -cF -- "$3" || true)
   if [ "$n" -gt 0 ]; then _SE_PASS=$((_SE_PASS+1)); log_pass "$1"
-  else _SE_FAIL=$((_SE_FAIL+1)); log_fail "$1  (needle not found: '$3')"; fi
+  else log_fail "$1  (needle not found: '$3')"; fi
+}
+# ck_str_absent "<label>" "<haystack-string>" "<regex>"  — negative assertion on a STRING.
+# The string-haystack mirror of ck_absent (which is FILE-only). An UNSET/EMPTY haystack FAILS
+# loudly: "" trivially matches no pattern, so a typo'd/empty var would fake-green the absence
+# (the same sin ck_absent had against an unreadable file). Use ck test ! -e / ck_eq for the
+# genuine "output was never produced / is empty" assertion, not this.
+ck_str_absent() {
+  if [ -z "$2" ]; then
+    log_fail "$1  (ck_str_absent: haystack is EMPTY — absence is UNPROVABLE against an empty string; assert emptiness explicitly instead)"; return
+  fi
+  local n; n=$(printf '%s' "$2" | grep -cE -- "$3" || true)
+  if [ "${n:-0}" -eq 0 ]; then _SE_PASS=$((_SE_PASS+1)); log_pass "$1"
+  else log_fail "$1  (string unexpectedly matches $3, $n hit(s))"; fi
 }
 # ck_file_has "<label>" <file> "<regex>"   — pipefail-safe grep -c
+# A non-readable haystack FAILS (grep errs → count 0 → "not found" → fail already), but with a
+# generic "!~" message; the explicit guard names the real cause (mistyped path vs. absent match).
 ck_file_has() {
+  if [ ! -r "$2" ] || [ -d "$2" ]; then
+    log_fail "$1  (ck_file_has: haystack '$2' is not a readable file — check the path; use ck_has for a string haystack)"; return
+  fi
   local n; n=$(grep -cE -- "$3" "$2" 2>/dev/null || true)
   if [ "${n:-0}" -gt 0 ]; then _SE_PASS=$((_SE_PASS+1)); log_pass "$1"
-  else _SE_FAIL=$((_SE_FAIL+1)); log_fail "$1  ($2 !~ $3)"; fi
+  else log_fail "$1  ($2 !~ $3)"; fi
 }
-# ck_absent "<label>" <file> "<regex>"     — negative assertion
+# ck_absent "<label>" <file> "<regex>"     — negative assertion against a FILE.
+# A non-readable haystack (mistyped path, or a STRING passed where a file was meant) used to
+# fake-green: grep errs → count 0 → "absent" → PASS, asserting nothing. It now FAILS LOUDLY
+# naming the unreadable haystack. For a string haystack use ck_str_absent; process
+# substitution `<(printf '%s' "$x")` is a readable /dev/fd file and works here unchanged.
 ck_absent() {
+  if [ ! -r "$2" ] || [ -d "$2" ]; then
+    log_fail "$1  (ck_absent: haystack '$2' is not a readable file — absence is UNPROVABLE; use ck_str_absent for a string haystack)"; return
+  fi
   local n; n=$(grep -cE -- "$3" "$2" 2>/dev/null || true)
   if [ "${n:-0}" -eq 0 ]; then _SE_PASS=$((_SE_PASS+1)); log_pass "$1"
-  else _SE_FAIL=$((_SE_FAIL+1)); log_fail "$1  ($2 unexpectedly matches $3, $n hit(s))"; fi
+  else log_fail "$1  ($2 unexpectedly matches $3, $n hit(s))"; fi
 }
 
 # ── paths ───────────────────────────────────────────────────────────────────
