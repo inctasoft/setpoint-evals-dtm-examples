@@ -128,7 +128,12 @@ jobs:
         env:
           BEFORE_SHA: ${{ github.event.before }}
         run: |
-          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+          # pipefail: without it a failing git diff feeds the scanner EMPTY stdin and the
+          # gate passes vacuously (observed on the 2026-08-21 relaunch push, where
+          # event.before named a retired sha). An unresolvable base scans the full commit.
+          set -o pipefail
+          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
             git show "${{ github.sha }}" | bash scripts/hygiene/scan.sh
           else
             git diff "$BEFORE_SHA" "${{ github.sha }}" | bash scripts/hygiene/scan.sh
@@ -153,7 +158,16 @@ jobs:
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
             base="$(git rev-parse HEAD~1 2>/dev/null || echo HEAD)"
           fi
-          bash scripts/validate-se-readmes.sh --base "$base"
+          # A base that does not RESOLVE (history replace / orphan relaunch) must neither
+          # crash the gate nor pass it vacuously: fall back to the FULL scan, strictly
+          # stronger than any diff scope. Specimen: the 2026-08-21 relaunch push, whose
+          # event.before named a retired pre-relaunch sha; the validator refused (rc=2).
+          if ! git cat-file -e "$base" 2>/dev/null; then
+            echo "base $base does not resolve — falling back to --all (full scan)"
+            bash scripts/validate-se-readmes.sh --all
+          else
+            bash scripts/validate-se-readmes.sh --base "$base"
+          fi
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 # DELETED: `se-full-stack-quick` (echo-only placeholder) — issue #74, follow-up issue #75.
