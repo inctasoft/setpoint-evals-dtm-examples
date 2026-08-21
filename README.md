@@ -1,13 +1,90 @@
 # Setpoint Evals — Watch a Workflow Engine Keep Its Promises
 
-> Every scenario in this repo is a **plain-language contract** — a rule that business and
-> engineering read on the same page. Press one button and the engine runs the real thing,
-> live, then checks itself against the contract's own acceptance list. When a step is meant
-> to fail, you watch it fail *exactly where it should* — and nowhere else.
+> A **setpoint eval** (SE) is a small executable contract: a script that drives the real
+> running system — real HTTP, real queues, real databases — waits for what actually
+> happened, asserts on it, and prints one verdict: **PASS** or **FAIL**. One bit. A suite
+> of them is a high-dimensional definition of done — the **setpoint** an AI coding agent,
+> or a human team, is held to.
+
+This repository exists to make that pattern easy to steal. The workflow engine inside is
+**the example system** — real enough to be worth holding to promises (fan-out, retries,
+dead-letter queues, cascading failures), small enough to run on a laptop. **63 setpoint
+evals** surround it, and every one doubles as a plain-language contract that business and
+engineering read on the same page. When a step is meant to fail, you watch it fail
+*exactly where it should* — and nowhere else.
 
 ![A live distributed-task run: the failure of one step spreads across the graph while unaffected branches stay green.](docs/media/hero.gif)
 
-The demo domain is **DTM — a Distributed Task Manager**: a workflow engine that fans work
+## The pattern
+
+### One directory per eval
+
+Every SE is one directory holding the executable check and the contract it certifies —
+CI enforces this layout on every PR:
+
+```
+setpoint-evals/SE-01-retry-transient-failure/
+├── test.sh     # drives the LIVE stack — real requests, real queues — then asserts
+└── README.md   # the contract: metadata, a plain-language (gherkin) scenario,
+                # and a mermaid diagram of the flow under test
+```
+
+Readable by business, runnable by CI, writable by an agent. The README states the
+setpoint in a sentence a stakeholder can read; the mermaid diagram draws the flow;
+`test.sh` proves it against the running system — no mocks.
+
+### SE-first, red-first
+
+The evals are written **before** the feature is built — a handful per feature, and at
+least one designed to fail against the plausible-but-wrong implementation, not just the
+missing one. If you can't write that eval, you don't understand the feature yet;
+discovering that costs minutes before the build and days after it.
+
+A new SE must also go **red first**: run it against a world where the feature is broken
+and watch it fail. A check born green has proven exactly one thing — that it can print
+green.
+
+### Fake-green defenses
+
+An untested sensor is worse than no sensor, because it reads as one. Concrete defenses in
+this repo against checks that lie:
+
+- **Expected failures are first-class.** An SE anchored `**Expected outcome:**
+  EXPECTED-FAIL` in its README goes green by *failing* (`XFAIL`) — and **unexpectedly
+  passing is a red `UPASS` that fails the whole run**, so a sensor that stops sensing is
+  caught the day it happens.
+- **Honest skips.** An eval that cannot apply (an SQS-semantics SE under the ZeroMQ bus
+  profile, say) exits through the `se_skip` sentinel and is reported `SKIP` — visible in
+  the summary, never silently green.
+- **Gates that self-test.** The CI hygiene job first proves it *can* fail (a deliberate
+  positive control) before scanning anything; a gate that cannot go red is not a gate.
+- **A structure gate.** `scripts/validate-se-readmes.sh` runs in CI and keeps every eval
+  in the canonical layout above — undocumented tests can't accumulate beside the
+  contract-bearing ones.
+- **One verdict protocol.** The runner classifies every eval into
+  `PASS · FAIL · TIMEOUT · SKIP · XFAIL · UPASS` and records the verdict as the last
+  line of the eval's log — no ambiguous outcomes to argue about after the fact.
+
+### Green merges
+
+When the SEs are green and the pipeline is green, the work ships — nobody waits for a
+human to skim the diff. Review moves from the code to the setpoint: humans decide what
+should be true; machines verify that it is.
+
+### Adopt it in your repo
+
+1. Copy one SE directory as a template
+   (`setpoint-evals/SE-01-retry-transient-failure/` is a simple one), plus the runner
+   (`setpoint-evals/run-all.sh` + `setpoint-evals/shared/helpers.sh`) and the layout gate
+   (`scripts/validate-se-readmes.sh`).
+2. On your next feature, write the SEs before the source — and aim at least one at the
+   plausible-but-wrong implementation. Watch each go red, then build until the suite is
+   green.
+3. Wire the layout gate into CI so the contract layer can't silently rot.
+
+## The example system
+
+The worked example is **DTM — a Distributed Task Manager**: a workflow engine that fans work
 out, retries what's flaky, and reports precisely what happened. Three example workflows —
 **order processing**, an **IoT sensor pipeline**, and **infrastructure provisioning** —
 each stress a different edge: a partial failure, an explosive fan-out, a cascading collapse.
@@ -66,10 +143,8 @@ picture of exactly what that means.
 
 ---
 
-Every scenario above is also an executable test. **Setpoint Evals (SEs)** are shell-based,
-end-to-end acceptance criteria — they post real requests to the running engine, poll for
-state changes, and assert the end-to-end behaviour on the live stack, not on mocks. The same
-contract a stakeholder reads is the setpoint an AI coding agent is held to.
+Every demo above is also an executable test: the same contract a stakeholder reads is the
+setpoint the engine — and any AI coding agent working on it — is held to.
 
 > Companion article: [Setpoint Evals: Giving AI Coding Agents a Long Horizon](https://inctasoft.com/blog/setpoint-evals).
 > Theory: [The Setpoint Problem](https://inctasoft.com/blog/setpoint-problem).

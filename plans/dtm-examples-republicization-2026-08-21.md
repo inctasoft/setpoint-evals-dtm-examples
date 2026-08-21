@@ -1,6 +1,6 @@
 # Re-publicization of setpoint-evals-dtm-examples — fresh-history relaunch
 
-> **Status:** PREP (Phase 0 landed via this PR; flip phases are CLASS B, operator-word-gated)
+> **Status:** FLIP-READY (Phase 0 + Phase 1 landed; operator flip word GIVEN 2026-08-21 — Phase 2 executes at the dispatcher)
 > **Date:** 2026-08-21 · **Owner lane:** dtm-examples-republicization (batch-1, 2026-08-21 dispatch)
 > **Setpoint anchor:** ruling `q-dtm-examples-republicization-2026-08-21` = **fresh-history-relaunch**, ruled 2026-08-21T06:02:23Z (sitting item S4, operator live). This ruling is the acceptance gate for this plan.
 
@@ -70,15 +70,45 @@ Internal-reference candidates found in the tracked set (for Phase 1 disposition)
 ### Phase 0 — census + hygiene + plan (THIS PR) ✅
 Everything above, delivered on branch `chore/republicization-prep`.
 
-### Phase 1 — pre-flip content uplift (CLASS A, agent-runnable, worktree→PR)
+### Phase 1 — pre-flip content uplift (CLASS A, agent-runnable, worktree→PR) ✅ landed 2026-08-21, Phase-1 PR
 1. README/docs pass oriented to the goal: lead with what a setpoint eval IS, the per-SE
    canonical layout, fake-green defenses, and how to adopt the pattern; demote DTM internals
    to "the example system".
 2. Disposition of internal-reference candidate (1) above: scrub or keep the runner-host
    comments (recommend: reword to "a self-hosted runner" without the address).
-3. Decide the public-snapshot exclusion set for the orphan commit (recommend excluding
-   internal process dirs: `plans/`, `.claude/`, `.cursor/`, `DIFFICULTIES-LOG.md`,
-   `IDEAS-LOG.md` — final list is a flip-time input, confirmed by the operator).
+3. Public-snapshot exclusion set for the orphan commit — **ADOPTED with the operator flip
+   word, 2026-08-21** (recorded by the Phase-1 lane after an `ls -a` + tracked-census
+   sweep of the repo root):
+   - `plans/` — internal process planning (this plan itself; references private-side lanes).
+   - `.claude/` — internal agent-harness config (rules, hooks, skills, settings). No
+     nested `.claude/` dirs exist in the tracked set.
+   - `**/.cursor/` — internal agent-harness rules. Glob-form on purpose: the tracked set
+     holds BOTH the root `.cursor/` and a nested `workflows/order-processing/.cursor/`.
+   - `.cursorrules` — ADDED by the sweep: root-level sibling of `.cursor/`; excluding the
+     directory while shipping this file would leak the same class.
+   - `DIFFICULTIES-LOG.md` — internal engineering diary.
+   - `IDEAS-LOG.md` — internal ideas backlog.
+
+   Swept and deliberately KEPT public: `CLAUDE.md` (the AI-agent guide is part of the
+   showcase; carries no internal addresses after this PR's reword), `.vscode/`
+   (debug-server mode is documented in the README), `simulator/`, `uitools/`, and
+   `docker-compose.gcp-local.yml` (dev tooling for real features; synthetic/local
+   identifiers only). `.claude-memory/` and `_operational_docs/` are not present in this
+   repo.
+
+   OPEN for the dispatcher (a flip-time consequence, not a new exclusion): ~10 tracked
+   files reference `DIFFICULTIES-LOG.md` in comments/READMEs (e.g.
+   `docs/guides/race-condition-prevention.md`, `scripts/new-se.sh`,
+   `setpoint-evals/SE-20-kafka-topics-lists-registered/README.md`) — post-flip these
+   become dangling pointers (the orphan history also retires the git history they cite).
+   Accept the dangle or sweep the comments at flip time; no exclusion-list change either
+   way. Similarly OPEN: ~20 code comments (apps/monitor, packages/core, scripts/) name
+   `server-config` as the canonical home of the agent-event schema / SE tooling. Proposed
+   disposition KEEP: the name carries no address or token, and two of the files
+   (`scripts/se-lib.sh`, `scripts/se-run-suite.sh`) are vendored copies whose sha256
+   parity with the canonical originals is drift-checked weekly — scrubbing them would
+   break that parity. The Phase-1 docs pass removed the one reader-facing instance
+   (CLAUDE.md's SE-contract pointer now cites `setpoint-evals/README.md`).
 4. Re-run `public-repo-hygiene-scan.sh` → must be CLEAN; verify the salted-hash hygiene CI
    job is present and green on the branch that will seed the snapshot.
 

@@ -314,7 +314,7 @@ Two-tier hierarchy. Every SE dir is `SE-<NN>-<kebab-name>/` (zero-padded), files
 autodiscovered — no hand-maintained eval lists. Core SEs carry per-SE README metadata
 (`**Timeout**`, `**Isolation**: parallel-safe|destructive`, `**Category**`); a missing
 README (the pre-v2 legacy workflow-SE estate) degrades to defaults rather than erroring.
-Full contract: `server-config/docs/setpoint-eval-conventions.md`.
+Full metadata contract: the per-SE README header fields documented in `setpoint-evals/README.md`.
 
 ### Core SEs (`setpoint-evals/`) -- 36 tests
 Test generic engine capabilities (retry, DLQ, deduplication, concurrency, maintenance tasks,
@@ -385,29 +385,22 @@ green `XFAIL`, unexpectedly passing is a red `UPASS` and fails the run).
 | `hygiene` | Public-repo vocabulary denylist scan, diff-scoped on PR/push (self-tests it can actually fail first) | `bash scripts/hygiene/scan.sh --self-test` then pipe a diff through `scripts/hygiene/scan.sh` |
 | `se-structure` | SE README/mermaid layout, diff-scoped | `bash scripts/validate-se-readmes.sh --base <sha>` (or `--all` for the whole estate) |
 
-### Where CI runs (local-first Phase 4)
+### Where CI runs
 
-All 4 jobs are `runs-on: self-hosted` — the **org `local-first` runner group**, 2 runners on
-192.168.1.13 as the isolated `ghrunner` user with rootless Docker. The group is
-`visibility: selected`, so only explicitly-added repos land there; this repo has zero repo-level
-runners, so bare `self-hosted` is unambiguous. Plan:
-`server-config/plans/local-first-ci-runners-2026-07-27.md`; issue #74.
+All jobs run on **GitHub-hosted runners** (`ubuntu-latest`) — issue #84. Hosted minutes are
+free for public repos, and fork PRs execute inside GitHub's ephemeral per-job VMs, never on
+maintainer infrastructure — a self-hosted runner attached to a public repo is a documented
+fork-PR code-execution hazard, so this repo deliberately takes the hosted path. (An earlier
+phase ran CI on a self-hosted runner; that architecture is retired.)
 
-Two host facts to know before editing `ci.yml`:
+Toolchain fact to know before editing `ci.yml`: **`pnpm/action-setup` must come BEFORE
+`actions/setup-node`**, because setup-node's `cache: pnpm` shells out to `pnpm store path`
+and needs pnpm already on PATH. pnpm's version comes solely from the root `package.json`
+`packageManager` field — no version is pinned in the workflow, so there is exactly one
+source of truth.
 
-- **`node`, `npm`, `corepack` and `pnpm` are all ABSENT from that host's PATH.** Only
-  `actions/setup-node` supplies them, so any job that shells out to `node` needs it — `hygiene`
-  does (`scripts/hygiene/scan.sh` runs `node scripts/hygiene/scan.js`). `se-structure` does not:
-  `validate-se-readmes.sh` is pure bash + git.
-- **`actions/setup-node` must come BEFORE `pnpm/action-setup`**, because pnpm/action-setup needs a
-  Node/npm toolchain to install pnpm and cannot bootstrap itself on a bare host. The reverse order
-  is only required when `cache: pnpm` is in play, and the GHA `cache:` keys are deliberately gone
-  (a store round-trip over the box's ~19 KB/s uplink costs more than it saves, and pnpm's on-disk
-  store already persists between runs on the same host).
-
-`dependabot-auto-merge.yml` stays on `ubuntu-latest` **on purpose**: its job `sleep 60`s then polls
-check-runs with a 1800 s deadline, holding a runner while idle. Free and parallel on hosted; on a
-2-runner pool one dependabot batch can pin the estate's whole CI capacity.
+`dependabot-auto-merge.yml` also runs hosted: its job `sleep 60`s then polls check-runs with
+a 1800 s deadline — holding a runner while idle is free and parallel there.
 
 ### What was deleted, and what has to happen before it comes back
 
@@ -420,8 +413,8 @@ hard `timeout-minutes`, `workflow_dispatch`-only, and one PROVEN green dispatch 
 `run-all.sh`'s pass/fail/skip counts). Note `--quick` only exports `SE_QUICK=1` so opt-in SEs
 shorten internal waits — it does **not** subset the corpus.
 
-**The real SE gate is still NOT CI** — no CI job boots the stack and runs the eval estate yet. Per
-`docs/setpoint-eval-conventions.md`, that evidence is local execution output pasted into the PR
+**The real SE gate is still NOT CI** — no CI job boots the stack and runs the eval estate yet. Until
+that lands, the verification evidence is local execution output pasted into the PR
 body: run `./scripts/local-env.sh start --standalone --orchestrator`,
 `./scripts/local-env.sh deploy-workers`, then
 `./setpoint-evals/run-all.sh --all-workflows --quick` (or a workflow-scoped subset), and paste the
@@ -564,16 +557,6 @@ When creating a new workflow, these integration points **must** be updated beyon
 
 ### Template
 Copy `workflows/00-template/` as a starting point. See existing workflows (especially `order-processing` as simplest) for reference.
-
-## Cursor Rules Reference
-
-AI assistant rules in `.cursor/*.mdc`:
-- `architecture.mdc` -- DTM engine architecture (generic)
-- `worker-writer.mdc` -- Worker development guide
-- `testing.mdc` -- Testing standards
-- `code-quality.mdc` -- Code quality
-- `safety.mdc` -- Safety and security
-- Plus workflow-specific rules in `workflows/<name>/.cursor/`
 
 ## Worker Callback Contract
 
