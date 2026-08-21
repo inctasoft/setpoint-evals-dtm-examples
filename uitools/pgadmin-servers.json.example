@@ -1,0 +1,41 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "DTM Orchestrator DB",
+      "Group": "DTM",
+      "Host": "dtm-db",
+      "Port": 5432,
+      "MaintenanceDB": "dtm",
+      "Username": "dtm_user",
+      "SSLMode": "prefer",
+      "Comment": "dtm_jobs / dtm_steps — the engine's own state, workflow-agnostic"
+    },
+    "2": {
+      "Name": "order-processing source DB",
+      "Group": "DTM",
+      "Host": "dtm-order-processing-source-db",
+      "Port": 5432,
+      "MaintenanceDB": "order_processing_db",
+      "Username": "order_user",
+      "SSLMode": "prefer"
+    },
+    "3": {
+      "Name": "iot-sensor-pipeline source DB",
+      "Group": "DTM",
+      "Host": "dtm-iot-sensor-pipeline-source-db",
+      "Port": 5432,
+      "MaintenanceDB": "iot_sensor_pipeline_db",
+      "Username": "iot_user",
+      "SSLMode": "prefer"
+    },
+    "4": {
+      "Name": "infra-provisioning source DB",
+      "Group": "DTM",
+      "Host": "dtm-infra-provisioning-source-db",
+      "Port": 5432,
+      "MaintenanceDB": "infra_provisioning_db",
+      "Username": "infra_user",
+      "SSLMode": "prefer"
+    }
+  }
+}

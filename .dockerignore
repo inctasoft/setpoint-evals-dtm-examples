@@ -1,0 +1,77 @@
+# Node.js
+node_modules
+# Nested workspace package node_modules too (pnpm symlink farms break COPY on
+# repo-root build contexts, e.g. tools/dev-ack-simulator)
+**/node_modules
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# Build outputs
+dist
+build
+*.tsbuildinfo
+
+# Environment files
+.env.*
+!.env.example
+!.env.development
+!.env.test
+# NOTE: plain .env is intentionally NOT ignored — Dockerfile.db-init does
+# `COPY .env ./.env` to bundle it for the TypeORM migration CLI. Excluding it
+# here broke every fresh-clone build (discovered while running the mandatory
+# full-stack SE verification for the tooling-v2 uplift; pre-existing since the
+# initial commit, unrelated to SE tooling itself).
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Testing
+coverage
+.nyc_output
+*.lcov
+
+# Logs
+logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp
+temp
+*.tmp
+
+# Documentation (exclude from Docker builds)
+*.md
+!README.md
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Husky
+.husky
+
+# Other
+.editorconfig
+.prettierrc
+.eslintrc*
+

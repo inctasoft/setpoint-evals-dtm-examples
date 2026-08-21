@@ -1,0 +1,285 @@
+# ============================================================================
+# DTM Orchestrator Simulator — Self-Contained Stack
+# ============================================================================
+#
+# A complete orchestrator environment that any workflow repo can use
+# to run its SEs (Setpoint Evals) independently.
+#
+# This stack provides:
+#   - PostgreSQL (orchestrator jobs/steps DB)
+#   - Kafka + Zookeeper (event bus)
+#   - LocalStack (SQS queues)
+#   - Orchestrator (in simulator mode — dynamic workflow loading)
+#   - SQS Poller (in simulator mode — dynamic handler loading)
+#   - Dev Ack Simulator (acknowledges completed steps)
+#
+# Workflow artifacts are mounted at runtime via volumes.
+# No workflow source code is baked into the images.
+#
+# Usage:
+#   Extend this file from a workflow-specific docker-compose.yml:
+#
+#   include:
+#     - path/to/docker-compose.simulator.yml
+#
+#   services:
+#     simulator-orchestrator:
+#       volumes:
+#         - ./dist/workflow.config.js:/workflows/config.js:ro
+#     simulator-poller:
+#       volumes:
+#         - ./dist/workflow.config.js:/workflows/config.js:ro
+#         - ./workers/dist:/workflows/workers:ro
+#         - ./source-db/dist:/workflows/source-db:ro
+#
+# ============================================================================
+
+services:
+  # ──────────────────────────────────────────────────────────────
+  # PostgreSQL — Orchestrator Database (jobs, steps, migrations)
+  # ──────────────────────────────────────────────────────────────
+  simulator-db:
+    image: postgres:17-alpine
+    container_name: simulator-db
+    environment:
+      POSTGRES_USER: dtm_user
+      POSTGRES_PASSWORD: migration_pass
+      POSTGRES_DB: dtm
+    ports:
+      - "5460:5432"
+    networks:
+      - simulator
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dtm_user -d dtm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ──────────────────────────────────────────────────────────────
+  # DB Migrations — Init container (runs once then exits)
+  # ──────────────────────────────────────────────────────────────
+  simulator-init-db:
+    build:
+      context: ..
+      dockerfile: services/orchestrator/Dockerfile.simulator.db-init
+    image: dtm-simulator-db-init:latest
+    container_name: simulator-init-db
+    environment:
+      NODE_ENV: development
+      DTM_DB_HOST: simulator-db
+      DTM_DB_PORT: "5432"
+      DTM_DB_USER: dtm_user
+      DTM_DB_PASSWORD: dtm_pass
+      DTM_DB_NAME: dtm
+    depends_on:
+      simulator-db:
+        condition: service_healthy
+    networks:
+      - simulator
+    restart: "no"
+
+  # ──────────────────────────────────────────────────────────────
+  # Zookeeper — Required by Kafka
+  # ──────────────────────────────────────────────────────────────
+  simulator-zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: simulator-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - simulator
+    healthcheck:
+      test: ["CMD", "bash", "-c", 'timeout 10 bash -c "</dev/tcp/localhost/2181"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ──────────────────────────────────────────────────────────────
+  # Kafka — Event bus for orchestrator events + ack simulator
+  # ──────────────────────────────────────────────────────────────
+  simulator-kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: simulator-kafka
+    hostname: simulator-kafka
+    depends_on:
+      simulator-zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: simulator-zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://simulator-kafka:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      # Auto-create topics so we don't need a hardcoded topic init script.
+      # Each workflow publishes to its own topics — auto-create handles all of them.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "29094:29092"
+    networks:
+      - simulator
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:29092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ──────────────────────────────────────────────────────────────
+  # LocalStack — SQS queues (queues are auto-created by the poller)
+  # ──────────────────────────────────────────────────────────────
+  simulator-localstack:
+    image: localstack/localstack:4.11.1
+    container_name: simulator-localstack
+    environment:
+      SERVICES: sqs
+      DEBUG: 0
+      GATEWAY_LISTEN: 0.0.0.0:4566
+      DISABLE_EVENTS: 1
+      PERSISTENCE: 0
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      EAGER_SERVICE_LOADING: 1
+      SKIP_SSL_CERT_DOWNLOAD: 1
+    ports:
+      - "4568:4566"
+    networks:
+      - simulator
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ──────────────────────────────────────────────────────────────
+  # Orchestrator — Simulator mode (dynamic workflow loading)
+  # ──────────────────────────────────────────────────────────────
+  simulator-orchestrator:
+    build:
+      context: ..
+      dockerfile: services/orchestrator/Dockerfile.simulator
+    image: dtm-simulator-orchestrator:latest
+    container_name: simulator-orchestrator
+    environment:
+      NODE_ENV: development
+      # Workflow configs mounted at runtime
+      WORKFLOW_CONFIG_PATHS: ${WORKFLOW_CONFIG_PATHS:-/workflows/config.js}
+      # Database
+      DTM_DB_HOST: simulator-db
+      DTM_DB_PORT: "5432"
+      DTM_DB_PORT_HOST: "5460"
+      DTM_DB_USER: dtm_user
+      DTM_DB_PASSWORD: dtm_pass
+      DTM_DB_NAME: dtm
+      # Kafka
+      KAFKA_BROKER: simulator-kafka:29092
+      PUBLISH_EVENTS_TO_KAFKA: "true"
+      # SQS
+      AWS_REGION: us-east-1
+      AWS_SQS_ENDPOINT: http://simulator-localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      # Callback URL (poller → orchestrator within the compose network)
+      ORCHESTRATOR_CALLBACK_URL: http://simulator-orchestrator:3000
+      ORCHESTRATOR_DOCKER_HOST: simulator-orchestrator
+      ORCHESTRATOR_PORT_HOST: "3000"
+      # Feature flags
+      ENABLE_REQUESTS_FOR_SIMULATED_DELAYS: "true"
+      ENABLE_DEV_ACK_SIMULATOR: "true"
+      ENABLE_DEDUPLICATION: "false"
+    ports:
+      - "3010:3000"
+    # Workflow config volume(s) — provided by the extending compose file:
+    #   volumes:
+    #     - ./dist/workflow.config.js:/workflows/config.js:ro
+    depends_on:
+      simulator-init-db:
+        condition: service_completed_successfully
+      simulator-kafka:
+        condition: service_healthy
+      simulator-localstack:
+        condition: service_healthy
+    networks:
+      - simulator
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/api/v1/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ──────────────────────────────────────────────────────────────
+  # SQS Poller — Simulator mode (dynamic handler loading)
+  # ──────────────────────────────────────────────────────────────
+  simulator-poller:
+    build:
+      context: ..
+      dockerfile: tools/sqs-poller/Dockerfile.simulator
+    image: dtm-simulator-poller:latest
+    container_name: simulator-poller
+    environment:
+      # Dynamic loading paths (mounted by extending compose file)
+      WORKFLOW_CONFIG_PATHS: ${WORKFLOW_CONFIG_PATHS:-/workflows/config.js}
+      HANDLER_MAP_PATHS: ${HANDLER_MAP_PATHS:-/workflows/workers/index.js}
+      DATASOURCE_PATHS: ${DATASOURCE_PATHS:-/workflows/source-db/index.js}
+      # Always debug-server mode in simulator (handlers run in-process)
+      DEBUG_SERVER_MODE: "true"
+      # SQS
+      AWS_REGION: us-east-1
+      AWS_SQS_ENDPOINT: http://simulator-localstack:4566
+      AWS_SQS_QUEUE_HOST: http://simulator-localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      POLL_INTERVAL_MS: "200"
+      MAX_MESSAGES_PER_POLL: "1"
+      WAIT_TIME_SECONDS: "5"
+      # Callback URL (worker → orchestrator)
+      CALLBACK_URL: http://simulator-orchestrator:3000/api/v1/callback/step-progress
+    # Workflow artifact volumes — provided by the extending compose file:
+    #   volumes:
+    #     - ./dist/workflow.config.js:/workflows/config.js:ro
+    #     - ./workers/dist:/workflows/workers:ro
+    #     - ./source-db/dist:/workflows/source-db:ro
+    depends_on:
+      simulator-orchestrator:
+        condition: service_healthy
+    networks:
+      - simulator
+
+  # ──────────────────────────────────────────────────────────────
+  # Dev Ack Simulator — Auto-acknowledges completed steps
+  # ──────────────────────────────────────────────────────────────
+  simulator-ack:
+    build:
+      context: ../tools/dev-ack-simulator
+      dockerfile: Dockerfile
+    image: dtm-simulator-ack:latest
+    container_name: simulator-ack
+    environment:
+      NODE_ENV: development
+      KAFKA_BROKERS: simulator-kafka:29092
+      PORT: "3001"
+      WORKFLOW_CONFIG_PATHS: ${WORKFLOW_CONFIG_PATHS:-/workflows/config.js}
+      WORKFLOW_CONFIG_PATH: ${WORKFLOW_CONFIG_PATHS:-/workflows/config.js}
+    # Workflow config volume — provided by the extending compose file
+    depends_on:
+      simulator-kafka:
+        condition: service_healthy
+    networks:
+      - simulator
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  simulator:
+    name: simulator

@@ -1,0 +1,73 @@
+{
+  // Editor Settings
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+
+  // TypeScript Settings
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  // File Associations
+  "files.associations": {
+    "*.json": "jsonc"
+  },
+
+  // Exclude from search/watch
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.pnpm-store": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.pnpm-store": true,
+    "**/pnpm-lock.yaml": true
+  },
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.pnpm-store/**": true
+  },
+
+  // Jest Runner
+  "jestrunner.jestCommand": "pnpm --filter ./services/orchestrator test",
+  "jestrunner.debugOptions": {
+    "runtimeExecutable": "pnpm",
+    "args": [
+      "--filter",
+      "./services/orchestrator",
+      "test",
+      "--",
+      "--runInBand"
+    ]
+  },
+
+  // ESLint
+  "eslint.workingDirectories": [
+    "./services/orchestrator",
+    "./workflows/order-processing/workers",
+    "./workflows/iot-sensor-pipeline/workers",
+    "./workflows/infra-provisioning/workers",
+    "./packages/database",
+    "./packages/kafka-producer"
+  ],
+
+  // Docker
+  "docker.commands.build": "${containerCommand} build --pull --rm -f \"${dockerfile}\" -t ${tag} \"${context}\"",
+
+  // Terminal
+  "terminal.integrated.defaultProfile.linux": "bash",
+
+  // Git
+  "git.ignoreLimitWarning": true,
+  "containers.commands.build": "${containerCommand} build --pull --rm -f \"${dockerfile}\" -t ${tag} \"${context}\"",
+  "makefile.configureOnOpen": false
+}

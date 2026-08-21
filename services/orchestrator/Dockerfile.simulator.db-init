@@ -1,0 +1,68 @@
+# ============================================
+# DTM Migration Init Container — Simulator Mode
+# ============================================
+# Runs TypeORM migrations before the simulator app starts.
+# Based on Dockerfile.db-init but without workflow packages.
+#
+# Build context: monorepo root (the monorepo root)
+# ============================================
+
+FROM node:22-alpine
+
+RUN npm install -g pnpm@10.13.1
+
+WORKDIR /app
+
+# Copy workspace configuration and lock file from root
+COPY pnpm-workspace.yaml pnpm-lock.yaml .pnpmfile.cjs ./
+# Copy .env file for migrations (renamed to .env for TypeORM)
+COPY .env ./.env
+
+# Copy core package.json files for dependency resolution
+COPY packages/core/package.json ./packages/core/
+COPY packages/errors/package.json ./packages/errors/
+COPY packages/database/package.json ./packages/database/
+COPY packages/kafka-producer/package.json ./packages/kafka-producer/
+COPY packages/kafka-consumer/package.json ./packages/kafka-consumer/
+COPY services/orchestrator/package.json ./services/orchestrator/
+
+# Copy workflow package.json stubs for pnpm workspace resolution
+COPY workflows/order-processing/package.json ./workflows/order-processing/
+COPY workflows/iot-sensor-pipeline/package.json ./workflows/iot-sensor-pipeline/
+COPY workflows/infra-provisioning/package.json ./workflows/infra-provisioning/
+COPY workflows/plan-execution/package.json ./workflows/plan-execution/
+
+# Install dependencies (including dev deps for ts-node)
+RUN pnpm install --no-frozen-lockfile
+
+# Copy and build core workspace packages
+COPY packages/core/tsconfig.json ./packages/core/
+COPY packages/core/src ./packages/core/src
+RUN pnpm --filter @dtm/core run build
+
+COPY packages/errors/tsconfig.json ./packages/errors/
+COPY packages/errors/src ./packages/errors/src
+RUN pnpm --filter @dtm/errors run build
+
+COPY packages/database/tsconfig.json ./packages/database/
+COPY packages/database/src ./packages/database/src
+RUN pnpm --filter @dtm/database run build
+
+COPY packages/kafka-producer/tsconfig.json ./packages/kafka-producer/
+COPY packages/kafka-producer/src ./packages/kafka-producer/src
+RUN pnpm --filter @dtm/kafka-producer run build
+
+COPY packages/kafka-consumer/tsconfig.json ./packages/kafka-consumer/
+COPY packages/kafka-consumer/src ./packages/kafka-consumer/src
+RUN pnpm --filter @dtm/kafka-consumer run build
+
+# Copy orchestrator files for running migration command
+COPY services/orchestrator/tsconfig.json ./services/orchestrator/
+COPY services/orchestrator/dataSource.ts ./services/orchestrator/
+
+WORKDIR /app/services/orchestrator
+
+ENV NODE_ENV=development
+
+# Run migrations
+CMD ["pnpm", "run", "migrate"]

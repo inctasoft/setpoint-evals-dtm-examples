@@ -1,0 +1,18 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": ".",
+  "testEnvironment": "node",
+  "testRegex": "(health|migrations|kafka-publish).e2e-spec.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "transformIgnorePatterns": [
+    "node_modules/(?!uuid|@dtm)"
+  ],
+  "testTimeout": 30000,
+  "verbose": true,
+  "bail": false,
+  "collectCoverage": false,
+  "maxWorkers": 1
+}
+

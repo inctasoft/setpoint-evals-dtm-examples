@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  dtm-iot-sensor-pipeline-source-db:
+    image: postgres:16-alpine
+    container_name: dtm-iot-sensor-pipeline-source-db
+    ports:
+      - "5450:5432"
+    environment:
+      POSTGRES_DB: iot_sensor_pipeline_db
+      POSTGRES_USER: iot_user
+      POSTGRES_PASSWORD: iot_pass
+    volumes:
+      - ./source-db/init-scripts:/docker-entrypoint-initdb.d
+      - iot-sensor-pipeline-pgdata:/var/lib/postgresql/data
+    networks:
+      - dtm
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iot_user -d iot_sensor_pipeline_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  iot-sensor-pipeline-pgdata:
+
+networks:
+  dtm:
+    external: true

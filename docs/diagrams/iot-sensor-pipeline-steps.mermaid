@@ -1,0 +1,51 @@
+%%{init: {'theme': 'default', 'themeVariables': {'primaryColor': '#f8fafc', 'lineColor': '#2563eb'}}}%%
+flowchart TD
+    %% ── IoT Sensor Pipeline Step DAG ──
+    %% 12 steps, 5 entities, double/nested fan-out, feature-gated steps
+    %% Entities: Device, Sensor, Reading, Alert, Aggregate
+
+    subgraph device ["Device (required)"]
+        RD["RegisterDevice"]:::phase1
+        PD["ProvisionDevice 🔔"]:::phase2
+        RD --> PD
+    end
+
+    subgraph sensor ["Sensor (fan-out, required)"]
+        DS["DiscoverSensors"]:::discover
+        CS["CalibrateSensor × N"]:::phase1
+        AS["ActivateSensor × N 🔔"]:::phase2
+        DS --> CS --> AS
+    end
+
+    subgraph reading ["Reading (nested fan-out, required)"]
+        DR["DiscoverReadings × N"]:::discover
+        IR["IngestReading × M"]:::phase1
+        PR["PublishReading × M 🔔"]:::phase2
+        DR --> IR --> PR
+    end
+
+    subgraph alert ["Alert (feature-gated, optional)"]
+        EA["EvaluateAlert ⚑"]:::gated
+        DA["DispatchAlert ⚑ 🔔"]:::gated
+        EA --> DA
+    end
+
+    subgraph aggregate ["Aggregate (optional)"]
+        CA["ComputeAggregate"]:::phase1
+        PA["PublishAggregate 🔔"]:::phase2
+        CA --> PA
+    end
+
+    %% Cross-cascade dependencies
+    PD --> DS
+    AS --> DR
+    AS -.-> CA
+    DR -.-> CA
+    PR --> EA
+    PD --> DA
+
+    %% Style definitions (light theme)
+    classDef phase1 fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef phase2 fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef discover fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+    classDef gated fill:#f3e8ff,stroke:#9333ea,color:#6b21a8

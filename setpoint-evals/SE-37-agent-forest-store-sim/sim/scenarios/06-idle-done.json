@@ -1,0 +1,94 @@
+{
+  "name": "idle\u2192done on AGENT_DONE",
+  "initial": {
+    "forests": {}
+  },
+  "steps": [
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000017",
+          "ts": "2026-07-30T18:00:04Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "spawn",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ]
+    },
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000018",
+          "ts": "2026-07-30T18:00:05Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "active",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ]
+    },
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000019",
+          "ts": "2026-07-30T18:00:06Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "idle",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ]
+    },
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000020",
+          "ts": "2026-07-30T18:00:07Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "done",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ],
+      "expect": {
+        "forests": {
+          "r1": {
+            "nodes": {
+              "a1": {
+                "lifecycle": "done"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "final": {
+    "forests": {
+      "r1": {
+        "nodes": {
+          "a1": {
+            "lifecycle": "done"
+          }
+        }
+      }
+    }
+  }
+}

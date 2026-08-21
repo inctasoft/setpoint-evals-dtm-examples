@@ -1,0 +1,62 @@
+%% continueJob() Decision Tree
+%% The orchestration "brain" that runs after every step state change.
+%% File: services/orchestrator/src/orchestration/orchestration.service.ts
+
+flowchart TD
+    START([continueJob called]) --> FETCH[Fetch all steps for job]
+    FETCH --> CLASSIFY[Classify steps:<br/>completed, pending, failed, inProgress]
+
+    CLASSIFY --> CASE1{Any failed<br/>steps?}
+
+    %% Case 1: Failed steps exist
+    CASE1 -->|Yes| SKIP[Skip pending steps<br/>whose dependencies failed]
+    SKIP --> RECHECK[Re-fetch remaining<br/>pending and in-progress]
+    RECHECK --> ALLTERMINAL{All steps<br/>terminal?}
+
+    ALLTERMINAL -->|Yes| EVALUATE[evaluateOutcome:<br/>Build JobContext from<br/>step data + cascade config]
+    EVALUATE --> RULES[Evaluate workflow<br/>outcome rules<br/>in priority order]
+    RULES --> OUTCOME{Outcome<br/>rule result?}
+
+    OUTCOME -->|partial_success| PARTIAL[partialSuccessJob<br/>Publish event, update status]
+    OUTCOME -->|failed| FAIL[failJob<br/>Publish event, update status]
+
+    ALLTERMINAL -->|No pending,<br/>some in-progress| WAIT1[Wait for in-progress<br/>steps to finish]
+    ALLTERMINAL -->|Still pending<br/>on other branches| CASE4
+
+    %% Case 2: All completed
+    CASE1 -->|No| CASE2{All steps<br/>completed?}
+    CASE2 -->|Yes| COMPLETE[completeJob<br/>Calculate stats, publish event]
+
+    %% Case 3: In-progress, no pending
+    CASE2 -->|No| CASE3{In-progress steps<br/>AND no pending?}
+    CASE3 -->|Yes| WAIT2[Wait for in-progress<br/>steps to finish]
+
+    %% Case 4: Delegate ready steps
+    CASE3 -->|No| CASE4[findReadySteps:<br/>Check each pending step's<br/>dependencies vs completedSteps]
+    CASE4 --> READY{Any steps<br/>ready?}
+    READY -->|No| WAITDEPS[Wait for dependencies<br/>to be satisfied]
+    READY -->|1 step| DELEGATE1[delegateStep<br/>with dependency data]
+    READY -->|N steps| DELEGATEN[delegateMultipleSteps<br/>parallel delegation]
+
+    %% Terminal states
+    PARTIAL --> DONE([Job: PARTIAL_SUCCESS])
+    FAIL --> DONE2([Job: FAILED])
+    COMPLETE --> DONE3([Job: COMPLETED])
+    WAIT1 --> NEXT([Next continueJob call])
+    WAIT2 --> NEXT
+    WAITDEPS --> NEXT
+    DELEGATE1 --> NEXT
+    DELEGATEN --> NEXT
+
+    %% Styling
+    classDef terminal fill:#d4edda,stroke:#28a745
+    classDef failed fill:#f8d7da,stroke:#dc3545
+    classDef partial fill:#fff3cd,stroke:#ffc107
+    classDef waiting fill:#cce5ff,stroke:#004085
+    classDef decision fill:#e2e3e5,stroke:#383d41
+
+    class DONE3 terminal
+    class DONE2 failed
+    class DONE partial
+    class WAIT1,WAIT2,WAITDEPS,NEXT waiting
+    class CASE1,CASE2,CASE3,ALLTERMINAL,OUTCOME,READY decision

@@ -1,0 +1,51 @@
+{
+  "name": "@dtm/zmq-worker-host",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "ZeroMQ DEALER worker host for the zmq task transport (runs workflow handlers in-process)",
+  "main": "dist/host.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/host.js",
+    "dev": "tsx watch src/host.ts",
+    "test": "jest"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "pg": "^8.16.3",
+    "reflect-metadata": "^0.2.0",
+    "typeorm": "^0.3.27",
+    "zeromq": "^6.5.0"
+  },
+  "optionalDependencies": {
+    "@dtm/core": "workspace:*",
+    "@dtm/worker-sdk": "workspace:*",
+    "@dtm-workflows/order-processing": "workspace:*",
+    "@dtm-workflows/order-processing-workers": "workspace:*",
+    "@dtm-workflows/order-processing-typeorm": "workspace:*",
+    "@dtm-workflows/iot-sensor-pipeline": "workspace:*",
+    "@dtm-workflows/iot-sensor-pipeline-workers": "workspace:*",
+    "@dtm-workflows/iot-sensor-pipeline-typeorm": "workspace:*",
+    "@dtm-workflows/infra-provisioning": "workspace:*",
+    "@dtm-workflows/infra-provisioning-workers": "workspace:*",
+    "@dtm-workflows/infra-provisioning-typeorm": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.131",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.10.0",
+    "jest": "^30.0.0",
+    "ts-jest": "^29.2.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "testEnvironment": "node"
+  }
+}

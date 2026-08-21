@@ -1,0 +1,27 @@
+flowchart LR
+    DH[Workflow Source DB]
+    ALB[API Gateway ALB]
+    ORCH[Orchestrator EKS]
+    WORKER[Worker Pool]
+    SQS[SQS Queues]
+    DB[PostgreSQL]
+    KAFKA[Kafka Topics]
+    EXT[External System]
+
+    DH -->|Read Data| WORKER
+    ALB -->|Request| ORCH
+    ORCH <-->|State| DB
+    ORCH -->|Delegate| SQS
+    SQS -->|Process| WORKER
+    WORKER -->|Callback| ORCH
+    ORCH -->|Publish| KAFKA
+    KAFKA --> EXT
+
+    style DH fill:#ff9966
+    style ORCH fill:#66b3ff
+    style WORKER fill:#66b3ff
+    style ALB fill:#66b3ff
+    style SQS fill:#66b3ff
+    style DB fill:#66b3ff
+    style KAFKA fill:#66ff66
+    style EXT fill:#66ff66

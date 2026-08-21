@@ -1,0 +1,224 @@
+# ============================================================================
+# Docker Compose - AWS Lambda Workers (LocalStack)
+# ============================================================================
+# This file contains LocalStack for simulating AWS DTM Lambda workers locally.
+#
+# Usage with bin/start.sh:
+#   ./bin/start.sh --workers
+#
+# Or manually:
+#   docker compose -f docker-compose.workers.yml up -d
+# ============================================================================
+
+services:
+  # ============================================================================
+  # Custom SQS Poller - Reliable Lambda Triggering
+  # ============================================================================
+  # Only use in POLLER mode (when ESMs are unreliable)
+  # Start with: ./bin/start.sh --workers --poller
+  sqs-poller:
+    build:
+      context: tools/sqs-poller
+      dockerfile: Dockerfile.dev
+      network: host
+    image: dtm-sqs-poller:latest
+    # container_name: dtm-sqs-poller  <-- Removed to allow scaling (--scale sqs-poller=N)
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-000000000000}
+      - AWS_SQS_ENDPOINT=http://localstack:4566
+      - AWS_LAMBDA_ENDPOINT=http://localstack:4566
+      - POLL_INTERVAL_MS=${POLL_INTERVAL_MS:-200}
+      - MAX_MESSAGES_PER_POLL=${MAX_MESSAGES_PER_POLL:-1}
+      - WAIT_TIME_SECONDS=${WAIT_TIME_SECONDS:-5}
+    volumes:
+      - ./tools/sqs-poller/src:/app/src:ro
+      - ./packages/core/dist:/app/node_modules/@dtm/core/dist:ro
+      - ./packages/core/package.json:/app/node_modules/@dtm/core/package.json:ro
+      - ./workflows/order-processing/dist:/app/node_modules/@dtm-workflows/order-processing/dist:ro
+      - ./workflows/order-processing/package.json:/app/node_modules/@dtm-workflows/order-processing/package.json:ro
+      - ./workflows/iot-sensor-pipeline/dist:/app/node_modules/@dtm-workflows/iot-sensor-pipeline/dist:ro
+      - ./workflows/iot-sensor-pipeline/package.json:/app/node_modules/@dtm-workflows/iot-sensor-pipeline/package.json:ro
+      - ./workflows/infra-provisioning/dist:/app/node_modules/@dtm-workflows/infra-provisioning/dist:ro
+      - ./workflows/infra-provisioning/package.json:/app/node_modules/@dtm-workflows/infra-provisioning/package.json:ro
+    networks:
+      - dtm
+    depends_on:
+      localstack:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - poller
+
+  # ============================================================================
+  # SQS Queue Initialization - Simple Bash-Based (like Kafka topics)
+  # ============================================================================
+  # NOTE: Can also use docker-compose.sqs-init.yml for standalone initialization
+  # ============================================================================
+  init-sqs-queues:
+    image: amazon/aws-cli:2.13.0
+    container_name: ${COMPOSE_PROJECT_NAME:-dtm}-sqs-init
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=${AWS_REGION:-us-east-1}
+      - LOCALSTACK_URL=http://localstack:4566
+    networks:
+      - dtm
+    depends_on:
+      localstack:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo ''
+        echo '╔════════════════════════════════════════════════════════════════════════════╗'
+        echo '║  SQS Queue Initialization                                                  ║'
+        echo '╚════════════════════════════════════════════════════════════════════════════╝'
+        echo ''
+
+        # Helper function to create a queue with its DLQ
+        create_queue_with_dlq() {
+          local queue_name=$$1
+          local dlq_name="$${queue_name}-dlq"
+          
+          # Create DLQ first
+          aws --endpoint-url=$${LOCALSTACK_URL} sqs create-queue \
+            --queue-name $${dlq_name} \
+            --attributes MessageRetentionPeriod=1209600 \
+            --region us-east-1 > /dev/null 2>&1 || true
+          
+          # Get DLQ ARN
+          local dlq_arn="arn:aws:sqs:us-east-1:000000000000:$${dlq_name}"
+          
+          # Create main queue with redrive policy
+          aws --endpoint-url=$${LOCALSTACK_URL} sqs create-queue \
+            --queue-name $${queue_name} \
+            --attributes '{
+              "MessageRetentionPeriod": "345600",
+              "VisibilityTimeout": "30",
+              "ReceiveMessageWaitTimeSeconds": "20",
+              "RedrivePolicy": "{\"deadLetterTargetArn\":\"'"$${dlq_arn}"'\",\"maxReceiveCount\":\"3\"}"
+            }' \
+            --region us-east-1 > /dev/null 2>&1 || true
+          
+          echo "  ✅ $${queue_name} (+ DLQ)"
+        }
+
+        echo 'Creating order-processing queues...'
+        create_queue_with_dlq "order-validate-customer"
+        create_queue_with_dlq "order-validate-product"
+        create_queue_with_dlq "order-submit-customer"
+        create_queue_with_dlq "order-validate-order"
+        create_queue_with_dlq "order-submit-order"
+        create_queue_with_dlq "order-discover-line-items"
+        create_queue_with_dlq "order-validate-line-item"
+        create_queue_with_dlq "order-submit-line-item"
+        create_queue_with_dlq "order-validate-payment"
+        create_queue_with_dlq "order-submit-payment"
+        create_queue_with_dlq "order-validate-shipment"
+        create_queue_with_dlq "order-submit-shipment"
+
+        echo 'Creating infra-provisioning queues...'
+        create_queue_with_dlq "infra-plan-environment"
+        create_queue_with_dlq "infra-apply-environment"
+        create_queue_with_dlq "infra-plan-network"
+        create_queue_with_dlq "infra-apply-network"
+        create_queue_with_dlq "infra-discover-compute"
+        create_queue_with_dlq "infra-plan-compute"
+        create_queue_with_dlq "infra-apply-compute"
+        create_queue_with_dlq "infra-plan-storage"
+        create_queue_with_dlq "infra-apply-storage"
+        create_queue_with_dlq "infra-plan-dns"
+        create_queue_with_dlq "infra-apply-dns"
+        create_queue_with_dlq "infra-plan-certificate"
+        create_queue_with_dlq "infra-apply-certificate"
+        create_queue_with_dlq "infra-plan-load-balancer"
+        create_queue_with_dlq "infra-apply-load-balancer"
+
+        echo 'Creating iot-sensor-pipeline queues...'
+        create_queue_with_dlq "iot-register-device"
+        create_queue_with_dlq "iot-provision-device"
+        create_queue_with_dlq "iot-discover-sensors"
+        create_queue_with_dlq "iot-calibrate-sensor"
+        create_queue_with_dlq "iot-activate-sensor"
+        create_queue_with_dlq "iot-discover-readings"
+        create_queue_with_dlq "iot-ingest-reading"
+        create_queue_with_dlq "iot-publish-reading"
+        create_queue_with_dlq "iot-evaluate-alert"
+        create_queue_with_dlq "iot-dispatch-alert"
+        create_queue_with_dlq "iot-compute-aggregate"
+        create_queue_with_dlq "iot-publish-aggregate"
+
+        echo ''
+        echo 'SQS initialization complete! (39 main + 39 DLQs = 78 queues)'
+        echo ''
+
+  # ============================================================================
+  # LocalStack - Local AWS Services Emulator
+  # ============================================================================
+  localstack:
+    image: localstack/localstack:4.11.1
+    container_name: ${COMPOSE_PROJECT_NAME:-dtm}-localstack
+    ports:
+      - "${LOCALSTACK_PORT:-4567}:4566" # LocalStack Gateway (host:container)
+      - "4510-4559:4510-4559" # External services port range
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Enable host.docker.internal on Linux/WSL2
+    environment:
+      # Core LocalStack configuration
+      - SERVICES=sqs,lambda,s3,logs
+      - DEBUG=0
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LOCALSTACK_HOST=localstack:4566
+      - GATEWAY_LISTEN=0.0.0.0:4566
+
+      # Disable analytics to prevent connection errors
+      - DISABLE_EVENTS=1
+
+      # Persistence (disabled for local testing)
+      - PERSISTENCE=0
+
+      # AWS configuration
+      - AWS_DEFAULT_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+
+      # Lambda configuration
+      - LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT=600
+      # ESM v2 enabled for event source mappings
+      - LAMBDA_EVENT_SOURCE_MAPPING=v2
+      # Don't specify executor - let LocalStack choose based on environment
+      - LAMBDA_DOCKER_FLAGS=-e DOCKER_HOST=unix:///var/run/docker.sock --add-host=host.docker.internal:host-gateway
+      - LAMBDA_KEEPALIVE_MS=600000
+      # Connect Lambda containers to dtm network so they can reach orchestrator and source DBs
+      - LAMBDA_DOCKER_NETWORK=dtm
+
+      # Features
+      - EAGER_SERVICE_LOADING=1
+      - SKIP_SSL_CERT_DOWNLOAD=1
+      - LAMBDA_LIMITS_CONCURRENT_EXECUTIONS=25
+      # Keep lambda containers for 10 minutes before stopping them
+      - LAMBDA_KEEPALIVE_MS=600000
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "${PWD:-.}:/app:ro" # Mount project root for hot reloading (Read-Only)
+      - "${PWD:-.}:${PWD:-/app}:ro" # Mirror mount for Lambda hot reload to support Magic Bucket
+      # Auto-create SQS queues on every LocalStack start (including docker restart).
+      # The init-sqs-queues service also creates queues on docker-compose up (belt-and-suspenders).
+      # Both are idempotent — running both is harmless and ensures queues always exist.
+      - './scripts/localstack-init.sh:/etc/localstack/init/ready.d/init-aws.sh'
+    networks:
+      - dtm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  dtm:
+    external: true

@@ -1,0 +1,42 @@
+stateDiagram-v2
+    [*] --> PENDING : Job created
+
+    PENDING --> DELEGATED : Orchestrator delegates to SQS
+    PENDING --> SKIPPED : Dependency failed
+
+    DELEGATED --> IN_PROGRESS : Worker sends IN_PROGRESS callback
+
+    IN_PROGRESS --> COMPLETED : Worker sends SUCCESS callback
+    IN_PROGRESS --> IN_PROGRESS_RETRYING : Worker sends FAILURE (retryable)
+    IN_PROGRESS --> FAILED : Worker sends FAILURE (permanent, max retries)
+
+    IN_PROGRESS_RETRYING --> IN_PROGRESS : SQS re-delivers, worker retries
+    IN_PROGRESS_RETRYING --> FAILED : Max retries exceeded
+
+    COMPLETED --> WAITING_FOR_ACK : Phase 2 step published to Kafka\n(requiresAcknowledgement=true)
+    COMPLETED --> WAITING_FOR_CHILDREN : Discovery step\ncreates fan-out children
+
+    WAITING_FOR_ACK --> COMPLETED : External ACK received via Kafka
+    WAITING_FOR_ACK --> FAILED : ACK timeout (maintenance task)
+
+    WAITING_FOR_CHILDREN --> COMPLETED : All children COMPLETED
+    WAITING_FOR_CHILDREN --> PARTIAL_SUCCESS : Some children FAILED
+    WAITING_FOR_CHILDREN --> FAILED : Critical children FAILED
+
+    state "Terminal States" as terminal {
+        COMPLETED : Step finished successfully
+        FAILED : Step permanently failed
+        SKIPPED : Dependency failure propagation
+        PARTIAL_SUCCESS : Fan-out parent,\nsome children failed
+    }
+
+    note right of WAITING_FOR_ACK
+        Terminal for callbacks
+        (guards reject worker callbacks)
+        but transitions on Kafka ACK
+    end note
+
+    note right of WAITING_FOR_CHILDREN
+        NOT terminal
+        (fan-out service manages transitions)
+    end note

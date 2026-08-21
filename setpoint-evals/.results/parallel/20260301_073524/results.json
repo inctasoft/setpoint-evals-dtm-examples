@@ -1,0 +1,27 @@
+{
+  "timestamp": "20260301_073524",
+  "mode": "parallel",
+  "totalDurationSeconds": 1000,
+  "summary": {
+    "total": 13,
+    "passed": 10,
+    "failed": 1,
+    "timedOut": 2,
+    "errors": 0
+  },
+  "evals": [
+    {"id":"01","name":"01-retry-transient-failure","result":"TIMEOUT","durationSeconds":185,"jobId":"0c394839-8041-4c2b-b8b9-a11a86efd263","correlationId":"a16969dc-43fe-4fa6-9ea4-8ca2c1feafc6","notes":"TIMEOUT:185..."},
+    {"id":"02","name":"02-dlq-permanent-failure","result":"FAIL","durationSeconds":313,"jobId":"0454b2a2-7241-4c9d-b487-eae354544826","correlationId":"116acf9c-45f3-4cb3-a0dd-c0e69e632e1f","notes":"FAIL:313..."},
+    {"id":"03","name":"03-deduplication","result":"PASS","durationSeconds":37,"jobId":"992f5543-bc98-40b5-a41e-cb5b4bce1816","correlationId":"","notes":""},
+    {"id":"04","name":"04-ack-delays","result":"PASS","durationSeconds":33,"jobId":"e6b856e5-8edb-4f24-915f-ec0d6e309fdc","correlationId":"de74e04d-057b-463d-addb-ce66802464c7","notes":""},
+    {"id":"05","name":"05-concurrent-jobs","result":"PASS","durationSeconds":27,"jobId":"bb031dec-deaa-4c3a-9aae-6def7cd3e404","correlationId":"","notes":""},
+    {"id":"06","name":"06-stuck-in-progress-detection","result":"PASS","durationSeconds":20,"jobId":"7a28334c-ec9f-4540-9dd7-5d41bf8ffb3e","correlationId":"","notes":""},
+    {"id":"07","name":"07-stuck-ack-recovery","result":"PASS","durationSeconds":22,"jobId":"52876b00-8e84-4741-82b1-70d92a58bd6f","correlationId":"","notes":""},
+    {"id":"08","name":"08-health-metrics","result":"PASS","durationSeconds":145,"jobId":"fbab9c93-3b3e-434a-a3db-b6730b30be04","correlationId":"","notes":""},
+    {"id":"09","name":"09-orphaned-job-recovery","result":"PASS","durationSeconds":14,"jobId":"b8887491-55bc-4144-8ab3-0c5e2e6a2987","correlationId":"","notes":""},
+    {"id":"10","name":"10-stuck-waiting-for-children-recovery","result":"TIMEOUT","durationSeconds":120,"jobId":"5c584fc4-5604-455a-8505-c9ab20f0ad18","correlationId":"00a73cb3-3f1d-4ffd-a0c9-ab1a4b7bd7f9","notes":"TIMEOUT:120..."},
+    {"id":"11","name":"11-stuck-delegated-recovery","result":"PASS","durationSeconds":37,"jobId":"3d175033-52d1-4c7d-83d2-86e7f71effef","correlationId":"5d681055-9db5-46dd-8a19-01e8e446aa91","notes":""},
+    {"id":"12","name":"12-stuck-pending-recovery","result":"PASS","durationSeconds":29,"jobId":"97e4775e-6a58-45b1-ae7b-75808e934cce","correlationId":"afca6189-ed3e-4a7e-93c1-d0c1658a845c","notes":""},
+    {"id":"13","name":"13-in-progress-auto-timeout","result":"PASS","durationSeconds":18,"jobId":"3c116eb2-5dd4-4386-a895-4c699f084308","correlationId":"a5258a70-8b40-41cd-9feb-2a806f3d629d","notes":""}
+  ]
+}

@@ -1,0 +1,9 @@
+packages:
+  - 'services/*'
+  - 'tools/*'
+  - 'apps/*'
+  - 'packages/*'
+  - 'workflows/*'
+  - 'workflows/*/source-db'
+  - 'workflows/*/workers'
+  - 'setpoint-evals-playwright'

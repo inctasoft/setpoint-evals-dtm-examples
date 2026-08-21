@@ -1,0 +1,17 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testRegex": "test/contracts/.*\\.spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "transformIgnorePatterns": ["node_modules/(?!uuid)"],
+  "collectCoverageFrom": ["src/**/*.(t|j)s"],
+  "coverageDirectory": "./coverage/contracts",
+  "testEnvironment": "node",
+  "moduleNameMapper": {
+    "^@dtm/database$": "<rootDir>/../../../packages/database/src",
+    "^@dtm/kafka-producer$": "<rootDir>/../../../packages/kafka-producer/src"
+  },
+  "testTimeout": 10000
+}

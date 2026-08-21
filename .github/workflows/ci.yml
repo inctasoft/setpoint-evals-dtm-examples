@@ -1,0 +1,177 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch: {}
+  # NO `schedule:` cron. The Monday 06:00 UTC cron that used to live here existed ONLY to feed
+  # the `se-full-stack-quick` ECHO-ONLY placeholder job, which printed prose and stated outright
+  # that it "intentionally does not claim to have run anything" — a scheduled run of a documented
+  # fake gate. Both are retired (issue #74). Do NOT restore a cron when the real full-stack job
+  # lands (issue #75): an unattended Monday red goes untriaged, and an untriaged flapping red is
+  # how a real red hides.
+
+# A2: cancel superseded runs of the same ref (PR push, or a newer push to master).
+# Safe because every job runs on a GitHub-hosted ephemeral VM — a cancelled job's leftovers die
+# with the VM, so no teardown steps are needed for cancellation safety. Keyed on github.ref so
+# different PRs / branches never cancel each other.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+# All jobs run GitHub-hosted (issue #84, hardening lane H2). Rationale, load-bearing for a repo
+# headed to public visibility:
+#   1. GitHub-hosted minutes are free and unlimited for public repos, so strangers' fork PRs
+#      cannot spend any maintainer-paid CI quota.
+#   2. Fork-PR workflows execute inside GitHub's ephemeral per-job VMs — never on any
+#      maintainer-operated runner or network. Self-hosted runners on a public repo are a
+#      documented fork-PR code-execution hazard; this repo takes the hosted path instead.
+#   3. Hosted runners need no runner-infrastructure specifics in this file at all.
+#
+# Toolchain pattern for the pnpm jobs: `pnpm/action-setup` runs BEFORE `actions/setup-node`
+# because setup-node's `cache: pnpm` shells out to `pnpm store path` and needs pnpm on PATH.
+# pnpm's version comes from the root package.json `packageManager` field — no version is pinned
+# here, so there is exactly one source of truth.
+jobs:
+  format-lint:
+    name: Format & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # MUST precede "Setup Node" — see the toolchain note above the jobs map.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # lint:check is type-aware (@typescript-eslint/no-unsafe-*) and packages/database
+      # imports types from @dtm/core — without a build, @dtm/core's unbuilt dist/index.d.ts
+      # resolves to an `error` type and every StepStatus.XXX access becomes a false-positive
+      # "unsafe member access". format:check (prettier, not type-aware) doesn't need this.
+      - name: Build workspace packages (required for type-aware lint)
+        run: pnpm run build:packages
+
+      - name: Format check
+        run: pnpm run format:check
+
+      - name: Lint check
+        run: pnpm run lint:check
+
+  unit-tests:
+    name: Unit Tests (orchestrator)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # MUST precede "Setup Node" — see the toolchain note above the jobs map.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm run build:packages
+
+      - name: Run orchestrator unit tests
+        run: pnpm run test
+
+  hygiene:
+    name: Public-Repo Vocabulary Hygiene
+    # `actions/setup-node` is kept even though hosted images preinstall node —
+    # scripts/hygiene/scan.sh shells out to `node scripts/hygiene/scan.js`, and pinning
+    # NODE_VERSION keeps the scan engine's runtime deterministic across image updates.
+    # No pnpm needed (the scanner has no dependencies).
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Self-test (prove the gate can fail)
+        run: bash scripts/hygiene/scan.sh --self-test
+
+      - name: Scan PR diff for denylisted vocabulary
+        if: github.event_name == 'pull_request'
+        run: |
+          git diff "origin/${{ github.base_ref }}...HEAD" | bash scripts/hygiene/scan.sh
+
+      - name: Scan pushed commit for denylisted vocabulary
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            git show "${{ github.sha }}" | bash scripts/hygiene/scan.sh
+          else
+            git diff "$BEFORE_SHA" "${{ github.sha }}" | bash scripts/hygiene/scan.sh
+          fi
+
+  se-structure:
+    name: Setpoint Eval README/layout hygiene
+    # No toolchain step at all — scripts/validate-se-readmes.sh is pure bash + git (its only
+    # external binaries are git, grep, sort, tr, wc, find, dirname, awk, and it uses `mapfile`,
+    # so bash 4+; ubuntu-latest ships bash 5).
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Validate SE README layout (diff-scoped)
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            base="$(git rev-parse HEAD~1 2>/dev/null || echo HEAD)"
+          fi
+          bash scripts/validate-se-readmes.sh --base "$base"
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+# DELETED: `se-full-stack-quick` (echo-only placeholder) — issue #74, follow-up issue #75.
+#
+# It ran on a schedule to print prose about why it could not run, ending with "it intentionally
+# does not claim to have run anything". A fake gate is worse than no gate, so it is gone rather
+# than kept.
+#
+# It was NOT converted into a real job in the same change, on purpose. `--quick` merely exports
+# SE_QUICK=1 (opt-in SEs shorten internal waits) — it does NOT subset the corpus, so a real job is
+# 36 core SEs + 4 workflow suites on top of ~13 containers and 5 images that have no registry and
+# must be built inside the run first: 30-45 min per attempt. This repo's own 2026-07-29/30
+# evidence says first-try green is not plausible (the aws leg needed --max-parallel=2; SE-01/13
+# fail at default parallelism; commit 9d140e8 was needed the same day because SE-36 stops
+# dtm-localstack mid-suite and PERSISTENCE=0 wipes all 42 Lambdas).
+#
+# A real-looking job that has never been proven green is WORSE than an honest placeholder, because
+# it claims. Issue #75 carries the checklist (pre-built images, mandatory `if: always()` teardown,
+# --max-parallel=2, hard timeout-minutes, workflow_dispatch-only, and one PROVEN green dispatch
+# asserting run-all.sh's pass/fail/skip counts — `conclusion: success` alone is not proof).
+# ─────────────────────────────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,143 @@
+%% Callback Flow with Race Condition Prevention (v2.0)
+%% Documents all race condition fixes in the callback pipeline
+%% Last Updated: 2026-02-05
+
+%% ============================================================================
+%% PROBLEM STATEMENT:
+%% Race conditions occurred when:
+%% 1. Discovery steps were marked COMPLETED before child steps were created
+%% 2. Child phase-2 steps were marked COMPLETED before WAITING_FOR_ACK was set
+%% 3. SQS re-delivery caused duplicate callbacks that overwrote step output
+%% 4. continueJob() saw all steps as "completed" and marked job complete prematurely
+%% ============================================================================
+
+flowchart TB
+    subgraph Lambda["Lambda Worker"]
+        L1["Lambda Completes<br/>(status=COMPLETED)"]
+    end
+
+    subgraph Callback["CallbackService.handleStepProgress()"]
+        C1["1. Verify step & job exist"]
+
+        subgraph TerminalGuard["2. Terminal-State Guard (Race #3 Fix)"]
+            TG1{"Step already in<br/>terminal state?<br/><br/>COMPLETED / WAITING_FOR_ACK /<br/>FAILED / SKIPPED /<br/>PARTIAL_SUCCESS"}
+            TG2["Return: Duplicate<br/>callback ignored"]
+        end
+
+        subgraph DiscoveryCheck["3. Fan-Out Discovery Check"]
+            D1{"Is Fan-Out<br/>Discovery Step?"}
+            D2{"Has Item IDs<br/>(children)?"}
+            D3["Update step with output<br/>(NO status change yet)"]
+            D4["handleDiscoveryComplete()<br/>Creates children<br/>Sets WAITING_FOR_CHILDREN"]
+            D5["Return early<br/>(NO continueJob)"]
+        end
+
+        C2["4. updateStepFromCallback()<br/>Sets status=COMPLETED"]
+
+        subgraph ChildCheck["5a. Child Step Check"]
+            CH1{"Is Child Step?<br/>(has parentStepId)"}
+            CH2["handleChildStepComplete()"]
+            CH3{"All siblings<br/>complete?"}
+            CH4{"Step requires<br/>ACK?"}
+            CH5["continueJob()<br/>(safe - no ACK needed)"]
+            CH6["Log: Deferring continueJob<br/>(will trigger after ACK)"]
+        end
+
+        subgraph AckCheck["5b. Acknowledgement Check"]
+            A1{"Requires<br/>Acknowledgement?"}
+            A2{"Dependencies<br/>met?"}
+            A3["Defer publishing<br/>(wait for parent ACK)"]
+            A4{"Has data<br/>to publish?"}
+            A5["Complete directly<br/>continueJob()"]
+            A6["Set WAITING_FOR_ACK"]
+            A7["Publish to Kafka"]
+            A8["Return early<br/>(NO continueJob)"]
+        end
+
+        C3["6. continueJob()<br/>(fallback for non-ACK steps)"]
+    end
+
+    subgraph AckHandler["AcknowledgementHandler"]
+        ACK1["Receive ACK from Kafka"]
+        ACK2["Update step → COMPLETED"]
+        ACK3["continueJob()<br/>(safe - after ACK)"]
+    end
+
+    subgraph Orchestration["OrchestrationService.continueJob()"]
+        O1{"All steps<br/>COMPLETED?"}
+        O2["completeJob()"]
+        O3["Continue waiting"]
+    end
+
+    %% Main flow
+    L1 --> C1
+    C1 --> TG1
+    TG1 -->|"YES (terminal)"| TG2
+    TG1 -->|"NO (accepting)"| D1
+
+    %% Discovery path
+    D1 -->|Yes| D2
+    D1 -->|No| C2
+    D2 -->|Yes| D3
+    D2 -->|No| C2
+    D3 --> D4
+    D4 --> D5
+
+    %% Step update
+    C2 --> CH1
+
+    %% Child step path
+    CH1 -->|Yes| CH2
+    CH1 -->|No| A1
+    CH2 --> CH3
+    CH3 -->|No| A1
+    CH3 -->|Yes| CH4
+    CH4 -->|No| CH5
+    CH4 -->|Yes| CH6
+    CH5 --> A1
+    CH6 --> A1
+
+    %% ACK check path
+    A1 -->|Yes| A2
+    A1 -->|No| C3
+    A2 -->|No| A3
+    A2 -->|Yes| A4
+    A4 -->|No| A5
+    A4 -->|Yes| A6
+    A6 --> A7
+    A7 --> A8
+
+    %% ACK handler path
+    ACK1 --> ACK2
+    ACK2 --> ACK3
+    ACK3 --> O1
+
+    %% Orchestration
+    C3 --> O1
+    CH5 --> O1
+    A5 --> O1
+    O1 -->|Yes| O2
+    O1 -->|No| O3
+
+    %% Styling
+    classDef danger fill:#ffcdd2,stroke:#c62828,stroke-width:3px
+    classDef safe fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
+    classDef decision fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    classDef process fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef critical fill:#e1bee7,stroke:#6a1b9a,stroke-width:3px
+
+    %% Terminal-state guard (RED = guard)
+    class TG1 danger
+    class TG2 danger
+
+    %% Race condition prevention points (GREEN = safe)
+    class D5,A8,CH6 safe
+
+    %% Decision points (YELLOW)
+    class D1,D2,CH1,CH3,CH4,A1,A2,A4,O1 decision
+
+    %% Critical fix points (PURPLE)
+    class D4,A6,CH4 critical
+
+    %% Safe orchestration triggers (GREEN)
+    class CH5,A5,C3,ACK3 safe

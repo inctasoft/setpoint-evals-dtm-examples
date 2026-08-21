@@ -1,0 +1,191 @@
+# ============================================================================
+# Docker Compose - ZeroMQ task transport (Phase 2, MIXED MODE)
+# ============================================================================
+# Mixed mode = zmq TASKS + Kafka EVENTS unchanged (EventBus work is Phase 3).
+# The zmq-worker-host services below replace the sqs-poller in the task path:
+# each is a DEALER connected to the orchestrator's ROUTER, serving ONE
+# workflow's queues with the same in-process handler invocation the
+# sqs-poller's debug-server mode uses.
+#
+# Activation (two parts, both required):
+#   1. QUEUE_TRANSPORT=zmq in .env (orchestrator reads it via env_file), then
+#      force-recreate the orchestrator.
+#   2. Include this file + the zmq-tasks profile on the compose command line:
+#        docker compose --env-file .env \
+#          -f docker-compose.yml -f docker-compose.kafka.yml -f docker-compose.zmq.yml \
+#          --profile db --profile orchestrator --profile dev-tools --profile kafka \
+#          --profile zmq-tasks up -d
+#
+# Prerequisites: workspace dists must exist on the host (the worker-host
+# containers mount them read-only, same pattern as the sqs-poller):
+#   pnpm run build:packages && pnpm run build:workflows
+#
+# Scale replicas per workflow (fair-queued round-robin by the registry):
+#   docker compose ... up -d --scale zmq-worker-host-order-processing=3
+#
+# With QUEUE_TRANSPORT unset/sqs this file is inert — the orchestrator env
+# additions below only take effect when the zmq profile is selected.
+# ============================================================================
+
+services:
+  # Orchestrator ROUTER bind additions (merged over docker-compose.yml).
+  orchestrator:
+    environment:
+      # Umbrella passthrough (Phase 4): BUS_PROFILE=zmq ./scripts/local-env.sh
+      # start --zmq needs no .env edit — explicit per-var env still wins.
+      - BUS_PROFILE=${BUS_PROFILE:-aws}
+      - ZMQ_TASKS_ENDPOINT=${ZMQ_TASKS_ENDPOINT:-tcp://0.0.0.0:5557}
+      - ZMQ_TASK_ACK_TIMEOUT_MS=${ZMQ_TASK_ACK_TIMEOUT_MS:-2000}
+      # Liveness tuning. Guideline: keep ZMQ_WORKER_SILENCE_MS comfortably
+      # above ZMQ_HEARTBEAT_INTERVAL_MS. A worker whose heartbeat arrives after
+      # the silence window flaps dead — tolerated (a heartbeat is proof of
+      # life and revives the worker, flushing buffered tasks), but it costs
+      # routing gaps, so size the window for ~3x the interval.
+      - ZMQ_WORKER_SILENCE_MS=${ZMQ_WORKER_SILENCE_MS:-15000}
+      - ZMQ_WORKER_SWEEP_INTERVAL_MS=${ZMQ_WORKER_SWEEP_INTERVAL_MS:-5000}
+      # Phase 3 — zmq EVENT bus (EVENT_BUS=zmq): PUB (events out) + PULL
+      # (acks in) binds. Inert under EVENT_BUS unset/kafka.
+      - ZMQ_EVENTS_ENDPOINT=${ZMQ_EVENTS_ENDPOINT:-tcp://0.0.0.0:5558}
+      - ZMQ_ACKS_ENDPOINT=${ZMQ_ACKS_ENDPOINT:-tcp://0.0.0.0:5559}
+      - EVENT_REPUBLISH_LEASE_SECONDS=${EVENT_REPUBLISH_LEASE_SECONDS:-60}
+    ports:
+      # Host exposure is optional (debugging host-side workers); worker hosts
+      # reach the ROUTER over the internal dtm network at orchestrator:5557.
+      - "${ZMQ_TASKS_PORT_HOST:-5557}:5557"
+      - "${ZMQ_EVENTS_PORT_HOST:-5558}:5558"
+      - "${ZMQ_ACKS_PORT_HOST:-5559}:5559"
+
+  # Phase 3 — dev-ack-simulator event-bus client override (merged over
+  # docker-compose.yml's dev-tools service). EVENT_BUS itself flows via
+  # env_file (.env); these are the zmq peer endpoints it connects to.
+  # Inert under EVENT_BUS unset/kafka.
+  dev-ack-simulator:
+    environment:
+      - BUS_PROFILE=${BUS_PROFILE:-aws}
+      - ZMQ_EVENTS_ENDPOINT=${ZMQ_EVENTS_PEER_ENDPOINT:-tcp://orchestrator:5558}
+      - ZMQ_ACKS_ENDPOINT=${ZMQ_ACKS_PEER_ENDPOINT:-tcp://orchestrator:5559}
+
+  # ============================================================================
+  # Worker hosts — one service per workflow, compose-scaled for replicas
+  # ============================================================================
+  zmq-worker-host-order-processing:
+    build:
+      context: tools/zmq-worker-host
+      dockerfile: Dockerfile.dev
+      network: host
+    image: dtm-zmq-worker-host:latest
+    # No container_name — scalable (--scale ...=N); each replica mints its own
+    # WORKER_ID from the container hostname.
+    environment:
+      - WORKFLOW_NAME=order-processing
+      # Source-DB identity (matches what the Lambda deploy env carries; the
+      # dtm-db copy is the one workers actually read — see CLAUDE.md).
+      - ORDER_PROCESSING_DB_NAME=order_processing_db
+      - ZMQ_TASKS_ENDPOINT=tcp://orchestrator:5557
+      - ZMQ_HEARTBEAT_INTERVAL_MS=${ZMQ_HEARTBEAT_INTERVAL_MS:-5000}
+      # Same worker-sdk simulation gate the LocalStack Lambda env carries in dev
+      - ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=${ENABLE_REQUESTS_FOR_SIMULATED_DELAYS:-true}
+    volumes:
+      - ./tools/zmq-worker-host/src:/app/src:ro
+      - ./packages/core/dist:/app/node_modules/@dtm/core/dist:ro
+      - ./packages/core/package.json:/app/node_modules/@dtm/core/package.json:ro
+      - ./packages/worker-sdk/dist:/app/node_modules/@dtm/worker-sdk/dist:ro
+      - ./packages/worker-sdk/package.json:/app/node_modules/@dtm/worker-sdk/package.json:ro
+      - ./workflows/order-processing/dist:/app/node_modules/@dtm-workflows/order-processing/dist:ro
+      - ./workflows/order-processing/package.json:/app/node_modules/@dtm-workflows/order-processing/package.json:ro
+      - ./workflows/order-processing/workers/src:/app/node_modules/@dtm-workflows/order-processing-workers/src:ro
+      # esbuild Lambda bundles — the bundle fallback for handlerMap-missing
+      # queues (archive/record terminal steps ship ONLY as bundles)
+      - ./workflows/order-processing/workers/dist:/app/node_modules/@dtm-workflows/order-processing-workers/dist:ro
+      - ./workflows/order-processing/workers/package.json:/app/node_modules/@dtm-workflows/order-processing-workers/package.json:ro
+      - ./workflows/order-processing/source-db/dist:/app/node_modules/@dtm-workflows/order-processing-typeorm/dist:ro
+      - ./workflows/order-processing/source-db/package.json:/app/node_modules/@dtm-workflows/order-processing-typeorm/package.json:ro
+    networks:
+      - dtm
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - zmq-tasks
+
+  zmq-worker-host-iot-sensor-pipeline:
+    build:
+      context: tools/zmq-worker-host
+      dockerfile: Dockerfile.dev
+      network: host
+    image: dtm-zmq-worker-host:latest
+    environment:
+      - WORKFLOW_NAME=iot-sensor-pipeline
+      # CRITICAL: the DataSource default is iot_sensor_db, but dtm-db hosts
+      # iot_sensor_pipeline_db — without this every iot task fails
+      # 'database "iot_sensor_db" does not exist' (observed live).
+      - IOT_SENSOR_DB_NAME=iot_sensor_pipeline_db
+      - ZMQ_TASKS_ENDPOINT=tcp://orchestrator:5557
+      - ZMQ_HEARTBEAT_INTERVAL_MS=${ZMQ_HEARTBEAT_INTERVAL_MS:-5000}
+      # Same worker-sdk simulation gate the LocalStack Lambda env carries in dev
+      - ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=${ENABLE_REQUESTS_FOR_SIMULATED_DELAYS:-true}
+    volumes:
+      - ./tools/zmq-worker-host/src:/app/src:ro
+      - ./packages/core/dist:/app/node_modules/@dtm/core/dist:ro
+      - ./packages/core/package.json:/app/node_modules/@dtm/core/package.json:ro
+      - ./packages/worker-sdk/dist:/app/node_modules/@dtm/worker-sdk/dist:ro
+      - ./packages/worker-sdk/package.json:/app/node_modules/@dtm/worker-sdk/package.json:ro
+      - ./workflows/iot-sensor-pipeline/dist:/app/node_modules/@dtm-workflows/iot-sensor-pipeline/dist:ro
+      - ./workflows/iot-sensor-pipeline/package.json:/app/node_modules/@dtm-workflows/iot-sensor-pipeline/package.json:ro
+      - ./workflows/iot-sensor-pipeline/workers/src:/app/node_modules/@dtm-workflows/iot-sensor-pipeline-workers/src:ro
+      # esbuild Lambda bundles — the bundle fallback for handlerMap-missing
+      # queues (archive/record terminal steps ship ONLY as bundles)
+      - ./workflows/iot-sensor-pipeline/workers/dist:/app/node_modules/@dtm-workflows/iot-sensor-pipeline-workers/dist:ro
+      - ./workflows/iot-sensor-pipeline/workers/package.json:/app/node_modules/@dtm-workflows/iot-sensor-pipeline-workers/package.json:ro
+      - ./workflows/iot-sensor-pipeline/source-db/dist:/app/node_modules/@dtm-workflows/iot-sensor-pipeline-typeorm/dist:ro
+      - ./workflows/iot-sensor-pipeline/source-db/package.json:/app/node_modules/@dtm-workflows/iot-sensor-pipeline-typeorm/package.json:ro
+    networks:
+      - dtm
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - zmq-tasks
+
+  zmq-worker-host-infra-provisioning:
+    build:
+      context: tools/zmq-worker-host
+      dockerfile: Dockerfile.dev
+      network: host
+    image: dtm-zmq-worker-host:latest
+    environment:
+      - WORKFLOW_NAME=infra-provisioning
+      - INFRA_PROVISIONING_DB_NAME=infra_provisioning_db
+      - ZMQ_TASKS_ENDPOINT=tcp://orchestrator:5557
+      - ZMQ_HEARTBEAT_INTERVAL_MS=${ZMQ_HEARTBEAT_INTERVAL_MS:-5000}
+      # Same worker-sdk simulation gate the LocalStack Lambda env carries in dev
+      - ENABLE_REQUESTS_FOR_SIMULATED_DELAYS=${ENABLE_REQUESTS_FOR_SIMULATED_DELAYS:-true}
+    volumes:
+      - ./tools/zmq-worker-host/src:/app/src:ro
+      - ./packages/core/dist:/app/node_modules/@dtm/core/dist:ro
+      - ./packages/core/package.json:/app/node_modules/@dtm/core/package.json:ro
+      - ./packages/worker-sdk/dist:/app/node_modules/@dtm/worker-sdk/dist:ro
+      - ./packages/worker-sdk/package.json:/app/node_modules/@dtm/worker-sdk/package.json:ro
+      - ./workflows/infra-provisioning/dist:/app/node_modules/@dtm-workflows/infra-provisioning/dist:ro
+      - ./workflows/infra-provisioning/package.json:/app/node_modules/@dtm-workflows/infra-provisioning/package.json:ro
+      - ./workflows/infra-provisioning/workers/src:/app/node_modules/@dtm-workflows/infra-provisioning-workers/src:ro
+      # esbuild Lambda bundles — the bundle fallback for handlerMap-missing
+      # queues (archive/record terminal steps ship ONLY as bundles)
+      - ./workflows/infra-provisioning/workers/dist:/app/node_modules/@dtm-workflows/infra-provisioning-workers/dist:ro
+      - ./workflows/infra-provisioning/workers/package.json:/app/node_modules/@dtm-workflows/infra-provisioning-workers/package.json:ro
+      - ./workflows/infra-provisioning/source-db/dist:/app/node_modules/@dtm-workflows/infra-provisioning-typeorm/dist:ro
+      - ./workflows/infra-provisioning/source-db/package.json:/app/node_modules/@dtm-workflows/infra-provisioning-typeorm/package.json:ro
+    networks:
+      - dtm
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - zmq-tasks
+
+networks:
+  dtm:
+    external: true

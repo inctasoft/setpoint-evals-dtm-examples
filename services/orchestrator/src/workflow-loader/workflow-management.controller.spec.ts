@@ -1,0 +1,404 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
+import { StepRepository } from '@dtm/database';
+import { WorkflowManagementController } from './workflow-management.controller';
+import { WorkflowRegistryService } from './workflow-registry.service';
+import { FeatureFlagService } from './feature-flag.service';
+
+describe('WorkflowManagementController', () => {
+  let controller: WorkflowManagementController;
+  let workflowRegistry: jest.Mocked<
+    Pick<
+      WorkflowRegistryService,
+      | 'has'
+      | 'get'
+      | 'isEnabled'
+      | 'enable'
+      | 'disable'
+      | 'getDefaultVariant'
+      | 'getWorkflowSummaries'
+    >
+  >;
+  let stepRepo: { findCrossJobHistory: jest.Mock };
+
+  const mockWorkflowConfig = {
+    getWorkflow: jest.fn().mockReturnValue({
+      name: 'order-processing',
+      description: 'E-commerce order processing pipeline',
+      variants: {
+        default: { isDefault: true, description: 'Default variant' },
+        'quick-order': { isDefault: false, description: 'Quick order variant' },
+      },
+      cascades: [
+        {
+          cascadeName: 'customer',
+          outputStep: 'SubmitCustomer',
+          inputStep: 'ValidateCustomer',
+          kafkaTopic: 'order-processing.customer.completed',
+          ackTopic: 'order-processing.customer.ack',
+          dependsOn: [],
+        },
+        {
+          cascadeName: 'order',
+          outputStep: 'SubmitOrder',
+          inputStep: 'ValidateOrder',
+          kafkaTopic: 'order-processing.order.completed',
+          ackTopic: 'order-processing.order.ack',
+          dependsOn: ['customer'],
+          fkExtractor: ({ customer }: Record<string, Record<string, unknown> | undefined>) => ({
+            ext_customer_id: (customer?.externalId as string) ?? '',
+          }),
+        },
+      ],
+      outcomeRules: [
+        {
+          id: 'all-complete',
+          description: 'All entities completed successfully',
+          priority: 10,
+          condition: () => true,
+          outcome: () => ({ status: 'COMPLETED' }),
+        },
+      ],
+      featureFlags: {
+        enableDeduplication: { default: true },
+      },
+    }),
+    getStepDefinitions: jest.fn().mockReturnValue([
+      {
+        step: 'ValidateCustomer',
+        description: 'Validate customer exists and fetch account profile',
+        dependencies: [],
+        requiresAcknowledgement: false,
+        isChildStep: false,
+      },
+      {
+        step: 'SubmitCustomer',
+        description: 'Submit customer record to CRM/ERP',
+        dependencies: ['ValidateCustomer'],
+        requiresAcknowledgement: true,
+        isChildStep: false,
+      },
+      {
+        step: 'ValidateOrder',
+        description: 'Validate order exists and fetch order details',
+        dependencies: ['ValidateCustomer'],
+        requiresAcknowledgement: false,
+        isChildStep: false,
+        fanOut: { childStepChain: ['ValidateLineItem', 'SubmitLineItem'] },
+      },
+    ]),
+  };
+
+  beforeEach(async () => {
+    const mockWorkflowRegistry = {
+      has: jest.fn(),
+      get: jest.fn(),
+      isEnabled: jest.fn(),
+      enable: jest.fn(),
+      disable: jest.fn(),
+      getDefaultVariant: jest.fn(),
+      getWorkflowSummaries: jest.fn(),
+    };
+
+    const mockStepRepo = { findCrossJobHistory: jest.fn() };
+
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [WorkflowManagementController],
+      // FeatureFlagService is real (stateless, pure resolveFlags logic) — no reason to mock it,
+      // and mocking it would defeat the point of testing getWorkflowFlags() below.
+      providers: [
+        { provide: WorkflowRegistryService, useValue: mockWorkflowRegistry },
+        FeatureFlagService,
+        { provide: StepRepository, useValue: mockStepRepo },
+      ],
+    }).compile();
+
+    controller = module.get<WorkflowManagementController>(WorkflowManagementController);
+    workflowRegistry = module.get(WorkflowRegistryService);
+    stepRepo = module.get(StepRepository);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('listWorkflows', () => {
+    it('should return all registered workflows', () => {
+      // Arrange
+      const summaries = [
+        {
+          name: 'order-processing',
+          description: 'E-commerce order processing',
+          enabled: true,
+          variants: ['default'],
+          cascadeCount: 6,
+          stepCount: 12,
+        },
+        {
+          name: 'iot-sensor-pipeline',
+          description: 'IoT data ingestion and processing',
+          enabled: true,
+          variants: ['default'],
+          cascadeCount: 3,
+          stepCount: 6,
+        },
+      ];
+      workflowRegistry.getWorkflowSummaries.mockReturnValue(summaries);
+
+      // Act
+      const result = controller.listWorkflows();
+
+      // Assert
+      expect(result.workflows).toEqual(summaries);
+      expect(result.total).toBe(2);
+    });
+
+    it('should return empty list when no workflows registered', () => {
+      // Arrange
+      workflowRegistry.getWorkflowSummaries.mockReturnValue([]);
+
+      // Act
+      const result = controller.listWorkflows();
+
+      // Assert
+      expect(result.workflows).toEqual([]);
+      expect(result.total).toBe(0);
+    });
+  });
+
+  describe('getWorkflowDetails', () => {
+    it('should return detailed workflow info', () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      workflowRegistry.get.mockReturnValue(mockWorkflowConfig as any);
+      workflowRegistry.isEnabled.mockReturnValue(true);
+      workflowRegistry.getDefaultVariant.mockReturnValue('default');
+
+      // Act
+      const result = controller.getWorkflowDetails('order-processing');
+
+      // Assert
+      expect(result.name).toBe('order-processing');
+      expect(result.description).toBe('E-commerce order processing pipeline');
+      expect(result.enabled).toBe(true);
+      expect(result.defaultVariant).toBe('default');
+      expect(result.variants).toHaveLength(2);
+      expect(result.variants[0]).toEqual({
+        name: 'default',
+        isDefault: true,
+        description: 'Default variant',
+      });
+      expect(result.cascades).toHaveLength(2);
+      expect(result.cascades[0].cascadeName).toBe('customer');
+      expect(result.cascades[1].dependsOn).toEqual(['customer']);
+      expect(result.outcomeRules).toHaveLength(1);
+      expect(result.outcomeRules[0].id).toBe('all-complete');
+    });
+
+    it('should include step definitions per variant', () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      workflowRegistry.get.mockReturnValue(mockWorkflowConfig as any);
+      workflowRegistry.isEnabled.mockReturnValue(true);
+      workflowRegistry.getDefaultVariant.mockReturnValue('default');
+
+      // Act
+      const result = controller.getWorkflowDetails('order-processing');
+
+      // Assert
+      expect(result.stepsByVariant).toBeDefined();
+      expect(result.stepsByVariant['default']).toHaveLength(3);
+      expect(result.stepsByVariant['default'][0]).toEqual({
+        step: 'ValidateCustomer',
+        description: 'Validate customer exists and fetch account profile',
+        dependencies: [],
+        requiresAcknowledgement: false,
+        isChildStep: false,
+        isFanOutStep: false,
+      });
+      expect(result.stepsByVariant['default'][2].isFanOutStep).toBe(true);
+    });
+
+    it('should throw NotFoundException for unknown workflow', () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(false);
+
+      // Act & Assert
+      expect(() => controller.getWorkflowDetails('unknown')).toThrow(NotFoundException);
+    });
+  });
+
+  describe('getWorkflowFlags', () => {
+    const mockConfigWithFlags = {
+      getWorkflow: jest.fn().mockReturnValue({
+        name: 'order-processing',
+        featureFlags: {
+          defaults: { ENABLE_DEDUPLICATION: true, ENABLE_SHIPMENT_TRACKING: false },
+          clientOverridable: ['ENABLE_DEDUPLICATION'],
+        },
+      }),
+    };
+
+    it('should resolve layer-1 defaults for a known workflow', () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      workflowRegistry.get.mockReturnValue(mockConfigWithFlags as any);
+
+      // Act
+      const result = controller.getWorkflowFlags('order-processing');
+
+      // Assert
+      expect(result.workflow).toBe('order-processing');
+      expect(result.flags).toEqual({ ENABLE_DEDUPLICATION: true, ENABLE_SHIPMENT_TRACKING: false });
+      expect(result.clientOverridable).toEqual(['ENABLE_DEDUPLICATION']);
+      expect(result.requestOverridesEnabled).toBe(false);
+    });
+
+    it('should throw NotFoundException for unknown workflow', () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(false);
+
+      // Act & Assert
+      expect(() => controller.getWorkflowFlags('unknown')).toThrow(NotFoundException);
+    });
+  });
+
+  describe('getStepHistory', () => {
+    it('should return cross-job history rows for a known workflow/step', async () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      const job1 = { id: 'job-1', status: 'completed' };
+      const job2 = { id: 'job-2', status: 'failed' };
+      stepRepo.findCrossJobHistory.mockResolvedValue([
+        {
+          job: job1,
+          status: 'completed',
+          durationMs: 1200,
+          retryCount: 0,
+          executionHistory: [{ attemptNumber: 1, status: 'success', attemptedAt: 't1' }],
+          error: null,
+          completedAt: new Date('2026-07-17T00:00:00.000Z'),
+        },
+        {
+          job: job2,
+          status: 'failed',
+          durationMs: 3400,
+          retryCount: 3,
+          executionHistory: [],
+          error: 'boom',
+          completedAt: null,
+        },
+      ]);
+
+      // Act
+      const result = await controller.getStepHistory('order-processing', 'ValidateCustomer');
+
+      // Assert
+      expect(stepRepo.findCrossJobHistory).toHaveBeenCalledWith(
+        'order-processing',
+        'ValidateCustomer',
+        20, // default limit
+      );
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({
+        jobId: 'job-1',
+        jobStatus: 'completed',
+        stepStatus: 'completed',
+        durationMs: 1200,
+        retryCount: 0,
+        attempts: [{ attemptNumber: 1, status: 'success', attemptedAt: 't1' }],
+        error: null,
+        completedAt: new Date('2026-07-17T00:00:00.000Z'),
+      });
+      expect(result[1].jobId).toBe('job-2');
+      expect(result[1].completedAt).toBeNull();
+    });
+
+    it('should pass the requested limit through, capped at 50', async () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      stepRepo.findCrossJobHistory.mockResolvedValue([]);
+
+      // Act
+      await controller.getStepHistory('order-processing', 'ValidateCustomer', '999');
+
+      // Assert — server-side cap, never the caller's raw value
+      expect(stepRepo.findCrossJobHistory).toHaveBeenCalledWith(
+        'order-processing',
+        'ValidateCustomer',
+        50,
+      );
+    });
+
+    it('should return an empty array for a registered workflow with zero matching runs (not a 404)', async () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      stepRepo.findCrossJobHistory.mockResolvedValue([]);
+
+      // Act
+      const result = await controller.getStepHistory('plan-execution', 'AnyStep');
+
+      // Assert
+      expect(result).toEqual([]);
+    });
+
+    it('should throw NotFoundException for an unregistered workflow', async () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(false);
+
+      // Act & Assert
+      await expect(controller.getStepHistory('does-not-exist', 'AnyStep')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(stepRepo.findCrossJobHistory).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('enableWorkflow', () => {
+    it('should enable a workflow', () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      workflowRegistry.enable.mockReturnValue(true);
+
+      // Act
+      const result = controller.enableWorkflow('order-processing');
+
+      // Assert
+      expect(result.name).toBe('order-processing');
+      expect(result.enabled).toBe(true);
+      expect(workflowRegistry.enable).toHaveBeenCalledWith('order-processing');
+    });
+
+    it('should throw NotFoundException for unknown workflow', () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(false);
+
+      // Act & Assert
+      expect(() => controller.enableWorkflow('unknown')).toThrow(NotFoundException);
+    });
+  });
+
+  describe('disableWorkflow', () => {
+    it('should disable a workflow', () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(true);
+      workflowRegistry.disable.mockReturnValue(true);
+
+      // Act
+      const result = controller.disableWorkflow('order-processing');
+
+      // Assert
+      expect(result.name).toBe('order-processing');
+      expect(result.enabled).toBe(false);
+      expect(workflowRegistry.disable).toHaveBeenCalledWith('order-processing');
+    });
+
+    it('should throw NotFoundException for unknown workflow', () => {
+      // Arrange
+      workflowRegistry.has.mockReturnValue(false);
+
+      // Act & Assert
+      expect(() => controller.disableWorkflow('unknown')).toThrow(NotFoundException);
+    });
+  });
+});

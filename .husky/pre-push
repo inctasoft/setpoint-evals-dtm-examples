@@ -1,0 +1,37 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+echo "🚀 Running pre-push checks..."
+
+# Validate branch name
+local_branch_name="$(git rev-parse --abbrev-ref HEAD)"
+valid_branch_regex="^((build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test|hotfix)\/[A-Z]+-[0-9]+.+)|(release\/v[0-9]+\.[0-9]+\.[0-9]+)|(main|develop)$"
+
+if [[ ! $local_branch_name =~ $valid_branch_regex ]]; then
+    echo "❌ Branch name '$local_branch_name' does not match required format"
+    echo "📋 Expected format: $valid_branch_regex"
+    echo "Examples:"
+    echo "  - feat/TICKET-123-add-feature"
+    echo "  - fix/BUG-456-fix-issue"
+    echo "  - release/v1.2.3"
+    exit 1
+fi
+
+echo "✅ Branch name valid: $local_branch_name"
+
+# Run linting
+echo "✨ Linting..."
+pnpm run lint:check || {
+  echo "❌ Lint check failed"
+  exit 1
+}
+
+# Run unit tests (fast, no infrastructure needed)
+echo "🧪 Running unit tests..."
+pnpm run test || {
+  echo "❌ Unit tests failed"
+  exit 1
+}
+
+echo "✅ All pre-push checks passed!"
+exit 0
