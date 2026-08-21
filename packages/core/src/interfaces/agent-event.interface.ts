@@ -1,18 +1,13 @@
 /**
- * agent-event/1 + agent-forest/1 — TS MIRROR of the canonical schema.
+ * agent-event/1 + agent-forest/1 — the canonical event and tree schema for this repo's
+ * monitor/orchestrator agent-visibility subsystem: the orchestrator emits `agent_event` /
+ * `agent_forest` messages describing agent lifecycle and tree state, and the monitor's
+ * agent-forest store (`apps/monitor/src/state/agent-forest.store.ts`) consumes them.
  *
- * CANONICAL SOURCE: server-config `setpoint-evals/agent-event-schema/`
- *   (agent-event-1.schema.json + agent-forest-1.schema.json + SPEC.md, shipped sc#463).
- * This file is a copy-ready mirror adopted from `setpoint-evals/agent-event-schema/agent-event.ts`
- * now that the Phase-C consumer exists (plan: server-config/plans/agent-interop-and-viz-2026-07-23.md
- * §5 reconciliation 2 + §7.1). O-D4 re-verified at PR time (2026-07-30): this repo is PRIVATE —
- * the 07-23 premise-VOID resolution stands; there is no public-exposure concern.
- *
- * Drift discipline: conformance is checked BOTH WAYS by
- * setpoint-evals/SE-40-agent-forest-schema-conformance — a snapshot built from these types must
- * validate against the canonical JSON Schema, and the schema's closed enums must match the
- * unions below. Do not extend these types unilaterally: change the canonical schema first,
- * then re-mirror.
+ * Drift discipline: setpoint-evals/SE-40-agent-forest-schema-conformance checks conformance
+ * BOTH WAYS against a JSON Schema — a snapshot built from these types must validate against
+ * it, and the schema's closed enums must match the unions below. Do not extend these types
+ * unilaterally: update the JSON Schema first, then re-mirror here.
  */
 
 /** CLOSED FSM alphabet (schema fails closed on any other value). */

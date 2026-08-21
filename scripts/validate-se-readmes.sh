@@ -2,8 +2,8 @@
 # validate-se-readmes.sh — closed-loop enforcement of the canonical Setpoint Eval layout:
 # every SE carries a README.md that CONTAINS a mermaid diagram.
 #
-# WHY: the "per-SE README always" rule was open-loop (an instruction) and got dropped on
-# server-config PR #148. This is the mechanical backstop so it can't silently happen again.
+# WHY: the "per-SE README always" rule was open-loop (an instruction) and got dropped once
+# without anyone noticing. This is the mechanical backstop so it can't silently happen again.
 #
 # CANONICAL SE = a directory  setpoint-evals/<suite>/SE-<n>-<name>/  containing:
 #     test.sh      — the assertion (run-all.sh walks SE-*/test.sh)
@@ -194,8 +194,8 @@ echo ""
 if [ "$violations" -gt 0 ]; then
   echo "❌ SE README check: ${violations} violation(s)${wsuffix}."
   echo "   Fix: give each new SE a canonical SE-<n>-<name>/{README.md (+ \`\`\`mermaid), test.sh}."
-  echo "   Scaffold one: bash server-config/scripts/new-se.sh <suite> <NN> <kebab-name> [--root <repo>]"
-  echo "   Convention:  server-config/docs/setpoint-eval-conventions.md"
+  echo "   Scaffold one: copy an existing canonical SE-<n>-<name>/ directory as a starting point."
+  echo "   Convention:  mirror the header fields (Timeout, Isolation, Expected outcome) of an existing SE README."
   exit 1
 fi
 gsuffix=""; [ "$warns" -gt 0 ] && gsuffix=" (${warns} legacy warning(s))"

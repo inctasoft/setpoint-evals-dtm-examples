@@ -2,7 +2,7 @@
  * Pure, dependency-free parser for a Setpoint Eval README.md (SE Conventions v2 —
  * server-config/docs/setpoint-eval-conventions.md).
  *
- * Deliberately tolerant: the estate has 5/42 READMEs (as of Phase 4a) that predate
+ * Deliberately tolerant: this repo's SE corpus has 5/42 READMEs (as of Phase 4a) that predate
  * the "## Setpoint Eval Metadata" heading and carry the same bold fields directly
  * under the title instead — those must still parse (fields present, just no
  * section wrapper), and 2/42 (SE-14, SE-15) have no ## Payload section at all.

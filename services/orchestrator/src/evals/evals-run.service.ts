@@ -20,7 +20,7 @@ const WORKFLOW_TOKEN_RE = /workflows\/([a-z0-9-]+)\/jobs/;
 
 /**
  * core-suite job payloads never carry an explicit `workflowName` field (verified
- * against the estate at build time — see PR body) — every one that posts a job
+ * against this repo's SE corpus at build time — see PR body) — every one that posts a job
  * targets order-processing. Used only when the README prose/mermaid doesn't
  * carry an explicit `/workflows/<name>/jobs` token either.
  */

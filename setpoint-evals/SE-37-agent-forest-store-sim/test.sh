@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SE-37 — agent-forest store sim (SE-SIM + SE-RECONCILE-NO-SYNTH): esbuild-bundle the REAL
-# agent-forest store (never a copy) and replay one scenario per TRANSITIONS row (R-A1 pair of
-# SE-38) — incl. the reconcile-lost path, where a vanished node MUST surface with the TYPED
+# agent-forest store (never a copy) and replay one scenario per TRANSITIONS row (paired with
+# SE-38's count-drift check) — incl. the reconcile-lost path, where a vanished node MUST surface with the TYPED
 # discriminator error_reason 'lost_connection', never a synthesized "crashed" (SPEC inv. 3).
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

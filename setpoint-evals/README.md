@@ -37,7 +37,7 @@ Test generic orchestrator capabilities that apply to ANY workflow:
 - Health metrics, acknowledgement handling
 - Bus profiles (aws / zmq tasks / zmq events / full-zmq — see
   ../docs/guides/bus-profiles.md). SQS/Kafka-semantic SEs skip honestly under
-  BUS_PROFILE=zmq; the estate runs green under both profiles.
+  BUS_PROFILE=zmq; this repo's SE corpus runs green under both profiles.
 
 These tests use the `order-processing` workflow as their test vehicle but verify engine-level behavior.
 

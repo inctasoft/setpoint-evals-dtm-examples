@@ -13,7 +13,7 @@
 #   agent-event-forwarder.sh --follow [--interval S]  poll forever (default 2s)
 # ENV:
 #   AGENT_EVENT_ENDPOINT     ingest URL   (default http://localhost:3002/api/v1/agent-events)
-#   AGENT_EVENT_JOURNAL_DIR  journal dir  (default ~/projects/server-config/_handoffs)
+#   AGENT_EVENT_JOURNAL_DIR  journal dir  (default ./.agent-journal, repo-local)
 #   AGENT_EVENT_STATE_DIR    offset state (default ~/.local/state/agent-event-forwarder)
 # EXIT: 0 on a clean pass (journals absent = nothing to do, NOT an error); 1 on usage error.
 set -uo pipefail
@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
 done
 
 ENDPOINT="${AGENT_EVENT_ENDPOINT:-http://localhost:3002/api/v1/agent-events}"
-JOURNAL_DIR="${AGENT_EVENT_JOURNAL_DIR:-$HOME/projects/server-config/_handoffs}"
+JOURNAL_DIR="${AGENT_EVENT_JOURNAL_DIR:-./.agent-journal}"
 STATE_DIR="${AGENT_EVENT_STATE_DIR:-$HOME/.local/state/agent-event-forwarder}"
 mkdir -p "$STATE_DIR"
 

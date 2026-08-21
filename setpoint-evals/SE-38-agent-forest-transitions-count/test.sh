@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SE-38 — agent-forest TRANSITIONS count-drift (R-A1): the store's exported transition matrix
+# SE-38 — agent-forest TRANSITIONS count-drift: the store's exported transition matrix
 # is DATA, and every row has exactly one sim scenario (SE-37). Adding a transition without a
 # scenario (or vice versa) fails the build — the matrix can never drift ahead of the sim.
 set -uo pipefail
@@ -19,5 +19,5 @@ if [ "$transitions" -ge 1 ] && [ "$transitions" -eq "$scenarios" ]; then
   exit 0
 fi
 echo "  ✗ drift — TRANSITIONS rows ($transitions) != sim scenarios ($scenarios):"
-echo "    add/remove a scenario with every TRANSITIONS change (R-A1)"
+echo "    add/remove a scenario with every TRANSITIONS change"
 exit 1

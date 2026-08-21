@@ -28,7 +28,7 @@
 # env var on the orchestrator process, which requires a container recreate
 # (env vars are read once at process start; no runtime override endpoint
 # exists — that gap is exactly what Layer 3 exists to work around). No other
-# SE in the estate mutates the shared orchestrator's environment; this is
+# SE in this codebase mutates the shared orchestrator's environment; this is
 # the first, and it MUST run in isolation (see Isolation: destructive in
 # the README) — a concurrent job elsewhere would be disrupted by the
 # recreate. Restores the original .env and container state on exit via a
