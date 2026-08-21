@@ -1,5 +1,10 @@
 name: CI
 
+# Least-privilege floor: nothing in this workflow writes to the repo. Declared
+# explicitly so a future org/repo default change cannot silently widen it.
+permissions:
+  contents: read
+
 on:
   pull_request:
   push:
