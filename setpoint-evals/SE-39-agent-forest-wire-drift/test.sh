@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# SE-39 — agent-forest wire-drift meta-SE (R-A5): the agent_event/agent_forest wire variants
+# SE-39 — agent-forest wire-drift meta-SE: the agent_event/agent_forest wire variants
 # exist on BOTH sides of the relay (orchestrator dtm-event.types.ts + monitor types/events.ts)
 # with matching payload fields, the monitor's WS handler routes BOTH to named store actions
-# (never CustomEvent — R-A2), sim scenarios exercise both actions, and the monitor still
+# (never a raw DOM CustomEvent carrying state), sim scenarios exercise both actions, and the monitor still
 # typechecks against the shared @dtm/core mirror. A wire change that forgets a leg fails here.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,9 +36,9 @@ ck "WS handler routes agent_forest to a named store action" "$HOOK" "case ['\"]a
 ck "agent_event routes to ingestEvent"     "$HOOK" "ingestEvent\(event\.event\)"
 ck "agent_forest routes to reconcileForest" "$HOOK" "reconcileForest\(event\.forest\)"
 if grep -qE "CustomEvent" "$HOOK"; then
-  echo "  ✗ CustomEvent in the WS handler — state transitions must be named actions (R-A2)"; fail=1
+  echo "  ✗ CustomEvent in the WS handler — state transitions must be named actions"; fail=1
 else
-  echo "  ✓ no CustomEvent state path in the WS handler (R-A2)"
+  echo "  ✓ no CustomEvent state path in the WS handler"
 fi
 
 ck "sim scenarios exercise ingestEvent"     <(grep -l '"ingestEvent"' "$SCEN"/*.json) "."

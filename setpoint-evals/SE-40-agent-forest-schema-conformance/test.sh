@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# SE-40 — agent-forest schema-conformance, BOTH WAYS (plan §5 recon 2): the @dtm/core TS
-# mirror + the orchestrator's runtime guards conform to the CANONICAL agent-event/1 schema in
-# server-config — and the canonical fixture corpus proves it in both directions:
-#   (a) canonical → TS: every valid fixture PASSES the orchestrator's validateAgentEvent
-#       guards; every invalid fixture is REJECTED (incl. the Kimi emitter's conformance
-#       stream — R-S1 spans repos);
-#   (b) schema → mirror: the schema's closed enums (lifecycle, error_reason) all appear in
+# SE-40 — agent-forest schema-conformance, BOTH WAYS: the @dtm/core TS mirror + the
+# orchestrator's runtime guards conform to the CANONICAL agent-event/1 schema maintained in a
+# sibling private schema-tooling repo — and the canonical fixture corpus proves it in both
+# directions:
+#   (a) canonical -> TS: every valid fixture PASSES the orchestrator's validateAgentEvent
+#       guards; every invalid fixture is REJECTED (incl. a recorded real-world event stream);
+#   (b) schema -> mirror: the schema's closed enums (lifecycle, error_reason) all appear in
 #       the @dtm/core interface — an enum added canonically but not mirrored fails here.
-# HERMETIC: needs a sibling server-config checkout; SKIP-77 without it (CI) — never fake-green.
+#
+# DISCLAIMER: this SE validates conformance against a canonical schema maintained in a private
+# tooling repo; without that sibling checkout it SKIPs by design in this public repo.
+# HERMETIC: needs a sibling private-repo checkout; SKIP-77 without it (CI) — never fake-green.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../.." && pwd)"
@@ -17,7 +20,7 @@ GUARDS="$REPO_ROOT/services/orchestrator/src/agent-events/agent-event.guards.ts"
 fail=0
 
 if [ ! -f "$SC_ROOT/agent-event-1.schema.json" ]; then
-  echo "  [SKIP] canonical schema not found at $SC_ROOT — needs a sibling server-config checkout (CI-hermetic)"
+  echo "  [SKIP] canonical schema not found at $SC_ROOT — needs a sibling private schema-tooling repo checkout (CI-hermetic); see the SE README disclaimer"
   exit 77
 fi
 [ -f "$MIRROR" ] || { echo "  ✗ mirror missing: $MIRROR"; exit 1; }
@@ -57,7 +60,7 @@ for (const [i, l] of lines(path.join(root, 'fixtures/streams/kimi-chain.jsonl'))
   const r = validateAgentEvent(JSON.parse(l));
   if (!r.ok) { console.error(`  ✗ kimi-chain event REJECTED: line ${i + 1} — ${r.error}`); bad++; }
 }
-console.log('  ✓ the Kimi emitter conformance stream passes (R-S1 spans repos)');
+console.log('  ✓ the recorded real-world event stream passes (cross-repo conformance)');
 process.exit(bad ? 1 : 0);
 EOF
 

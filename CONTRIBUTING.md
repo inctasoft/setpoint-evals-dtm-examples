@@ -84,6 +84,13 @@ pnpm install
 ./setpoint-evals/run-all.sh
 ```
 
+## Tooling Provenance
+
+Parts of the SE harness (`se-lib.sh` and friends) are vendored from an internal tooling
+repository. Comments citing "server-config" or internal PR numbers (e.g. `sc#NNN`) are
+provenance markers from that source and have no public counterpart — they're left in place
+as historical context, not as pointers you can follow.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).

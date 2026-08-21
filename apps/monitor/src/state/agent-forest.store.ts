@@ -1,18 +1,15 @@
 /**
- * agent-forest.store.ts — the Phase-C agent-tree FSM store (plan: server-config
- * plans/agent-interop-and-viz-2026-07-23.md §5/§6; FSM pattern MANDATORY per
- * server-config docs/frontend-fsm-pattern.md, R-A1..A5).
+ * agent-forest.store.ts — the agent-tree FSM store for the monitor's agent-visibility view.
  *
- * O-D3 settlement (IN-LANE per the 07-23 banner): NEW SUBSYSTEM — this is the FIRST store
- * in the monitor's one canonical store dir (src/state/, R-A4; convention from
- * ops-panel-next/frontend/src/state/). The workflow-step DAG stays a distinct renderer
- * (plan §5 recon 3: "Both, as distinct renderers"); its useState plane is NOT retro-refactored
- * here (recorded in the PR body with the rejected alternative).
+ * This is the monitor's canonical store for agent-tree state, living alongside the app's
+ * other state in `src/state/`. The workflow-step DAG stays a distinct renderer with its own
+ * state plane — it is a separate concern, not retro-refactored into this store.
  *
  * Node-level FSM: an agent node is 'spawned' | 'active' | 'idle' | 'done' | 'error'.
- * TRANSITIONS is data (R-A1 — count-drift enforced by SE-38): every transition has exactly
- * one sim scenario. Components render, never own; named actions per intent (R-A2 — no
- * CustomEvent state paths); server-authoritative reconciliation via reconcileForest
+ * `TRANSITIONS` is an explicit, exported data table (count-drift against it enforced by
+ * SE-38): every transition has exactly one sim scenario. Components render this state, they
+ * never own it — state changes flow only through named store actions, never ad hoc DOM
+ * events; server-authoritative reconciliation via reconcileForest
  * (element 3 — a fresh agent-forest/1 snapshot SUPERSEDES local state; a locally-known node
  * the server no longer reports transitions to 'error' with the TYPED discriminator
  * error_reason 'lost_connection' — NEVER a synthesized "crashed" string, SPEC invariant 3).

@@ -153,14 +153,6 @@ Quick navigation to all DTM documentation, organized by use case.
 
 ---
 
-## AI Assistant Rules
-
-Located in `../.cursor/`:
-- **[worker-writer.mdc](../.cursor/worker-writer.mdc)** - Worker development guide
-- **[architecture.mdc](../.cursor/architecture.mdc)** - Engine architecture
-
----
-
 ## Documentation Stats
 
 | Category | Location | Count |
@@ -169,7 +161,6 @@ Located in `../.cursor/`:
 | Core Diagrams | `docs/diagrams/` | 13 mermaid files |
 | Core SEs | `setpoint-evals/` | 36 tests |
 | Workflow SEs | `workflows/*/setpoint-evals/` | 27 tests (9+9+9) |
-| AI Rules (core) | `.cursor/` | 14 .mdc files |
 | AI Rules (workflow) | `workflows/*/.cursor/` | Per-workflow agent guides |
 | AI Agent Guide | `CLAUDE.md` | Primary agent knowledge base |
 

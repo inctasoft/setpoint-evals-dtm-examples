@@ -1,4 +1,4 @@
-# SE-38 — agent-forest transitions-count: the R-A1 count-drift gate
+# SE-38 — agent-forest transitions-count: the store's transitions-table count-drift gate
 
 **Timeout**: 30s
 **Expected outcome:** GREEN — `TRANSITIONS` rows in `agent-forest.store.ts` == scenario JSON
@@ -23,7 +23,7 @@ flowchart TD
   S["sim/scenarios/*.json"] --> D["find | wc -l"]
   C --> E{"equal?"}
   D --> E
-  E -- no --> F["BUILD FAILURE (R-A1)"]
+  E -- no --> F["BUILD FAILURE (transitions table vs sim scenarios drifted)"]
 ```
 
 ## Artifacts

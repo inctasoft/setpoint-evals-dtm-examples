@@ -169,7 +169,7 @@ export function App() {
   };
 
   // A Scenarios "Run" success switches to the Dashboard with the new job selected
-  // (improvement over the donor pattern, which left the operator to find it manually).
+  // (improvement over the reference implementation, which left the operator to find it manually).
   const handleJobCreatedFromScenario = (jobId: string) => {
     setSelectedJobId(jobId);
     setView('dashboard');

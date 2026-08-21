@@ -41,7 +41,7 @@ flowchart TD
 
 ## Artifacts
 
-- `sim/harness.mjs` (copied from ops-panel-next frontend-skeleton — the canonical shape)
+- `sim/harness.mjs` (a small scenario-replay harness for FSM stores)
 - `sim/localstorage-shim.mjs`, `sim/scenarios/01..12-*.json`
 
 ## Assertions

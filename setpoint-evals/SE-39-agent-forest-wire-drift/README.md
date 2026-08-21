@@ -1,10 +1,10 @@
-# SE-39 — agent-forest wire-drift: the R-A5 meta-SE for the agent-tree plane
+# SE-39 — agent-forest wire-drift: the wire-parity meta-SE for the agent-tree plane
 
 **Timeout**: 120s
 **Expected outcome:** GREEN — `agent_event`/`agent_forest` variants exist with matching
 payload fields on both wire sides (orchestrator `dtm-event.types.ts`, monitor
-`types/events.ts`), the monitor's WS handler routes both to named store actions (no
-CustomEvent — R-A2), sim scenarios exercise both routed actions, and the monitor typechecks
+`types/events.ts`), the monitor's WS handler routes both to named store actions (never a raw
+DOM CustomEvent carrying state), sim scenarios exercise both routed actions, and the monitor typechecks
 against the shared `@dtm/core` mirror.
 
 ## Scenario

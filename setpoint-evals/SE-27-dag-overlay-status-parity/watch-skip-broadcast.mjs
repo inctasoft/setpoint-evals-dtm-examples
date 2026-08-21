@@ -51,7 +51,7 @@ const seenTypes = [];
 let ws = null;
 let submitted = false;
 
-// Reconnect-with-retry (Phase 4): the estate's package builds (this SE's own
+// Reconnect-with-retry (Phase 4): this repo's package builds (this SE's own
 // 27.1a build included) make the orchestrator's nest --watch recompile and
 // restart the app mid-watch — the WS dies with ECONNRESET and a single-shot
 // connection turns that into a false FAIL. Reconnect until the deadline;
