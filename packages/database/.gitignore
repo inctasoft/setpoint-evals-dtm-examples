@@ -1,0 +1,16 @@
+# Build output
+dist/
+*.js
+*.js.map
+*.d.ts
+
+# Exclude source files from ignore
+!jest.config.js
+!scripts/*.js
+
+# Generated migrations directory (combined from migrations-core + migrations)
+src/migrations-all/
+
+# Node modules
+node_modules/
+

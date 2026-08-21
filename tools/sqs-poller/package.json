@@ -1,0 +1,37 @@
+{
+  "name": "@dtm/sqs-poller",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "Custom SQS poller for LocalStack Lambda triggering (supports debug-server mode)",
+  "main": "dist/poller.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/poller.js",
+    "dev": "tsx watch src/poller.ts",
+    "dev:debug": "DEBUG_SERVER_MODE=true tsx src/poller.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-lambda": "^3.450.0",
+    "@aws-sdk/client-sqs": "^3.450.0",
+    "reflect-metadata": "^0.2.0"
+  },
+  "optionalDependencies": {
+    "@dtm/core": "workspace:*",
+    "@dtm-workflows/order-processing": "workspace:*",
+    "@dtm-workflows/order-processing-workers": "workspace:*",
+    "@dtm-workflows/order-processing-typeorm": "workspace:*",
+    "@dtm-workflows/iot-sensor-pipeline": "workspace:*",
+    "@dtm-workflows/iot-sensor-pipeline-workers": "workspace:*",
+    "@dtm-workflows/iot-sensor-pipeline-typeorm": "workspace:*",
+    "@dtm-workflows/infra-provisioning": "workspace:*",
+    "@dtm-workflows/infra-provisioning-workers": "workspace:*",
+    "@dtm-workflows/infra-provisioning-typeorm": "workspace:*",
+    "@dtm/worker-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.131",
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

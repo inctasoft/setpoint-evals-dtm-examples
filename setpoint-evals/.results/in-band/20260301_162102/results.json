@@ -1,0 +1,17 @@
+{
+  "timestamp": "20260301_162102",
+  "mode": "in-band",
+  "totalDurationSeconds": 385,
+  "summary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "timedOut": 0,
+    "errors": 0
+  },
+  "evals": [
+    {"id":"01","name":"01-retry-transient-failure","result":"PASSED","durationSeconds":127,"jobId":"643e2187-1712-4466-8981-68e13082e3e7","correlationId":"a1c3cd63-c7ab-4ed0-bb0e-445631a48c1d","notes":""},
+    {"id":"02","name":"02-dlq-permanent-failure","result":"PASSED","durationSeconds":188,"jobId":"7154e279-5eb0-4a38-9fb0-b8071fd48323","correlationId":"71a8aa1a-8102-4523-87c6-2d95f7bad23c","notes":""},
+    {"id":"10","name":"10-stuck-waiting-for-children-recovery","result":"PASSED","durationSeconds":70,"jobId":"91a0fac7-3eed-4227-8e1e-f5db1d63aeaf","correlationId":"313e0dd9-13e9-4bb1-8f72-564d420acbb0","notes":""}
+  ]
+}

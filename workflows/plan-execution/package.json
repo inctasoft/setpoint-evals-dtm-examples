@@ -1,0 +1,17 @@
+{
+  "name": "@dtm-workflows/plan-execution",
+  "version": "1.0.0",
+  "description": "Plan execution workflow — dynamic per-job step DAG (dynamicSteps) reference implementation",
+  "main": "dist/workflow.config.js",
+  "types": "dist/workflow.config.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@dtm/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

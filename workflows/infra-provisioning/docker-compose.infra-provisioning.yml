@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  dtm-infra-provisioning-source-db:
+    image: postgres:16-alpine
+    container_name: dtm-infra-provisioning-source-db
+    ports:
+      - "5451:5432"
+    environment:
+      POSTGRES_DB: infra_provisioning_db
+      POSTGRES_USER: infra_user
+      POSTGRES_PASSWORD: infra_pass
+    volumes:
+      - ./source-db/init-scripts:/docker-entrypoint-initdb.d
+      - infra-provisioning-pgdata:/var/lib/postgresql/data
+    networks:
+      - dtm
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infra_user -d infra_provisioning_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  infra-provisioning-pgdata:
+
+networks:
+  dtm:
+    external: true

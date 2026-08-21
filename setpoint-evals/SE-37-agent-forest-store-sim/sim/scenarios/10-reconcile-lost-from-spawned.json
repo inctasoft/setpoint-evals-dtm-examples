@@ -1,0 +1,98 @@
+{
+  "name": "spawned\u2192error on RECONCILE_LOST (typed lost_connection); terminal nodes survive reconcile untouched",
+  "initial": {
+    "forests": {}
+  },
+  "steps": [
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000030",
+          "ts": "2026-07-30T18:00:05Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "spawn",
+          "agent_id": "a1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ]
+    },
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000031",
+          "ts": "2026-07-30T18:00:06Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "spawn",
+          "agent_id": "b1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ]
+    },
+    {
+      "action": "ingestEvent",
+      "args": [
+        {
+          "schema": "agent-event/1",
+          "event_id": "01J9Z3M8Q0A000000000000032",
+          "ts": "2026-07-30T18:00:07Z",
+          "provider": "claude",
+          "kind": "subagent",
+          "lifecycle": "done",
+          "agent_id": "b1",
+          "parent_id": null,
+          "root_id": "r1"
+        }
+      ]
+    },
+    {
+      "action": "reconcileForest",
+      "args": [
+        {
+          "schema": "agent-forest/1",
+          "ts": "2026-07-30T18:30:00Z",
+          "root_id": "r1",
+          "roots": [],
+          "nodes": []
+        }
+      ],
+      "expect": {
+        "forests": {
+          "r1": {
+            "nodes": {
+              "a1": {
+                "lifecycle": "error",
+                "error_reason": "lost_connection"
+              },
+              "b1": {
+                "lifecycle": "done"
+              }
+            },
+            "lastSnapshotTs": "2026-07-30T18:30:00Z"
+          }
+        }
+      }
+    }
+  ],
+  "final": {
+    "forests": {
+      "r1": {
+        "nodes": {
+          "a1": {
+            "error_reason": "lost_connection"
+          },
+          "b1": {
+            "lifecycle": "done"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+sequenceDiagram
+    participant W as Worker (Phase 2)
+    participant O as Orchestrator
+    participant K as Kafka
+    participant E as External System
+    participant DB as DTM Database
+
+    Note over W,E: Step 1: Worker completes processing and calls back
+
+    W->>O: POST /callback (success + output data)
+    O->>DB: Update step → COMPLETED
+    O->>O: Check cascade config for this cascade
+
+    alt Cascade has no FK dependencies (root cascade)
+        O->>K: Publish to cascade.completed topic
+        O->>DB: Update step → WAITING_FOR_ACK
+        Note over O,K: Data flows immediately
+    else Cascade depends on parent (has fkFields)
+        O->>DB: Store output data
+        O->>O: Check: do all parent ACKs exist?
+        alt All parent ACKs received
+            O->>O: Inject FK values from parent ACKs into payload
+            O->>K: Publish enriched data to cascade.completed topic
+            O->>DB: Update step → WAITING_FOR_ACK
+        else Waiting for parent ACKs
+            O->>DB: Mark as cascade-pending
+            Note over O,DB: Will retry when parent ACK arrives
+        end
+    end
+
+    Note over K,E: Step 2: External system processes data
+
+    K->>E: cascade.completed message
+    E->>E: Process data, generate primary key
+
+    Note over E,O: Step 3: External system sends ACK
+
+    E->>K: cascade.ack message (with primary key)
+    K->>O: ACK handler receives message
+    O->>DB: Store ACK data (primary key, payload)
+    O->>DB: Update step → COMPLETED (from WAITING_FOR_ACK)
+
+    Note over O,DB: Step 4: Cascade trigger check
+
+    O->>O: Check: do any dependent cascades depend on this ACK?
+    alt Dependent cascades waiting on this FK
+        O->>O: Inject FK (parent primary key) into dependent payload
+        O->>K: Publish dependent cascade data to cascade.completed topic
+        O->>DB: Update dependent step → WAITING_FOR_ACK
+    end
+
+    O->>O: continueJob() — check if more steps can run

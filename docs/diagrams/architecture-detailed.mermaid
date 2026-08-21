@@ -1,0 +1,190 @@
+%% Detailed DTM Architecture (v4.0)
+%% Shows generic distributed orchestration engine with multi-workflow support
+%% Includes deduplication, simulated delays, cascade publishing, and fan-out
+
+graph TB
+    subgraph External_Triggers["External Triggers"]
+        API["API Gateway - REST Requests"]
+        KAFKA_IN["Kafka - Inbound Events"]
+    end
+
+    subgraph Orchestrator_Service["Orchestrator Service"]
+        subgraph API_Layer["API Layer"]
+            CTRL["Workflow Controller<br/>(POST /workflows/:name/jobs)"]
+            KAFKA_HANDLER["Kafka Event Handlers"]
+            WS_GW["WebSocket Gateway"]
+        end
+
+        subgraph Core_Services["Core Services"]
+            WF_CFG["Workflow Config Service<br/>(loads workflow.config.ts)"]
+            DEDUP["Deduplication Service"]
+            ORCH["Orchestration Service<br/>(continueJob brain)"]
+            DELEG["Delegation Service"]
+            CALLBACK["Callback Service"]
+            CASCADE["Cascade Publish Service"]
+            FANOUT["Fan-Out Service"]
+            ACK_HANDLER["Acknowledgement Handler"]
+        end
+
+        subgraph Data_Access["Data Access"]
+            JOB_REPO["Job Repository"]
+            STEP_REPO["Step Repository"]
+        end
+    end
+
+    subgraph Message_Queue["Message Queue - SQS (N queues per workflow)"]
+        subgraph Phase1_Queues["Phase 1 Queues"]
+            SQS_P1A["workflow-phase1-cascadeA"]
+            SQS_P1B["workflow-phase1-cascadeB"]
+            SQS_P1N["..."]
+        end
+        subgraph Discovery_Queues["Discovery Queues"]
+            SQS_DISC["workflow-discover-cascadeC"]
+        end
+        subgraph Phase2_Queues["Phase 2 Queues"]
+            SQS_P2A["workflow-phase2-cascadeA"]
+            SQS_P2B["workflow-phase2-cascadeB"]
+            SQS_P2N["..."]
+        end
+    end
+
+    subgraph Lambda_Workers["Lambda Workers (per workflow)"]
+        DELAY_FLAG["Simulated Delays<br/>(testOptions)"]
+        subgraph CascadeA_Workers["Cascade A Workers"]
+            W_P1A["Phase 1: Validate/Register/Plan"]
+            W_P2A["Phase 2: Submit/Provision/Apply"]
+        end
+        subgraph CascadeB_Workers["Cascade B Workers"]
+            W_P1B["Phase 1"]
+            W_P2B["Phase 2"]
+        end
+        subgraph CascadeC_Workers["Cascade C (Fan-Out)"]
+            W_DISC["Discover item IDs"]
+            W_P1C["Phase 1 × N"]
+            W_P2C["Phase 2 × N"]
+        end
+    end
+
+    subgraph Data_Sources["Data Sources"]
+        SOURCE_DB[("Workflow Source DB")]
+    end
+
+    subgraph State_Events["State and Events"]
+        DTM_DB[("DTM DB<br/>(dtm_jobs, dtm_steps)")]
+        subgraph Kafka_Topics["Kafka Topics (per cascade)"]
+            KAFKA_ENTITY_A["cascadeA completed/ack"]
+            KAFKA_ENTITY_B["cascadeB completed/ack"]
+            KAFKA_ENTITY_C["cascadeC completed/ack"]
+            KAFKA_JOBS["jobs completed/failed"]
+        end
+    end
+
+    subgraph Dev_Tools["Dev Tools"]
+        DEV_ACK["Dev ACK Simulator<br/>(per-cascade handlers)"]
+        MONITOR["Monitor Dashboard<br/>(WebSocket client)"]
+    end
+
+    %% External Request Flow
+    API --> CTRL
+    KAFKA_IN --> KAFKA_HANDLER
+
+    %% Workflow Config Loading
+    CTRL --> WF_CFG
+    WF_CFG --> ORCH
+
+    %% Deduplication Check
+    CTRL --> DEDUP
+    KAFKA_HANDLER --> DEDUP
+    DEDUP --> JOB_REPO
+    JOB_REPO -.-> DTM_DB
+
+    DEDUP --> API
+    DEDUP --> ORCH
+
+    %% Orchestration
+    ORCH --> JOB_REPO
+    ORCH --> STEP_REPO
+    ORCH --> FANOUT
+    JOB_REPO --> DTM_DB
+    STEP_REPO --> DTM_DB
+
+    ORCH --> DELEG
+
+    %% WebSocket Events
+    ORCH -.-> WS_GW
+    CALLBACK -.-> WS_GW
+    WS_GW -.-> MONITOR
+
+    %% SQS Delegation
+    DELEG --> SQS_P1A
+    DELEG --> SQS_P1B
+    DELEG --> SQS_P2A
+    DELEG --> SQS_P2B
+    FANOUT --> SQS_DISC
+
+    %% Worker Processing
+    SQS_P1A --> W_P1A
+    SQS_P1B --> W_P1B
+    SQS_P2A --> W_P2A
+    SQS_P2B --> W_P2B
+    SQS_DISC --> W_DISC
+
+    W_P1A --> SOURCE_DB
+    W_P1B --> SOURCE_DB
+    W_DISC --> SOURCE_DB
+
+    DELAY_FLAG -.-> W_P1A
+    DELAY_FLAG -.-> W_P2A
+    DELAY_FLAG -.-> W_P1B
+    DELAY_FLAG -.-> W_P2B
+    DELAY_FLAG -.-> W_DISC
+
+    %% Callbacks
+    W_P1A --> CALLBACK
+    W_P2A --> CALLBACK
+    W_P1B --> CALLBACK
+    W_P2B --> CALLBACK
+    W_DISC --> CALLBACK
+
+    CALLBACK --> STEP_REPO
+    CALLBACK --> ORCH
+
+    %% Cascade Publishing Flow
+    CALLBACK --> KAFKA_ENTITY_A
+    KAFKA_ENTITY_A --> DEV_ACK
+    DEV_ACK --> KAFKA_ENTITY_A
+    KAFKA_ENTITY_A --> ACK_HANDLER
+    ACK_HANDLER --> CASCADE
+
+    CASCADE --> KAFKA_ENTITY_B
+    KAFKA_ENTITY_B --> DEV_ACK
+    KAFKA_ENTITY_B --> ACK_HANDLER
+
+    CASCADE --> KAFKA_ENTITY_C
+    KAFKA_ENTITY_C --> DEV_ACK
+    KAFKA_ENTITY_C --> ACK_HANDLER
+
+    ACK_HANDLER --> KAFKA_JOBS
+
+    %% Response
+    KAFKA_JOBS -.-> KAFKA_IN
+    CALLBACK -.-> API
+
+    %% Styling
+    classDef security fill:#ffebee,stroke:#c62828,stroke-width:2px
+    classDef feature fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef database fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef queue fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef worker fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef cascade fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    classDef fanout fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef config fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+
+    class DEDUP,DELAY_FLAG security
+    class ORCH,DELEG,CALLBACK feature
+    class CASCADE,ACK_HANDLER cascade
+    class FANOUT fanout
+    class DTM_DB,SOURCE_DB database
+    class WF_CFG config
+    class SQS_P1A,SQS_P1B,SQS_P1N,SQS_DISC,SQS_P2A,SQS_P2B,SQS_P2N queue
+    class W_P1A,W_P2A,W_P1B,W_P2B,W_DISC,W_P1C,W_P2C worker

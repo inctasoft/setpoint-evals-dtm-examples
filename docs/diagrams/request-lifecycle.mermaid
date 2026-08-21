@@ -1,0 +1,63 @@
+%% Request Lifecycle — End-to-End Sequence Diagram
+%% Traces a job from API call through to completion
+
+sequenceDiagram
+    participant Client
+    participant API as Orchestrator API<br/>(workflow.controller)
+    participant Orch as Orchestration<br/>(orchestration.service)
+    participant DB as PostgreSQL<br/>(dtm_jobs/steps)
+    participant SQS as SQS Queue<br/>(LocalStack)
+    participant Poller as SQS Poller
+    participant Worker as Lambda Worker
+    participant CB as Callback Service
+    participant Kafka as Kafka
+    participant ACK as Dev ACK Simulator
+    participant Cascade as Cascade Publish
+
+    Note over Client,Cascade: Phase 1: Job Initiation
+    Client->>API: POST /api/v1/workflows/:name/jobs
+    API->>DB: Create job (PENDING)
+    API->>DB: Create all steps (PENDING)
+    API->>DB: Update job → PROCESSING
+    API->>Orch: continueJob(jobId)
+    Orch->>DB: Fetch steps, classify
+    Orch->>DB: findReadySteps() → root steps
+    Orch->>SQS: delegateStep(s) → send to SQS
+    Orch->>DB: Update steps → DELEGATED
+    API-->>Client: { jobId, workflowName, variant }
+
+    Note over Client,Cascade: Phase 2: Worker Execution
+    Poller->>SQS: Long-poll for messages
+    SQS-->>Poller: Step message
+    Poller->>Worker: Route to handler via registry
+    Worker->>CB: POST callback (in_progress)
+    CB->>DB: Update step → IN_PROGRESS
+    Worker->>Worker: Query source DB, process
+    Worker->>CB: POST callback (completed + output)
+
+    Note over Client,Cascade: Phase 3: ACK & Cascade
+    CB->>DB: Update step output/records
+    CB->>Kafka: Publish cascade.completed
+    CB->>DB: Update step → WAITING_FOR_ACK
+    ACK->>Kafka: Listen on cascade.completed
+    ACK->>Kafka: Publish cascade.ack (with externalId)
+    Kafka-->>CB: ACK received
+    CB->>DB: Update step → COMPLETED (ack_metadata)
+    CB->>Cascade: checkAndPublishCascade()
+    Cascade->>DB: Inject FK into dependent step inputs
+    CB->>Orch: continueJob(jobId)
+    Orch->>DB: findReadySteps() → newly unblocked steps
+    Orch->>SQS: delegateStep(s)
+
+    Note over Client,Cascade: Phase 2-3 repeat for each step...
+
+    Note over Client,Cascade: Phase 4: Job Completion
+    Orch->>DB: All steps terminal
+    Orch->>Orch: evaluateOutcome() if failures
+    Orch->>DB: Update job → COMPLETED/PARTIAL_SUCCESS/FAILED
+    Orch->>Kafka: Publish job.completed event
+
+    Note over Client,Cascade: Client polls for status
+    Client->>API: GET /api/v1/workflows/{name}/jobs/{jobId}
+    API->>DB: Fetch job + steps
+    API-->>Client: { status, steps[] }

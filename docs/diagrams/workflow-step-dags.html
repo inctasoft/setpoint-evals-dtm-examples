@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DTM Workflow Step DAGs</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-panel: #f8fafc;
+    --bg-hover: #f1f5f9;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --text-dim: #64748b;
+    --accent: #0f172a;
+    --green: #16a34a;
+    --blue: #2563eb;
+    --cyan: #0891b2;
+    --yellow: #ca8a04;
+    --red: #dc2626;
+    --magenta: #9333ea;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  h1 {
+    color: var(--accent);
+    font-size: 22px;
+    margin-bottom: 4px;
+    font-weight: 700;
+  }
+
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 0;
+    gap: 0;
+  }
+
+  .tab {
+    padding: 10px 24px;
+    cursor: pointer;
+    color: var(--text-dim);
+    border: 1px solid transparent;
+    border-bottom: none;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    background: none;
+    transition: color 0.2s, background 0.2s;
+    position: relative;
+    top: 2px;
+    border-radius: 6px 6px 0 0;
+  }
+
+  .tab:hover {
+    color: var(--text);
+    background: var(--bg-hover);
+  }
+
+  .tab.active {
+    color: var(--blue);
+    background: var(--bg-panel);
+    border-color: var(--border);
+    border-bottom-color: var(--bg-panel);
+    font-weight: 600;
+  }
+
+  /* ── Tab Content ── */
+  .tab-content {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-top: none;
+    padding: 24px;
+    border-radius: 0 0 8px 8px;
+  }
+
+  .tab-content.hidden {
+    display: none;
+  }
+
+  .workflow-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .workflow-name {
+    color: var(--accent);
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .workflow-desc {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  .workflow-stats {
+    display: flex;
+    gap: 12px;
+  }
+
+  .stat {
+    text-align: center;
+    padding: 8px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--blue);
+  }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 500;
+  }
+
+  /* ── Diagram Container ── */
+  .diagram-container {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 24px;
+    overflow-x: auto;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: center;
+    border-radius: 6px;
+  }
+
+  .diagram-container .mermaid {
+    min-width: 600px;
+  }
+
+  /* ── Entity Table ── */
+  .entity-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-top: 16px;
+  }
+
+  .entity-table th {
+    text-align: left;
+    padding: 8px 12px;
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid var(--border);
+    background: var(--bg);
+  }
+
+  .entity-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .entity-table tr:hover td {
+    background: var(--bg-hover);
+  }
+
+  .entity-table td:first-child { font-weight: 600; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 10px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .badge-required { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+  .badge-optional { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+  .badge-fanout { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
+  .badge-gated { background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    gap: 24px;
+    margin-top: 24px;
+    padding: 14px 20px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+  }
+
+  /* ── Footer ── */
+  .footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>DTM Workflow Step DAGs</h1>
+  <div class="subtitle">Visual cascade step graphs for all registered workflows &mdash; domain-specific step phases with dependency ordering and ACK gates</div>
+
+  <!-- Tab Bar -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('order')">Order Processing</button>
+    <button class="tab" onclick="switchTab('iot')">IoT Sensor Pipeline</button>
+    <button class="tab" onclick="switchTab('infra')">Infra Provisioning</button>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- ORDER PROCESSING -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <div id="tab-order" class="tab-content">
+    <div class="workflow-header">
+      <div>
+        <div class="workflow-name">order-processing</div>
+        <div class="workflow-desc">E-commerce order processing pipeline &mdash; validate, submit, and confirm across 6 cascades with FK injection and fan-out</div>
+      </div>
+      <div class="workflow-stats">
+        <div class="stat"><div class="stat-value">6</div><div class="stat-label">Cascades</div></div>
+        <div class="stat"><div class="stat-value">12</div><div class="stat-label">Steps</div></div>
+        <div class="stat"><div class="stat-value">2</div><div class="stat-label">Variants</div></div>
+      </div>
+    </div>
+
+    <div class="diagram-container">
+      <pre class="mermaid">
+%%{init: {'theme': 'default', 'themeVariables': {'primaryColor': '#f8fafc', 'lineColor': '#94a3b8', 'primaryTextColor': '#1e293b'}}}%%
+flowchart TD
+    subgraph customer ["Customer (required)"]
+        VC["ValidateCustomer"]:::phase1
+        SC["SubmitCustomer 🔔"]:::phase2
+        VC --> SC
+    end
+
+    subgraph product ["Product (validate-only)"]
+        VP["ValidateProduct"]:::phase1
+    end
+
+    subgraph order ["Order (required)"]
+        VO["ValidateOrder"]:::phase1
+        SO["SubmitOrder 🔔"]:::phase2
+        VO --> SO
+    end
+
+    subgraph lineItem ["LineItem (fan-out)"]
+        DLI["DiscoverLineItems"]:::discover
+        VLI["ValidateLineItem × N"]:::phase1
+        SLI["SubmitLineItem × N 🔔"]:::phase2
+        DLI --> VLI --> SLI
+    end
+
+    subgraph payment ["Payment (optional)"]
+        VPay["ValidatePayment"]:::phase1
+        SPay["SubmitPayment 🔔"]:::phase2
+        VPay --> SPay
+    end
+
+    subgraph shipment ["Shipment (optional)"]
+        VSh["ValidateShipment"]:::phase1
+        SSh["SubmitShipment 🔔"]:::phase2
+        VSh --> SSh
+    end
+
+    VC --> VO
+    SC --> SO
+    VO --> DLI
+    VO --> VPay
+    VO --> VSh
+    SO --> SPay
+    SO --> SSh
+
+    classDef phase1 fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef phase2 fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef discover fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+      </pre>
+    </div>
+
+    <table class="entity-table">
+      <thead>
+        <tr><th>Cascade</th><th>Criticality</th><th>Steps</th><th>FK Dependencies</th><th>Kafka Topic</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Customer</td>
+          <td><span class="badge badge-required">REQUIRED</span></td>
+          <td>Validate → Submit (ACK)</td>
+          <td>— (root)</td>
+          <td>order-processing.customer.completed</td>
+        </tr>
+        <tr>
+          <td>Product</td>
+          <td><span class="badge badge-optional">OPTIONAL</span></td>
+          <td>Validate only</td>
+          <td>— (root)</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td>Order</td>
+          <td><span class="badge badge-required">REQUIRED</span></td>
+          <td>Validate → Submit (ACK)</td>
+          <td>ext_customer_id → Customer</td>
+          <td>order-processing.order.completed</td>
+        </tr>
+        <tr>
+          <td>LineItem</td>
+          <td><span class="badge badge-fanout">FAN-OUT</span> <span class="badge badge-optional">OPTIONAL</span></td>
+          <td>Discover → Validate × N → Submit × N (ACK)</td>
+          <td>ext_order_id → Order</td>
+          <td>order-processing.line-item.completed</td>
+        </tr>
+        <tr>
+          <td>Payment</td>
+          <td><span class="badge badge-optional">OPTIONAL</span></td>
+          <td>Validate → Submit (ACK)</td>
+          <td>ext_order_id → Order</td>
+          <td>order-processing.payment.completed</td>
+        </tr>
+        <tr>
+          <td>Shipment</td>
+          <td><span class="badge badge-optional">OPTIONAL</span></td>
+          <td>Validate → Submit (ACK)</td>
+          <td>ext_order_id → Order</td>
+          <td>order-processing.shipment.completed</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- IOT SENSOR PIPELINE -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <div id="tab-iot" class="tab-content">
+    <div class="workflow-header">
+      <div>
+        <div class="workflow-name">iot-sensor-pipeline</div>
+        <div class="workflow-desc">IoT device onboarding and sensor data pipeline &mdash; register, provision, ingest, and publish with nested fan-out and feature-gated alerting</div>
+      </div>
+      <div class="workflow-stats">
+        <div class="stat"><div class="stat-value">5</div><div class="stat-label">Cascades</div></div>
+        <div class="stat"><div class="stat-value">12</div><div class="stat-label">Steps</div></div>
+        <div class="stat"><div class="stat-value">4</div><div class="stat-label">Feature Flags</div></div>
+      </div>
+    </div>
+
+    <div class="diagram-container">
+      <pre class="mermaid">
+%%{init: {'theme': 'default', 'themeVariables': {'primaryColor': '#f8fafc', 'lineColor': '#94a3b8', 'primaryTextColor': '#1e293b'}}}%%
+flowchart TD
+    subgraph device ["Device (required)"]
+        RD["RegisterDevice"]:::phase1
+        PD["ProvisionDevice 🔔"]:::phase2
+        RD --> PD
+    end
+
+    subgraph sensor ["Sensor (fan-out, required)"]
+        DS["DiscoverSensors"]:::discover
+        CS["CalibrateSensor × N"]:::phase1
+        AS["ActivateSensor × N 🔔"]:::phase2
+        DS --> CS --> AS
+    end
+
+    subgraph reading ["Reading (nested fan-out, required)"]
+        DR["DiscoverReadings × N"]:::discover
+        IR["IngestReading × M"]:::phase1
+        PR["PublishReading × M 🔔"]:::phase2
+        DR --> IR --> PR
+    end
+
+    subgraph alert ["Alert (feature-gated)"]
+        EA["EvaluateAlert ⚑"]:::gated
+        DA["DispatchAlert ⚑ 🔔"]:::gated
+        EA --> DA
+    end
+
+    subgraph aggregate ["Aggregate (optional)"]
+        CA["ComputeAggregate"]:::phase1
+        PA["PublishAggregate 🔔"]:::phase2
+        CA --> PA
+    end
+
+    PD --> DS
+    AS --> DR
+    AS -.-> CA
+    DR -.-> CA
+    PR --> EA
+    PD --> DA
+
+    classDef phase1 fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef phase2 fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef discover fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+    classDef gated fill:#f3e8ff,stroke:#9333ea,color:#6b21a8
+      </pre>
+    </div>
+
+    <table class="entity-table">
+      <thead>
+        <tr><th>Cascade</th><th>Criticality</th><th>Steps</th><th>FK Dependencies</th><th>Kafka Topic</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Device</td>
+          <td><span class="badge badge-required">REQUIRED</span></td>
+          <td>Register → Provision (ACK)</td>
+          <td>— (root)</td>
+          <td>iot-sensor-pipeline.device.completed</td>
+        </tr>
+        <tr>
+          <td>Sensor</td>
+          <td><span class="badge badge-fanout">FAN-OUT</span> <span class="badge badge-required">REQUIRED</span></td>
+          <td>Discover → Calibrate × N → Activate × N (ACK)</td>
+          <td>ext_device_id → Device</td>
+          <td>iot-sensor-pipeline.sensor.completed</td>
+        </tr>
+        <tr>
+          <td>Reading</td>
+          <td><span class="badge badge-fanout">NESTED FAN-OUT</span> <span class="badge badge-required">REQUIRED</span></td>
+          <td>Discover × N → Ingest × M → Publish × M (ACK)</td>
+          <td>ext_sensor_id → Sensor</td>
+          <td>iot-sensor-pipeline.reading.completed</td>
+        </tr>
+        <tr>
+          <td>Alert</td>
+          <td><span class="badge badge-gated">FEATURE-GATED</span> <span class="badge badge-optional">OPTIONAL</span></td>
+          <td>Evaluate → Dispatch (ACK)</td>
+          <td>ext_device_id → Device</td>
+          <td>iot-sensor-pipeline.alert.completed</td>
+        </tr>
+        <tr>
+          <td>Aggregate</td>
+          <td><span class="badge badge-optional">OPTIONAL</span></td>
+          <td>Compute → Publish (ACK)</td>
+          <td>ext_sensor_id → Sensor</td>
+          <td>iot-sensor-pipeline.aggregate.completed</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- INFRA PROVISIONING -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <div id="tab-infra" class="tab-content">
+    <div class="workflow-header">
+      <div>
+        <div class="workflow-name">infra-provisioning</div>
+        <div class="workflow-desc">Cloud infrastructure provisioning &mdash; plan desired state, apply to cloud provider, and confirm across 7 resource types with deep cascade chains</div>
+      </div>
+      <div class="workflow-stats">
+        <div class="stat"><div class="stat-value">7</div><div class="stat-label">Cascades</div></div>
+        <div class="stat"><div class="stat-value">15</div><div class="stat-label">Steps</div></div>
+        <div class="stat"><div class="stat-value">5</div><div class="stat-label">Cascade Depth</div></div>
+      </div>
+    </div>
+
+    <div class="diagram-container">
+      <pre class="mermaid">
+%%{init: {'theme': 'default', 'themeVariables': {'primaryColor': '#f8fafc', 'lineColor': '#94a3b8', 'primaryTextColor': '#1e293b'}}}%%
+flowchart TD
+    subgraph environment ["Environment (required)"]
+        PE["PlanEnvironment"]:::phase1
+        AE["ApplyEnvironment 🔔"]:::phase2
+        PE --> AE
+    end
+
+    subgraph network ["Network (required)"]
+        PN["PlanNetwork"]:::phase1
+        AN["ApplyNetwork 🔔"]:::phase2
+        PN --> AN
+    end
+
+    subgraph compute ["Compute (fan-out, required)"]
+        DC["DiscoverCompute"]:::discover
+        PC["PlanCompute × N"]:::phase1
+        AC["ApplyCompute × N 🔔"]:::phase2
+        DC --> PC --> AC
+    end
+
+    subgraph storage ["Storage (optional)"]
+        PS["PlanStorage"]:::phase1
+        ASt["ApplyStorage 🔔"]:::phase2
+        PS --> ASt
+    end
+
+    subgraph dns ["DNS (optional)"]
+        PD["PlanDNS"]:::phase1
+        AD["ApplyDNS 🔔"]:::phase2
+        PD --> AD
+    end
+
+    subgraph certificate ["Certificate (optional)"]
+        PCert["PlanCertificate"]:::phase1
+        ACert["ApplyCertificate 🔔"]:::phase2
+        PCert --> ACert
+    end
+
+    subgraph loadBalancer ["LoadBalancer (optional)"]
+        PLB["PlanLoadBalancer"]:::phase1
+        ALB["ApplyLoadBalancer 🔔"]:::phase2
+        PLB --> ALB
+    end
+
+    AE --> PN
+    AN --> DC
+    AC --> PS
+    AN --> PD
+    AC --> PD
+    AD --> PCert
+    AN --> PLB
+    AC --> PLB
+
+    classDef phase1 fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef phase2 fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef discover fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+      </pre>
+    </div>
+
+    <table class="entity-table">
+      <thead>
+        <tr><th>Cascade</th><th>Criticality</th><th>Steps</th><th>FK Dependencies</th><th>Kafka Topic</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Environment</td>
+          <td><span class="badge badge-required">REQUIRED</span></td>
+          <td>Plan → Apply (ACK)</td>
+          <td>— (root)</td>
+          <td>infra-provisioning.environment.completed</td>
+        </tr>
+        <tr>
+          <td>Network</td>
+          <td><span class="badge badge-required">REQUIRED</span></td>
+          <td>Plan → Apply (ACK)</td>
+          <td>ext_environment_id → Environment</td>
+          <td>infra-provisioning.network.completed</td>
+        </tr>
+        <tr>
+          <td>Compute</td>
+          <td><span class="badge badge-fanout">FAN-OUT</span> <span class="badge badge-required">REQUIRED</span></td>
+          <td>Discover → Plan × N → Apply × N (ACK, 10min timeout)</td>
+          <td>ext_network_id → Network</td>
+          <td>infra-provisioning.compute.completed</td>
+        </tr>
+        <tr>
+          <td>Storage</td>
+          <td><span class="badge badge-optional">OPTIONAL</span></td>
+          <td>Plan → Apply (ACK)</td>
+          <td>ext_compute_id → Compute</td>
+          <td>infra-provisioning.storage.completed</td>
+        </tr>
+        <tr>
+          <td>DNS</td>
+          <td><span class="badge badge-optional">OPTIONAL</span></td>
+          <td>Plan → Apply (ACK)</td>
+          <td>ext_network_id + ext_compute_id → Network, Compute</td>
+          <td>infra-provisioning.dns.completed</td>
+        </tr>
+        <tr>
+          <td>Certificate</td>
+          <td><span class="badge badge-optional">OPTIONAL</span></td>
+          <td>Plan → Apply (ACK)</td>
+          <td>ext_dns_id → DNS</td>
+          <td>infra-provisioning.certificate.completed</td>
+        </tr>
+        <tr>
+          <td>LoadBalancer</td>
+          <td><span class="badge badge-optional">OPTIONAL</span></td>
+          <td>Plan → Apply (ACK)</td>
+          <td>ext_network_id + ext_compute_id → Network, Compute</td>
+          <td>infra-provisioning.load-balancer.completed</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:#dbeafe;border:1px solid #2563eb"></div>
+      <span style="color:#2563eb;font-weight:600">Phase 1</span> — Validate / Register / Plan
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:#dcfce7;border:1px solid #16a34a"></div>
+      <span style="color:#16a34a;font-weight:600">Phase 2</span> — Submit / Provision / Apply
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:#fef9c3;border:1px solid #ca8a04"></div>
+      <span style="color:#ca8a04;font-weight:600">Discover</span> — Fan-out: find item IDs
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:#f3e8ff;border:1px solid #9333ea"></div>
+      <span style="color:#9333ea;font-weight:600">Feature-gated</span> — Conditional on flag
+    </div>
+    <div class="legend-item">
+      <span>🔔</span> Requires external ACK
+    </div>
+    <div class="legend-item">
+      <span>⚑</span> Feature flag gated
+    </div>
+    <div class="legend-item">
+      <span>× N</span> Fan-out (per discovered item)
+    </div>
+  </div>
+
+  <div class="footer">
+    DTM &mdash; Distributed Task Manager &mdash; Generated from workflow.config.ts definitions
+  </div>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'basis',
+    },
+  });
+
+  // All tabs are visible on load so Mermaid can render all diagrams.
+  // After rendering completes, hide inactive tabs.
+  await mermaid.run();
+  const allTabs = document.querySelectorAll('.tab-content');
+  allTabs.forEach((c, i) => { if (i > 0) c.classList.add('hidden'); });
+
+  // Tab switching
+  window.switchTab = function(tabId) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    allTabs.forEach(c => c.classList.add('hidden'));
+    document.getElementById('tab-' + tabId).classList.remove('hidden');
+    event.target.classList.add('active');
+  };
+</script>
+
+</body>
+</html>

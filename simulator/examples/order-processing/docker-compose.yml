@@ -1,0 +1,87 @@
+# ============================================================================
+# Order-Processing — Simulator Pilot
+# ============================================================================
+#
+# Extends the base simulator stack with order-processing workflow artifacts.
+#
+# This compose file demonstrates how a standalone workflow repo would use
+# the orchestrator simulator to run its SEs independently.
+#
+# Usage:
+#   # From this directory (simulator/examples/order-processing/):
+#   docker compose up -d
+#
+#   # From the monorepo root:
+#   docker compose -f simulator/examples/order-processing/docker-compose.yml up -d
+#
+# Prerequisites:
+#   Build workflow packages first:
+#     pnpm --filter @dtm-workflows/order-processing run build
+#     pnpm --filter @dtm-workflows/order-processing-workers run build
+#     pnpm --filter @dtm-workflows/order-processing-typeorm run build
+#
+# ============================================================================
+
+include:
+  - ../../docker-compose.simulator.yml
+
+services:
+  # ──────────────────────────────────────────────────────────────
+  # Order-Processing Source Database
+  # ──────────────────────────────────────────────────────────────
+  order-processing-source-db:
+    image: postgres:17-alpine
+    container_name: simulator-order-processing-db
+    environment:
+      POSTGRES_USER: order_user
+      POSTGRES_PASSWORD: order_pass
+      POSTGRES_DB: order_processing_db
+    ports:
+      - "5461:5432"
+    volumes:
+      - ../../../workflows/order-processing/source-db/init-scripts:/docker-entrypoint-initdb.d:ro
+    networks:
+      - simulator
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U order_user -d order_processing_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ──────────────────────────────────────────────────────────────
+  # Override simulator-orchestrator with workflow config volume
+  # ──────────────────────────────────────────────────────────────
+  simulator-orchestrator:
+    volumes:
+      - ../../../workflows/order-processing/dist/workflow.config.js:/workflows/config.js:ro
+
+  # ──────────────────────────────────────────────────────────────
+  # Override simulator-poller with workflow artifacts + source DB
+  # ──────────────────────────────────────────────────────────────
+  simulator-poller:
+    volumes:
+      - ../../../workflows/order-processing/dist/workflow.config.js:/workflows/config.js:ro
+      - ../../../workflows/order-processing/workers/dist:/workflows/workers:ro
+      - ../../../workflows/order-processing/source-db/dist:/workflows/source-db:ro
+    environment:
+      # Source database connection (order-processing source DB)
+      ORDER_PROCESSING_DB_HOST: order-processing-source-db
+      ORDER_PROCESSING_DB_PORT: "5432"
+      ORDER_PROCESSING_DB_USER: order_user
+      ORDER_PROCESSING_DB_PASSWORD: order_pass
+      ORDER_PROCESSING_DB_NAME: order_processing_db
+    depends_on:
+      simulator-orchestrator:
+        condition: service_healthy
+      order-processing-source-db:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────────────────────────
+  # Override simulator-ack with workflow config + ack defaults
+  # ──────────────────────────────────────────────────────────────
+  simulator-ack:
+    volumes:
+      - ../../../workflows/order-processing/dist/workflow.config.js:/workflows/config.js:ro
+      - ../../../workflows/order-processing/dist/dev-tools/ack-defaults.js:/workflows/ack-defaults.js:ro
+    environment:
+      ACK_DEFAULTS_PATH: /workflows/ack-defaults.js

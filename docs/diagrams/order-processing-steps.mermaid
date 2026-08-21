@@ -1,0 +1,54 @@
+%%{init: {'theme': 'default', 'themeVariables': {'primaryColor': '#f8fafc', 'lineColor': '#2563eb'}}}%%
+flowchart TD
+    %% ── Order Processing Step DAG ──
+    %% 12 steps (default variant), 6 entities, 1 fan-out
+    %% Entities: Customer, Product, Order, LineItem, Payment, Shipment
+
+    subgraph customer ["Customer (required)"]
+        VC["ValidateCustomer"]:::phase1
+        SC["SubmitCustomer 🔔"]:::phase2
+        VC --> SC
+    end
+
+    subgraph product ["Product (validate-only)"]
+        VP["ValidateProduct"]:::phase1
+    end
+
+    subgraph order ["Order (required)"]
+        VO["ValidateOrder"]:::phase1
+        SO["SubmitOrder 🔔"]:::phase2
+        VO --> SO
+    end
+
+    subgraph lineItem ["LineItem (fan-out, optional)"]
+        DLI["DiscoverLineItems"]:::discover
+        VLI["ValidateLineItem × N"]:::phase1
+        SLI["SubmitLineItem × N 🔔"]:::phase2
+        DLI --> VLI --> SLI
+    end
+
+    subgraph payment ["Payment (optional)"]
+        VPay["ValidatePayment"]:::phase1
+        SPay["SubmitPayment 🔔"]:::phase2
+        VPay --> SPay
+    end
+
+    subgraph shipment ["Shipment (optional)"]
+        VSh["ValidateShipment"]:::phase1
+        SSh["SubmitShipment 🔔"]:::phase2
+        VSh --> SSh
+    end
+
+    %% Cross-cascade dependencies
+    VC --> VO
+    SC --> SO
+    VO --> DLI
+    VO --> VPay
+    VO --> VSh
+    SO --> SPay
+    SO --> SSh
+
+    %% Style definitions (light theme)
+    classDef phase1 fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef phase2 fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef discover fill:#fef9c3,stroke:#ca8a04,color:#854d0e

@@ -1,0 +1,33 @@
+{
+  "name": "@dtm-workflows/order-processing",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "E-commerce order processing pipeline for DTM",
+  "private": true,
+  "main": "dist/workflow.config.js",
+  "types": "dist/workflow.config.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/workflow.config.d.ts",
+      "import": "./dist/workflow.config.js",
+      "require": "./dist/workflow.config.js"
+    },
+    "./ack-defaults": {
+      "types": "./dist/dev-tools/ack-defaults.d.ts",
+      "import": "./dist/dev-tools/ack-defaults.js",
+      "require": "./dist/dev-tools/ack-defaults.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dtm/core": "workspace:*",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/uuid": "^9.0.8",
+    "typescript": "^5.7.2"
+  }
+}
