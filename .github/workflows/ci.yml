@@ -10,16 +10,13 @@ on:
   # the `se-full-stack-quick` ECHO-ONLY placeholder job, which printed prose and stated outright
   # that it "intentionally does not claim to have run anything" — a scheduled run of a documented
   # fake gate. Both are retired (issue #74). Do NOT restore a cron when the real full-stack job
-  # lands (issue #75): the estate is idle ~96% of the week, so an unattended Monday red goes
-  # untriaged, and an untriaged flapping red is how a real red hides.
+  # lands (issue #75): an unattended Monday red goes untriaged, and an untriaged flapping red is
+  # how a real red hides.
 
 # A2: cancel superseded runs of the same ref (PR push, or a newer push to master).
-# Safe because none of the 4 jobs stands up shared or host state: they are pnpm / jest / bash+git
-# only. ⚠ That is now a per-JOB property, not a property of the runner — these jobs run on the
-# SELF-HOSTED pool (see `format-lint` below), where a cancelled job's leftovers would persist on
-# the host instead of dying with an ephemeral VM. Any future job that starts containers, binds a
-# host port, or writes outside the workspace MUST either ship an `if: always()` teardown step or
-# be exempted from this group. Keyed on github.ref so different PRs / branches never cancel each other.
+# Safe because every job runs on a GitHub-hosted ephemeral VM — a cancelled job's leftovers die
+# with the VM, so no teardown steps are needed for cancellation safety. Keyed on github.ref so
+# different PRs / branches never cancel each other.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -27,71 +24,44 @@ concurrency:
 env:
   NODE_VERSION: "22"
 
+# All jobs run GitHub-hosted (issue #84, hardening lane H2). Rationale, load-bearing for a repo
+# headed to public visibility:
+#   1. GitHub-hosted minutes are free and unlimited for public repos, so strangers' fork PRs
+#      cannot spend any maintainer-paid CI quota.
+#   2. Fork-PR workflows execute inside GitHub's ephemeral per-job VMs — never on any
+#      maintainer-operated runner or network. Self-hosted runners on a public repo are a
+#      documented fork-PR code-execution hazard; this repo takes the hosted path instead.
+#   3. Hosted runners need no runner-infrastructure specifics in this file at all.
+#
+# Toolchain pattern for the pnpm jobs: `pnpm/action-setup` runs BEFORE `actions/setup-node`
+# because setup-node's `cache: pnpm` shells out to `pnpm store path` and needs pnpm on PATH.
+# pnpm's version comes from the root package.json `packageManager` field — no version is pinned
+# here, so there is exactly one source of truth.
 jobs:
   format-lint:
     name: Format & Lint
-    # local-first Phase 4 (plan: server-config/plans/local-first-ci-runners-2026-07-27.md; issue #74).
-    # Bare `self-hosted`, no label list — matches the ops-panel pilot and both reference
-    # implementations. Capacity is the ORG pool (`local-first` runner group, 2 runners on
-    # 192.168.1.13 as the isolated `ghrunner` user with rootless Docker). The group is
-    # `visibility: selected`, so only repos explicitly added to it land here — that scoping is what
-    # makes the migration one-repo-at-a-time. This repo has ZERO repo-level runners, so bare
-    # `self-hosted` is unambiguous.
-    #
-    # Two deliberate departures from the naive flip, both load-bearing on this host:
-    #   1. The GHA `cache:` key is GONE (was `cache: pnpm` here and in `unit-tests`). Uploading a
-    #      pnpm store over the box's measured ~19 KB/s UPLINK costs more than it saves, and it is
-    #      redundant self-hosted: pnpm's on-disk store persists between runs on the same host.
-    #      Expect run #1 after this change to cold-populate that store — do NOT read it as a
-    #      regression against the hosted baseline.
-    #   2. `actions/setup-node` now runs BEFORE `pnpm/action-setup`. It STAYS (it pins node 22,
-    #      required by `engines.node`, and the host has NO node at all), but the ORDER had to
-    #      invert: `node`, `npm`, `corepack` and `pnpm` are all absent from this host's PATH
-    #      (verified 2026-07-30 — the runner tool cache held only node 20.20.2), and
-    #      pnpm/action-setup needs a Node/npm toolchain to install pnpm. On ubuntu-latest that was
-    #      free because node is preinstalled, which is exactly why the old order worked there and
-    #      would not work here. The pnpm-before-setup-node order is only REQUIRED when
-    #      `cache: pnpm` is present, and it no longer is.
-    #   3. `dest:` is pinned to `${{ runner.temp }}/setup-pnpm`. pnpm/action-setup's DEFAULT dest is
-    #      the fixed, HOME-relative `~/setup-pnpm` — and BOTH org runners execute as the SAME
-    #      `ghrunner` user, so they share one $HOME. Two jobs of the same run landing on org-1 and
-    #      org-2 concurrently therefore race on ONE directory. Observed on the first self-hosted run
-    #      (30515007364), both halves of the race in a single run: org-1's self-installer died
-    #      `ENOTEMPTY: rmdir '/home/ghrunner/setup-pnpm/node_modules'`, and org-2 — which had just
-    #      installed pnpm 10.13.1 successfully — died mid-`pnpm install` with `Cannot find module
-    #      '/home/ghrunner/setup-pnpm/node_modules/pnpm/dist/worker.js'` because the other job's
-    #      cleanup deleted the module out from under it. `runner.temp` is per-runner
-    #      (`<runner-dir>/_work/_temp`), so it cannot collide. This hazard is invisible on hosted
-    #      runners, where every job gets a private VM, and it applies to ANY repo in the pool that
-    #      uses pnpm — not just this one. The pnpm STORE is deliberately still shared: pnpm's
-    #      content-addressable store is concurrency-safe by design, and sharing it is exactly what
-    #      makes dropping the GHA `cache:` key a win here.
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # MUST precede "Setup pnpm" — see the ordering note in this job's header comment.
+      # MUST precede "Setup Node" — see the toolchain note above the jobs map.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          # Per-runner dest — the default `~/setup-pnpm` is shared by both org runners (same
-          # ghrunner $HOME) and they race on it. Rationale in this job's header comment.
-          dest: ${{ runner.temp }}/setup-pnpm
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       # lint:check is type-aware (@typescript-eslint/no-unsafe-*) and packages/database
-      # now imports types from @dtm/core (dag-drilldown-backend PR #33) — without a
-      # build, @dtm/core's unbuilt dist/index.d.ts resolves to an `error` type and
-      # every StepStatus.XXX access becomes a false-positive "unsafe member access".
-      # format:check (prettier, not type-aware) doesn't need this.
+      # imports types from @dtm/core — without a build, @dtm/core's unbuilt dist/index.d.ts
+      # resolves to an `error` type and every StepStatus.XXX access becomes a false-positive
+      # "unsafe member access". format:check (prettier, not type-aware) doesn't need this.
       - name: Build workspace packages (required for type-aware lint)
         run: pnpm run build:packages
 
@@ -103,24 +73,20 @@ jobs:
 
   unit-tests:
     name: Unit Tests (orchestrator)
-    # Self-hosted + no `cache:` + setup-node-before-pnpm: rationale stated once in `format-lint`.
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # MUST precede "Setup pnpm" — see the ordering note in `format-lint`'s header comment.
+      # MUST precede "Setup Node" — see the toolchain note above the jobs map.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          # Per-runner dest — the default `~/setup-pnpm` is shared by both org runners (same
-          # ghrunner $HOME) and they race on it. Rationale in this job's header comment.
-          dest: ${{ runner.temp }}/setup-pnpm
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -133,10 +99,11 @@ jobs:
 
   hygiene:
     name: Public-Repo Vocabulary Hygiene
-    # Self-hosted: rationale stated once in `format-lint`. `actions/setup-node` is NOT optional
-    # here — scripts/hygiene/scan.sh shells out to `node scripts/hygiene/scan.js`, and this host
-    # has no node on PATH. No pnpm needed (the scanner has no dependencies).
-    runs-on: self-hosted
+    # `actions/setup-node` is kept even though hosted images preinstall node —
+    # scripts/hygiene/scan.sh shells out to `node scripts/hygiene/scan.js`, and pinning
+    # NODE_VERSION keeps the scan engine's runtime deterministic across image updates.
+    # No pnpm needed (the scanner has no dependencies).
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -169,13 +136,10 @@ jobs:
 
   se-structure:
     name: Setpoint Eval README/layout hygiene
-    # Self-hosted: rationale stated once in `format-lint`. This is the ONE job that needs no
-    # toolchain step at all — scripts/validate-se-readmes.sh is pure bash + git (its only external
-    # binaries are git, grep, sort, tr, wc, find, dirname, awk, and it uses `mapfile`, so bash 4+).
-    # All present on the host; verified 2026-07-30. The comment that used to sit on this line
-    # ("pure bash + git; no special runner needed") was read as an argument AGAINST self-hosting —
-    # it is the opposite: needing no toolchain is what makes this job the cheapest to host.
-    runs-on: self-hosted
+    # No toolchain step at all — scripts/validate-se-readmes.sh is pure bash + git (its only
+    # external binaries are git, grep, sort, tr, wc, find, dirname, awk, and it uses `mapfile`,
+    # so bash 4+; ubuntu-latest ships bash 5).
+    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     steps:
       - name: Checkout
@@ -195,16 +159,16 @@ jobs:
 # DELETED: `se-full-stack-quick` (echo-only placeholder) — issue #74, follow-up issue #75.
 #
 # It ran on a schedule to print prose about why it could not run, ending with "it intentionally
-# does not claim to have run anything". Migrating that to a self-hosted runner would have kept a
-# fake gate and only made it cheaper, so it is gone rather than moved.
+# does not claim to have run anything". A fake gate is worse than no gate, so it is gone rather
+# than kept.
 #
 # It was NOT converted into a real job in the same change, on purpose. `--quick` merely exports
 # SE_QUICK=1 (opt-in SEs shorten internal waits) — it does NOT subset the corpus, so a real job is
 # 36 core SEs + 4 workflow suites on top of ~13 containers and 5 images that have no registry and
-# must be built on this host first: 30-45 min per attempt, pinning 1 of only 2 org runners. This
-# repo's own 2026-07-29/30 evidence says first-try green is not plausible (the aws leg needed
-# --max-parallel=2; SE-01/13 fail at default parallelism; commit 9d140e8 was needed the same day
-# because SE-36 stops dtm-localstack mid-suite and PERSISTENCE=0 wipes all 42 Lambdas).
+# must be built inside the run first: 30-45 min per attempt. This repo's own 2026-07-29/30
+# evidence says first-try green is not plausible (the aws leg needed --max-parallel=2; SE-01/13
+# fail at default parallelism; commit 9d140e8 was needed the same day because SE-36 stops
+# dtm-localstack mid-suite and PERSISTENCE=0 wipes all 42 Lambdas).
 #
 # A real-looking job that has never been proven green is WORSE than an honest placeholder, because
 # it claims. Issue #75 carries the checklist (pre-built images, mandatory `if: always()` teardown,

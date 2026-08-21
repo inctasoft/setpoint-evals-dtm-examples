@@ -257,6 +257,37 @@ pnpm test          # services/orchestrator unit tests
 pnpm test:cov      # with coverage
 ```
 
+### Continuous Integration
+
+CI (`.github/workflows/ci.yml`) runs entirely on GitHub-hosted runners — free for public
+repos, and fork PRs execute inside GitHub's ephemeral per-job VMs, never on maintainer
+infrastructure.
+
+An SE-first repo still runs a conventional pipeline. The layers are complementary — unit
+tests and Setpoint Evals answer different questions, and neither replaces the other:
+
+| CI job | Layer | What it proves |
+|---|---|---|
+| Format & Lint | static analysis | prettier + type-aware ESLint across the workspace |
+| Unit Tests (orchestrator) | conventional tests | the orchestrator's jest suite — fast, per-function/module contracts |
+| Public-Repo Vocabulary Hygiene | repo hygiene | diff-scoped denylist scan, with a self-test proving the gate can fail |
+| Setpoint Eval README/layout hygiene | SE structure | every SE ships the canonical `test.sh` + `README.md` + mermaid layout |
+
+**Where the SEs fit.** The Setpoint Evals are this repo's centerpiece: long-horizon
+acceptance criteria that drive the live Docker stack end to end. They are a *sensor layer*
+— each SE states its setpoint in prose + mermaid, then asserts it against the running
+system, which makes the suite legible to humans and AI agents alike. They deliberately do
+**not** replace unit testing: unit tests pin functions and modules, SEs pin whole-system
+behaviour. The converse also holds — packages without jest suites don't get placeholder
+tests invented to pad CI; conventional coverage grows only where a real per-unit contract
+exists.
+
+CI runs the SE *structure* gate (every eval stays documented in the canonical layout), not
+the full 63-eval suite: that suite stands up ~13 containers on 5 locally-built images and
+takes 30-45 minutes a run, so it stays a local/on-demand gate
+(`./setpoint-evals/run-all.sh --all-workflows`) until the proven-green CI dispatch job
+tracked in issue #75 lands.
+
 ## Monitoring
 
 ```bash
