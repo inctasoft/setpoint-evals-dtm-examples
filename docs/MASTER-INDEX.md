@@ -161,7 +161,6 @@ Quick navigation to all DTM documentation, organized by use case.
 | Core Diagrams | `docs/diagrams/` | 13 mermaid files |
 | Core SEs | `setpoint-evals/` | 36 tests |
 | Workflow SEs | `workflows/*/setpoint-evals/` | 27 tests (9+9+9) |
-| AI Rules (workflow) | `workflows/*/.cursor/` | Per-workflow agent guides |
 | AI Agent Guide | `CLAUDE.md` | Primary agent knowledge base |
 
 Counts are a snapshot, not a contract — the SE estate grows with the engine. Treat the
