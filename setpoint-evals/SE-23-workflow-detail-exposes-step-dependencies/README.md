@@ -43,7 +43,7 @@ curl -s "${ORCHESTRATOR_HOST}/api/${API_VERSION}/workflows/order-processing"
 ### Expected output
 ```
 stepsByVariant[defaultVariant] is a non-empty array; at least one element has dependencies.length > 0;
-every dependencies[] string equals some element's own `step` field (jq set-membership check, 0 orphans)
+every dependencies[] string equals some element's own `step` field (jq set-inclusion check, 0 orphans)
 ```
 
 ## Assertions
