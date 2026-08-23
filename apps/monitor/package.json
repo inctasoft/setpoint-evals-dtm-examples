@@ -12,17 +12,17 @@
   },
   "dependencies": {
     "@dtm/core": "workspace:*",
-    "dompurify": "^3.4.12",
-    "marked": "^18.0.6",
-    "mermaid": "^11.16.0",
-    "preact": "^10.25.4",
-    "supertokens-auth-react": "^0.51.2",
+    "dompurify": "^3.4.14",
+    "marked": "^18.0.10",
+    "mermaid": "^11.17.0",
+    "preact": "^10.29.8",
+    "supertokens-auth-react": "^0.51.3",
     "supertokens-web-js": "^0.16.0",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@preact/preset-vite": "^2.9.4",
-    "esbuild": "0.21.5",
+    "@preact/preset-vite": "^2.10.6",
+    "esbuild": "0.28.2",
     "typescript": "^5.6.2",
     "vite": "^5.4.3"
   }
