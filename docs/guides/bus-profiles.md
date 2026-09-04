@@ -159,11 +159,14 @@ docker compose --env-file .env -f docker-compose.yml -f docker-compose.zmq.yml \
 
 ### CRITICAL: restore afterward (two gotchas)
 
-**1. The dev-ack-simulator bakes its bus env at recreate time.** It reads `.env` via
-compose `env_file`, so a zmq leg leaves the container zmq-flavored — and an aws leg run
-afterward stalls every ACK-dependent SE (`WAITING_FOR_ACK` forever, because the
-simulator is listening on the zmq event bus while the orchestrator publishes to Kafka).
-The restore is NOT just removing lines from `.env`:
+**1. The dev-ack-simulator bakes its bus env at recreate time.** The only `.env` vars it
+consumes — the bus-profile trio `BUS_PROFILE` / `QUEUE_TRANSPORT` / `EVENT_BUS` — reach it
+through EXPLICIT per-var passthroughs in `docker-compose.yml` (a blanket `env_file` passthrough
+used to leak the orchestrator's whole `.env`, Supertokens auth vars included, into a container
+that reads none of them; stripped + pinned by SE-41). A zmq leg leaves the container
+zmq-flavored — and an aws leg run afterward stalls every ACK-dependent SE (`WAITING_FOR_ACK`
+forever, because the simulator is listening on the zmq event bus while the orchestrator
+publishes to Kafka). The restore is NOT just removing lines from `.env`:
 
 ```bash
 cp /tmp/env-backup .env     # or: remove BUS_PROFILE/QUEUE_TRANSPORT/EVENT_BUS lines

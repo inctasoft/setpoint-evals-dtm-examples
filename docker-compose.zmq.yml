@@ -56,8 +56,9 @@ services:
       - "${ZMQ_ACKS_PORT_HOST:-5559}:5559"
 
   # Phase 3 — dev-ack-simulator event-bus client override (merged over
-  # docker-compose.yml's dev-tools service). EVENT_BUS itself flows via
-  # env_file (.env); these are the zmq peer endpoints it connects to.
+  # docker-compose.yml's dev-tools service). EVENT_BUS arrives via the explicit
+  # per-var passthrough in docker-compose.yml (SE-41: no blanket env_file); these
+  # are the zmq peer endpoints it connects to.
   # Inert under EVENT_BUS unset/kafka.
   dev-ack-simulator:
     environment:

@@ -140,8 +140,6 @@ services:
     image: dtm-dev-ack-simulator:latest
     container_name: ${COMPOSE_PROJECT_NAME:-dtm}-dev-ack-simulator
     restart: unless-stopped # Auto-restart on crashes (e.g., Kafka disconnects)
-    env_file:
-      - .env
     environment:
       - NODE_ENV=development
       - KAFKA_BROKERS=${KAFKA_BROKER:-dtm-kafka:29092}
@@ -149,6 +147,15 @@ services:
       - WORKFLOW_CONFIG_PATHS=/app/wf-order-processing/workflow.config.js,/app/wf-iot-sensor-pipeline/workflow.config.js,/app/wf-infra-provisioning/workflow.config.js
       - WORKFLOW_CONFIG_PATH=/app/wf-order-processing/workflow.config.js
       - ACK_DEFAULTS_PATH=/app/wf-order-processing/dev-tools/ack-defaults.js
+      # Explicit per-var passthrough of the ONLY .env vars this container reads
+      # (bus-profile shim: BUS_PROFILE=zmq expands to QUEUE_TRANSPORT/EVENT_BUS=zmq,
+      # explicit per-var env wins, "" defaults to aws — tools/dev-ack-simulator/src/bus-profile.ts).
+      # Do NOT re-add a blanket dotenv passthrough here: .env is the ORCHESTRATOR's env and
+      # carries its Supertokens auth vars, which this container reads none of — the blanket
+      # passthrough leaked all 3 into the container env (reads-census pinned by SE-41).
+      - BUS_PROFILE=${BUS_PROFILE:-aws}
+      - QUEUE_TRANSPORT=${QUEUE_TRANSPORT:-}
+      - EVENT_BUS=${EVENT_BUS:-}
     volumes:
       - ./workflows/order-processing/dist:/app/wf-order-processing:ro
       - ./workflows/iot-sensor-pipeline/dist:/app/wf-iot-sensor-pipeline:ro
