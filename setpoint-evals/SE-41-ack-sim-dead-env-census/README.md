@@ -68,7 +68,7 @@ Wiring: `docker-compose.yml` service `dev-ack-simulator` · zmq merge: `docker-c
 ✓ (a) reads census: ack-simulator dir has 0 supertokens references (source+manifest)
 ✓ (b) service block has no blanket env_file passthrough (.env = the orchestrator's)
 ✓ dynamic: resolved container env carries 0 SUPERTOKENS_* vars (docker compose config census)
-── assertions: 10 pass, 0 fail
+── assertions: 9 pass, 0 fail
 ```
 
 ## Assertions
