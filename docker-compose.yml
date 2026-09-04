@@ -120,7 +120,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${DTM_DB_USER} -d ${DTM_DB_NAME}",
+          "pg_isready -h 127.0.0.1 -U ${DTM_DB_USER} -d ${DTM_DB_NAME}",
         ]
       interval: 10s
       timeout: 5s
