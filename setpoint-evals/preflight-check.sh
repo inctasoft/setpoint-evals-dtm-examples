@@ -624,7 +624,7 @@ check_database_connectivity() {
   local DTM_DB_USER_VAL="${DTM_DB_USER:-dtm_user}"
   local DTM_DB_NAME_VAL="${DTM_DB_NAME:-dtm}"
 
-  if docker exec ${COMPOSE_PROJECT_NAME:-dtm}-db pg_isready -U "$DTM_DB_USER_VAL" -d "$DTM_DB_NAME_VAL" > /dev/null 2>&1; then
+  if docker exec ${COMPOSE_PROJECT_NAME:-dtm}-db pg_isready -h 127.0.0.1 -U "$DTM_DB_USER_VAL" -d "$DTM_DB_NAME_VAL" > /dev/null 2>&1; then
     log_success "Orchestrator database is ready"
   else
     log_error "Orchestrator database not ready"
@@ -632,7 +632,7 @@ check_database_connectivity() {
   fi
   
   # Order Processing Source DB (optional)
-  if docker exec ${COMPOSE_PROJECT_NAME:-dtm}-order-processing-source-db pg_isready -U order_user -d order_processing_db > /dev/null 2>&1; then
+  if docker exec ${COMPOSE_PROJECT_NAME:-dtm}-order-processing-source-db pg_isready -h 127.0.0.1 -U order_user -d order_processing_db > /dev/null 2>&1; then
     log_success "Order Processing source database is ready"
   else
     log_info "Order Processing source DB not running (optional — only needed for order-processing workflow SEs)"
@@ -693,7 +693,7 @@ check_seed_data() {
   # NOTE: table lives in the `ecommerce` schema, not `public` — a bare
   # `customers` reference always 404s and silently falls back to "0" here,
   # which used to false-warn "appears empty" on every healthy run.
-  if docker exec ${COMPOSE_PROJECT_NAME:-dtm}-order-processing-source-db pg_isready -U order_user -d order_processing_db > /dev/null 2>&1; then
+  if docker exec ${COMPOSE_PROJECT_NAME:-dtm}-order-processing-source-db pg_isready -h 127.0.0.1 -U order_user -d order_processing_db > /dev/null 2>&1; then
     local customer_count=$(docker exec ${COMPOSE_PROJECT_NAME:-dtm}-order-processing-source-db psql -U order_user -d order_processing_db -tAc "SELECT COUNT(*) FROM ecommerce.customers;" 2>/dev/null || echo "0")
     if [ "$customer_count" -gt "0" ] 2>/dev/null; then
       log_success "Order Processing source DB has seed data ($customer_count customers)"

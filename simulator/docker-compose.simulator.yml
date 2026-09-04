@@ -50,7 +50,7 @@ services:
     networks:
       - simulator
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dtm_user -d dtm"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U dtm_user -d dtm"]
       interval: 5s
       timeout: 3s
       retries: 10
