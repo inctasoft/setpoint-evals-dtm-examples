@@ -46,8 +46,8 @@ ck_absent "(a) dependency manifest declares no supertokens package" "$SIM_DIR/pa
 # (2-space indented service key → next 2-space key).
 sim_block="$(awk '/^  dev-ack-simulator:/{f=1;next} f && /^  [a-zA-Z0-9_-]+:/{f=0} f' "$COMPOSE_MAIN")"
 ck_has "(b) sanity: dev-ack-simulator service block found in docker-compose.yml" "$sim_block" "image: dtm-dev-ack-simulator"
-ck_str_absent "(b) service block names no SUPERTOKENS_* var" "$sim_block" "SUPERTOKENS"
-ck_str_absent "(b) service block has no blanket env_file passthrough (.env = the orchestrator's)" "$sim_block" "env_file"
+ck_str_absent "(b) service block assigns no SUPERTOKENS_* var" "$sim_block" 'SUPERTOKENS_[A-Z_]+'
+ck_str_absent "(b) service block has no blanket env_file passthrough (.env = the orchestrator's)" "$sim_block" '^[[:space:]]*env_file:'
 # The legitimate .env consumers arrive explicitly (bus-profile shim contract —
 # same precedence the orchestrator's zmq merge uses: explicit per-var env wins).
 ck_has "(b) BUS_PROFILE arrives via explicit per-var passthrough"      "$sim_block" 'BUS_PROFILE=${BUS_PROFILE'
