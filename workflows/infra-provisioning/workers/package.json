@@ -17,7 +17,7 @@
     "@dtm-workflows/infra-provisioning-typeorm": "workspace:*",
     "@dtm/worker-sdk": "workspace:*",
     "@aws-sdk/client-sqs": "^3.450.0",
-    "axios": "^1.6.0",
+    "axios": "^1.20.0",
     "typeorm": "^0.3.27",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2"
