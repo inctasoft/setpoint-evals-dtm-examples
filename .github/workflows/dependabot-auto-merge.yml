@@ -2,10 +2,21 @@ name: Dependabot auto-merge
 
 # Auto-merges Dependabot patch/minor PRs ONLY after every other check on the PR
 # head commit has concluded green. Majors are never touched here (they arrive as
-# individual PRs, left for human review). GitHub Free private repos cannot use
-# branch protection / required checks, so `gh pr merge --auto` cannot gate on CI;
-# instead this workflow polls the head commit's check-runs (stable REST endpoint)
-# and merges with a plain squash. The merge/wait/skip decision lives in
+# individual PRs, left for human review). This workflow polls the head commit's
+# check-runs (stable REST endpoint) and then merges.
+#
+# THE MERGE VERB TRIES `--auto` FIRST AND FALLS BACK TO A PLAIN SQUASH, and it
+# must stay that way. This file used to assert as a premise that these repos
+# "cannot use branch protection / required checks", so `--auto` was avoided and a
+# plain squash used. THAT PREMISE EXPIRED: this repo now has an ACTIVE RULESET
+# (`main-merge-gate`), under which a plain merge is REFUSED ("the base branch policy
+# prohibits the merge"), so the job failed AFTER its own gate decided MERGE and every
+# non-major Dependabot PR parked (inctasoft/server-config#1668).
+# The premise was invisible to the obvious check: the legacy branch-protection API
+# returns 404 "Branch not protected" here, because RULESETS AND BRANCH PROTECTION ARE
+# DIFFERENT API SURFACES. The try-then-fall-back shape is correct with or without a
+# ruleset, so it encodes no environment premise that can expire again.
+# The merge/wait/skip decision lives in
 # .github/scripts/dependabot-merge-decision.sh so it can be unit-tested (RED/GREEN)
 # independently of CI timing.
 
@@ -52,7 +63,16 @@ jobs:
             case "$verdict" in
               MERGE)
                 echo "Gate: MERGE — all non-self check-runs green (or none)."
-                gh pr merge "$PR" --squash --delete-branch
+                # --auto first: under a ruleset a plain merge is REFUSED. Fall back for
+                # a repo with no ruleset, where auto-merge is unavailable.
+                if gh pr merge "$PR" --squash --auto --delete-branch; then
+                  echo "Merged (or queued) via --auto."
+                elif gh pr merge "$PR" --squash --delete-branch; then
+                  echo "Merged via plain squash (no auto-merge available)."
+                else
+                  echo "Merge FAILED under both verbs; leaving PR for human review." >&2
+                  exit 1
+                fi
                 exit 0 ;;
               SKIP)
                 echo "Gate: SKIP — a check-run failed/cancelled; leaving PR for human review."
