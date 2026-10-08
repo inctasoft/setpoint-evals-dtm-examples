@@ -168,8 +168,11 @@ services:
       # profile ignores it.
       - ./packages/core/dist:/app/node_modules/@dtm/core/dist:ro
       - ./packages/core/package.json:/app/node_modules/@dtm/core/package.json:ro
+    # Loopback-only (posture finding localhost-declared-wildcard, #121): registry/services.yaml
+    # declares :3003 expose: localhost; a bare "3003:3001" published on 0.0.0.0 and Docker DNAT
+    # bypasses ufw. The orchestrator reaches the simulator by service name on the dtm network.
     ports:
-      - "3003:3001"
+      - "127.0.0.1:3003:3001"
     networks:
       - dtm
     profiles:
