@@ -498,10 +498,10 @@ flowchart TB
     R3 --> C3
 
     %% Styling
-    classDef guard fill:#ffcdd2,stroke:#c62828,stroke-width:3px
-    classDef safe fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
-    classDef decision fill:#fff9c4,stroke:#f9a825,stroke-width:2px
-    classDef critical fill:#e1bee7,stroke:#6a1b9a,stroke-width:3px
+    classDef guard fill:#ffcdd2,color:#1a1a1a,stroke:#c62828,stroke-width:3px
+    classDef safe fill:#c8e6c9,color:#1a1a1a,stroke:#2e7d32,stroke-width:3px
+    classDef decision fill:#fff9c4,color:#1a1a1a,stroke:#f9a825,stroke-width:2px
+    classDef critical fill:#e1bee7,color:#1a1a1a,stroke:#6a1b9a,stroke-width:3px
 
     %% Guard points (RED) - race condition prevention
     class G3,G3Y guard
@@ -791,8 +791,8 @@ flowchart LR
     G6 -->|"Blocks"| RC4["Race #4:<br/>Double Delegation"]
     G7 -->|"Blocks"| RC5["Race #5:<br/>Cascade Recovery<br/>Checked Wrong Workflow"]
 
-    classDef guard fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    classDef race fill:#ffcdd2,stroke:#c62828,stroke-width:2px
+    classDef guard fill:#e3f2fd,color:#1a1a1a,stroke:#1565c0,stroke-width:2px
+    classDef race fill:#ffcdd2,color:#1a1a1a,stroke:#c62828,stroke-width:2px
 
     class G1,G2,G3,G4,G5,G6,G7 guard
     class RC1,RC2,RC3,RC4,RC5,RC_ACK race
