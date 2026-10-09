@@ -62,9 +62,9 @@ graph TB
     KAFKA --> EXT_SYSTEM
     EXT_SYSTEM --> KAFKA
 
-    classDef external fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef core fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef data fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef external fill:#e1f5fe,color:#1a1a1a,stroke:#01579b,stroke-width:2px
+    classDef core fill:#f3e5f5,color:#1a1a1a,stroke:#4a148c,stroke-width:2px
+    classDef data fill:#e8f5e9,color:#1a1a1a,stroke:#1b5e20,stroke-width:2px
 
     class API,EXT_KAFKA,EXT_SYSTEM external
     class ORCH,SQS,WORKERS core
@@ -144,11 +144,11 @@ graph TB
     REJECT -.->|Response| API
     PROCEED -->|Continue| ORCH[⚙️ Orchestration Service]
 
-    classDef entry fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef handler fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef security fill:#ffebee,stroke:#b71c1c,stroke-width:3px
-    classDef database fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    classDef outcome fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef entry fill:#e1f5fe,color:#1a1a1a,stroke:#01579b,stroke-width:2px
+    classDef handler fill:#f3e5f5,color:#1a1a1a,stroke:#4a148c,stroke-width:2px
+    classDef security fill:#ffebee,color:#1a1a1a,stroke:#b71c1c,stroke-width:3px
+    classDef database fill:#e8f5e9,color:#1a1a1a,stroke:#1b5e20,stroke-width:2px
+    classDef outcome fill:#fff3e0,color:#1a1a1a,stroke:#e65100,stroke-width:2px
 
     class API,EXT_KAFKA_IN entry
     class API_CTRL,KAFKA_HANDLER handler
@@ -264,10 +264,10 @@ graph TB
 
     STEP_CONFIG -.->|Defines| CHECK_DEPS
 
-    classDef orchestrator fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef database fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    classDef queue fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
-    classDef payload fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef orchestrator fill:#f3e5f5,color:#1a1a1a,stroke:#4a148c,stroke-width:2px
+    classDef database fill:#e8f5e9,color:#1a1a1a,stroke:#1b5e20,stroke-width:2px
+    classDef queue fill:#fff3e0,color:#1a1a1a,stroke:#ef6c00,stroke-width:2px
+    classDef payload fill:#e3f2fd,color:#1a1a1a,stroke:#1565c0,stroke-width:2px
 
     class ORCH,STEP_CONFIG,DELEG orchestrator
     class CREATE_JOB,CREATE_STEPS,CHECK_DEPS,WAIT database
@@ -412,13 +412,13 @@ graph TB
 
     SUCCESS --> ORCH[⚙️ Orchestrator<br/>Callback Service]
 
-    classDef queue fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
-    classDef worker fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    classDef security fill:#ffebee,stroke:#b71c1c,stroke-width:3px
-    classDef database fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    classDef success fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    classDef failure fill:#ffebee,stroke:#c62828,stroke-width:2px
-    classDef dlq fill:#efebe9,stroke:#3e2723,stroke-width:3px
+    classDef queue fill:#fff3e0,color:#1a1a1a,stroke:#ef6c00,stroke-width:2px
+    classDef worker fill:#fce4ec,color:#1a1a1a,stroke:#880e4f,stroke-width:2px
+    classDef security fill:#ffebee,color:#1a1a1a,stroke:#b71c1c,stroke-width:3px
+    classDef database fill:#e8f5e9,color:#1a1a1a,stroke:#1b5e20,stroke-width:2px
+    classDef success fill:#e8f5e9,color:#1a1a1a,stroke:#2e7d32,stroke-width:2px
+    classDef failure fill:#ffebee,color:#1a1a1a,stroke:#c62828,stroke-width:2px
+    classDef dlq fill:#efebe9,color:#1a1a1a,stroke:#3e2723,stroke-width:3px
 
     class SQS,VIS_TIMEOUT,RETRY_COUNT queue
     class INVOKE,GET_ATTEMPT,PROCESS,SUCCESS_CHECK worker
@@ -570,11 +570,11 @@ graph TB
     CHECK_COMPLETE -->|Yes| JOB_COMPLETE
     JOB_COMPLETE --> DTM_DB
 
-    classDef worker fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    classDef orchestrator fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef database fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    classDef kafka fill:#e0f2f1,stroke:#004d40,stroke-width:2px
-    classDef waiting fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef worker fill:#fce4ec,color:#1a1a1a,stroke:#880e4f,stroke-width:2px
+    classDef orchestrator fill:#f3e5f5,color:#1a1a1a,stroke:#4a148c,stroke-width:2px
+    classDef database fill:#e8f5e9,color:#1a1a1a,stroke:#1b5e20,stroke-width:2px
+    classDef kafka fill:#e0f2f1,color:#1a1a1a,stroke:#004d40,stroke-width:2px
+    classDef waiting fill:#fff3e0,color:#1a1a1a,stroke:#ef6c00,stroke-width:2px
 
     class WORKER,PREPARE_CALLBACK,HTTP_POST worker
     class CALLBACK_ENDPOINT,VALIDATE,UPDATE_STEP,CONTINUE_JOB orchestrator
@@ -729,12 +729,12 @@ graph TB
     CONTINUE_ORCH -.->|Check all steps| JOB_COMPLETE{All Steps<br/>Complete?}
     JOB_COMPLETE -->|Yes| DONE[✅ Job COMPLETED]
 
-    classDef complete fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    classDef kafka fill:#e0f2f1,stroke:#004d40,stroke-width:2px
-    classDef waiting fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
-    classDef production fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef dev fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
-    classDef orchestrator fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef complete fill:#e8f5e9,color:#1a1a1a,stroke:#2e7d32,stroke-width:2px
+    classDef kafka fill:#e0f2f1,color:#1a1a1a,stroke:#004d40,stroke-width:2px
+    classDef waiting fill:#fff3e0,color:#1a1a1a,stroke:#ef6c00,stroke-width:2px
+    classDef production fill:#e1f5fe,color:#1a1a1a,stroke:#01579b,stroke-width:2px
+    classDef dev fill:#f3e5f5,color:#1a1a1a,stroke:#6a1b9a,stroke-width:2px
+    classDef orchestrator fill:#f3e5f5,color:#1a1a1a,stroke:#4a148c,stroke-width:2px
 
     class SUBMIT_COMPLETE complete
     class KAFKA_PUBLISH,EXT_ACK,DEV_ACK kafka
@@ -966,12 +966,12 @@ graph LR
     PHASE2 -->|All submits done| CASCADE
     CASCADE -->|All acks received| COMPLETE
 
-    classDef entry fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef security fill:#ffebee,stroke:#b71c1c,stroke-width:2px
-    classDef orchestrator fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef processing fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
-    classDef kafka fill:#e0f2f1,stroke:#004d40,stroke-width:2px
-    classDef complete fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef entry fill:#e1f5fe,color:#1a1a1a,stroke:#01579b,stroke-width:2px
+    classDef security fill:#ffebee,color:#1a1a1a,stroke:#b71c1c,stroke-width:2px
+    classDef orchestrator fill:#f3e5f5,color:#1a1a1a,stroke:#4a148c,stroke-width:2px
+    classDef processing fill:#fff3e0,color:#1a1a1a,stroke:#ef6c00,stroke-width:2px
+    classDef kafka fill:#e0f2f1,color:#1a1a1a,stroke:#004d40,stroke-width:2px
+    classDef complete fill:#e8f5e9,color:#1a1a1a,stroke:#2e7d32,stroke-width:2px
 
     class START entry
     class DEDUP security
@@ -1229,10 +1229,10 @@ graph TB
     SSHIP --> ARCHIVE
     ARCHIVE --> COMPLETE
 
-    classDef validate fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef submit fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef fanout fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    classDef complete fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef validate fill:#e1f5fe,color:#1a1a1a,stroke:#01579b,stroke-width:2px
+    classDef submit fill:#f3e5f5,color:#1a1a1a,stroke:#4a148c,stroke-width:2px
+    classDef fanout fill:#fce4ec,color:#1a1a1a,stroke:#880e4f,stroke-width:2px
+    classDef complete fill:#e8f5e9,color:#1a1a1a,stroke:#2e7d32,stroke-width:2px
 
     class VC,VP,VO,VPAY,VSHIP validate
     class SC,SO,SPAY,SSHIP submit
