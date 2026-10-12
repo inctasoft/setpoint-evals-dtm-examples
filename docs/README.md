@@ -25,6 +25,7 @@ Structured Test Evaluations serve as living documentation. Core SEs validate eng
 | [MASTER-INDEX.md](MASTER-INDEX.md) | Use-case-based navigation across all documentation |
 | [guides/bus-profiles.md](guides/bus-profiles.md) | Bus profiles runbook — aws vs zero-broker zmq, bring-up, capability matrix, operational hazards |
 | [guides/architecture-c4.md](guides/architecture-c4.md) | C4 context, container, and per-profile deployment views |
+| [architecture/setpoint-evals-dtm-examples-c4-architecture.md](architecture/setpoint-evals-dtm-examples-c4-architecture.md) | Authored C4 doc: containers by bus profile, orchestrator components, job sequence, invariants with choke points |
 | [guides/system-architecture.md](guides/system-architecture.md) | Complete architecture guide with component diagrams |
 | [guides/race-condition-prevention.md](guides/race-condition-prevention.md) | Race condition guards in the callback flow |
 | [TEST-OPTIONS-GUIDE.md](TEST-OPTIONS-GUIDE.md) | Reference for testOptions in migration payloads |
