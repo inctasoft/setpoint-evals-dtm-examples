@@ -1,12 +1,12 @@
 # setpoint-evals-dtm-examples — C4 architecture
 
-> Derived from: CLAUDE.md, pnpm-workspace.yaml, docker-compose.yml, docker-compose.kafka.yml, docker-compose.workers.yml, docker-compose.zmq.yml, services/orchestrator/src/app.module.ts, services/orchestrator/src/main.ts, services/orchestrator/src/transport/transport.module.ts, services/orchestrator/src/event-bus/event-bus.module.ts, services/orchestrator/src/ingestion/workflow-job.service.ts, services/orchestrator/src/delegation/delegation.service.ts, services/orchestrator/src/callback/callback.service.ts, services/orchestrator/src/kafka/handlers/acknowledgement.handler.ts, services/orchestrator/src/orchestration/orchestration.service.ts, tools/sqs-poller/src/poller.ts, tools/zmq-worker-host/src/host.ts, packages/database/src/entities/step.entity.ts, server-config/registry/services.yaml (verified 2026-10-12)
+> Derived from: CLAUDE.md, pnpm-workspace.yaml, docker-compose.yml, docker-compose.kafka.yml, docker-compose.workers.yml, docker-compose.zmq.yml, services/orchestrator/src/app.module.ts, services/orchestrator/src/main.ts, services/orchestrator/src/transport/transport.module.ts, services/orchestrator/src/event-bus/event-bus.module.ts, services/orchestrator/src/ingestion/workflow-job.service.ts, services/orchestrator/src/delegation/delegation.service.ts, services/orchestrator/src/callback/callback.service.ts, services/orchestrator/src/kafka/handlers/acknowledgement.handler.ts, services/orchestrator/src/orchestration/orchestration.service.ts, tools/sqs-poller/src/poller.ts, tools/zmq-worker-host/src/host.ts, packages/database/src/entities/step.entity.ts, docker-compose.yml ports (verified 2026-10-12)
 
 > A **C4-model** view of setpoint-evals-dtm-examples, the generic DTM (Distributed Task Manager): a pnpm-workspaces monorepo holding a NestJS orchestrator, stateless per-step workers, a Preact monitor and a pluggable set of example workflows, all proven by a corpus of Setpoint Evals (SEs). The estate atlas places the project as one registry row; the existing guide `docs/guides/architecture-c4.md` gives a shallow orientation in C4-PlantUML-style diagrams. This document is the authored counterpart in the estate's template: the containers each pinned to a file, the orchestrator's internal components, the life of one job across them, and the invariants with their choke points.
 
 ## Why this is a doc, not derivable
 
-`/arch` derives its levels from `registry/services.yaml -> setpoint-evals-dtm-examples`, which is one row: a port list (orchestrator, dev-ack-simulator, monitor, five PostgreSQL ports, Kafka, LocalStack, Kafka UI, a debugger port), a `docker_compose` pointer and `auth: none`. That draws one box with a long list of ports. It cannot show what the source shows. The container set is not fixed: four compose files are layered (`docker-compose.yml`, `docker-compose.kafka.yml`, `docker-compose.workers.yml`, `docker-compose.zmq.yml`), and two environment switches, `QUEUE_TRANSPORT` (`services/orchestrator/src/transport/transport.module.ts::QUEUE_TRANSPORT`) and `EVENT_BUS` (`services/orchestrator/src/event-bus/event-bus.module.ts::EVENT_BUS`), decide at module-load time which transport and which bus the orchestrator instantiates, so the same image runs with SQS plus Kafka or with ZeroMQ only. The registry row cannot express the data-access boundary either: workers read and write the workflow source databases, the orchestrator never does, and the only channel back is an HTTP callback. Nor can it show the orchestrator's component graph (a registry of workflows loaded at boot, a delegation service, a callback service, a fan-out service, an ACK handler, a maintenance scheduler), the step lifecycle that crosses four containers, or the posture facts that differ from the registry: the registry says `auth: none` while the orchestrator registers a global SuperTokens guard with a dev escape hatch. These are internal structure and decisions rather than container rows, so they are authored here once and pinned by the Verified section. Where this document and the registry disagree, the Deployment view says so.
+A flat port list (orchestrator, dev-ack-simulator, monitor, five PostgreSQL ports, Kafka, LocalStack, Kafka UI, a debugger port) draws one box with a long list of ports. It cannot show what the source shows. The container set is not fixed: four compose files are layered (`docker-compose.yml`, `docker-compose.kafka.yml`, `docker-compose.workers.yml`, `docker-compose.zmq.yml`), and two environment switches, `QUEUE_TRANSPORT` (`services/orchestrator/src/transport/transport.module.ts::QUEUE_TRANSPORT`) and `EVENT_BUS` (`services/orchestrator/src/event-bus/event-bus.module.ts::EVENT_BUS`), decide at module-load time which transport and which bus the orchestrator instantiates, so the same image runs with SQS plus Kafka or with ZeroMQ only. A port list cannot express the data-access boundary either: workers read and write the workflow source databases, the orchestrator never does, and the only channel back is an HTTP callback. Nor can it show the orchestrator's component graph (a registry of workflows loaded at boot, a delegation service, a callback service, a fan-out service, an ACK handler, a maintenance scheduler), the step lifecycle that crosses four containers, or the posture facts that differ from a port-list reading: the stack is labelled as unauthenticated while the orchestrator registers a global SuperTokens guard with a dev escape hatch. These are internal structure and decisions rather than container rows, so they are authored here once and pinned by the Verified section. Where this document and `CLAUDE.md` or the compose files disagree, the Deployment view says so.
 
 ## C4 Level 1 — System context of setpoint-evals-dtm-examples
 
@@ -17,7 +17,7 @@ The people and external systems, each read from a file:
 - **Workflow source databases**: one PostgreSQL per example workflow holding the domain entities the Validate and Submit steps touch (`workflows/order-processing/source-db`, `CLAUDE.md` section "Workflow Source DBs").
 - **Downstream target systems**: the systems that receive the transformed data and send an acknowledgement back. In development the dev-ack-simulator plays them (`tools/dev-ack-simulator/src/main.ts`).
 - **SuperTokens core**: the shared identity service the orchestrator's auth module initialises against (`services/orchestrator/src/auth/supertokens.config.ts`).
-- **Estate edge**: `dtm.akrsmv.net` fronts the monitor, declared in `server-config/registry/services.yaml -> setpoint-evals-dtm-examples`.
+- **Local edge**: the monitor is served by the Vite dev server (`apps/monitor/vite-dev.config.ts`); no hosted edge is described by any file in this repository.
 
 ```mermaid
 flowchart LR
@@ -180,16 +180,16 @@ flowchart TD
 
 ## Deployment view
 
-Placement is proven by the layered compose files: `docker-compose.yml` (orchestrator, db, dev-ack-simulator, an init-typeorm migration job), `docker-compose.kafka.yml` (zookeeper, kafka, kafka-ui, kafka-init), `docker-compose.workers.yml` (sqs-poller, init-sqs-queues, localstack) and `docker-compose.zmq.yml` (overrides for the orchestrator and simulator plus three `zmq-worker-host-*` services under the `zmq-tasks` profile). The registry declares `docker_compose: setpoint-evals-dtm-examples/docker-compose.yml` and `deploy.method: docker-compose`; ports, the dev-server port and the `dtm.akrsmv.net` subdomain are owned by `server-config/registry/services.yaml -> setpoint-evals-dtm-examples` and are not copied here.
+Placement is proven by the layered compose files: `docker-compose.yml` (orchestrator, db, dev-ack-simulator, an init-typeorm migration job), `docker-compose.kafka.yml` (zookeeper, kafka, kafka-ui, kafka-init), `docker-compose.workers.yml` (sqs-poller, init-sqs-queues, localstack) and `docker-compose.zmq.yml` (overrides for the orchestrator and simulator plus three `zmq-worker-host-*` services under the `zmq-tasks` profile). The deployment method is docker-compose; the published ports are read from the compose files and not copied here.
 
-| Item | Registry says | Source says | Verdict |
+| Item | Port-list reading | Source says | Verdict |
 |---|---|---|---|
-| auth | `auth: none` | `AuthModule.forRoot()` registers a global `AuthGuard` (`services/orchestrator/src/auth/auth.module.ts`), which waves requests through only when `DISABLE_AUTH` is `true` (`services/orchestrator/src/auth/auth.guard.ts`) | registry label describes the dev default, not the code path |
-| source DBs | five PostgreSQL ports listed, three of them source DBs | `CLAUDE.md` states the workers read the copies hosted in `dtm-db`, not the dedicated source containers | the dedicated containers are not what the deployed workers read |
+| auth | labelled unauthenticated | `AuthModule.forRoot()` registers a global `AuthGuard` (`services/orchestrator/src/auth/auth.module.ts`), which waves requests through only when `DISABLE_AUTH` is `true` (`services/orchestrator/src/auth/auth.guard.ts`) | that label describes the dev default, not the code path |
+| source DBs | `docker-compose.yml` publishes five PostgreSQL ports, three of them source DBs | `CLAUDE.md` states the workers read the copies hosted in `dtm-db`, not the dedicated source containers | the dedicated containers are not what the deployed workers read |
 | workflows | not listed | four workflows are registered in `services/orchestrator/src/app.module.ts` (`plan-execution` in addition to the three listed in `CLAUDE.md`) | `CLAUDE.md` table is behind the code |
-| ZeroMQ ports | not listed | ROUTER, PUB and PULL bind in the orchestrator (`services/orchestrator/src/transport/zmq-transport.service.ts`, `services/orchestrator/src/event-bus/zmq-event-bus.service.ts`) | registry has no row for the zmq profile |
+| ZeroMQ ports | not listed | ROUTER, PUB and PULL bind in the orchestrator (`services/orchestrator/src/transport/zmq-transport.service.ts`, `services/orchestrator/src/event-bus/zmq-event-bus.service.ts`) | a port-list reading for the default profile omits the zmq profile |
 
-The monitor is a Vite app (`apps/monitor/vite.config.ts`, `apps/monitor/vite-dev.config.ts`); the registry's `dev_port` block points at the latter. Remote, hosted deployment of the monitor and the orchestrator is not described by any file read for this document: absent.
+The monitor is a Vite app (`apps/monitor/vite.config.ts`, `apps/monitor/vite-dev.config.ts`). Remote, hosted deployment of the monitor and the orchestrator is not described by any file read for this document: absent.
 
 ## Invariants this architecture must preserve
 
@@ -230,17 +230,16 @@ grep -n "^  [a-z0-9-]*:$" docker-compose.yml docker-compose.kafka.yml docker-com
 grep -n "async claimForDelegation\|async claimAckCompletion" packages/database/src/repositories/step.repository.ts
 # observed: both methods present
 
-# the registry row this document is compared with
-grep -n "^  setpoint-evals-dtm-examples:" -A18 ../server-config/registry/services.yaml
-# observed: ports list, dtm.akrsmv.net subdomain, auth: none
+# the published ports this document is compared with
+grep -n "^ *- \"[0-9]*:" docker-compose.yml docker-compose.kafka.yml docker-compose.workers.yml
+# observed: host:container port mappings where published, including the orchestrator 3002 and the debugger port
 ```
 <!-- /VERIFICATION-SUMMARY -->
 
 ## References (don't duplicate)
 
 - **Up — initiative:** — none (no estate-atlas initiative directory names this project in the files read)
-- **Up — project index:** [`../README.md`](../README.md) · `registry/services.yaml -> setpoint-evals-dtm-examples`
-- **Derived levels (live):** /arch L0/L1/L2 for `setpoint-evals-dtm-examples`
+- **Up — project index:** [`../README.md`](../README.md)
 - **Down — runbooks:** `docs/guides/bus-profiles.md` · **Down — guides:** `docs/guides/architecture-c4.md`, `docs/guides/system-architecture.md`, `docs/guides/orchestration-decision-logic.md` · **Down — features:** `docs/guides/FEATURES.md` · **Down — videos:** `docs/guides/DEMO-VIDEOS.md`
 - **Where the proofs live:** `setpoint-evals/SE-05-concurrent-jobs/README.md`, `setpoint-evals/SE-15-leader-election-concurrency/README.md`, `setpoint-evals/SE-19-evals-run-api-disabled-403/README.md`, `setpoint-evals/SE-29-redelivery-lease-expiry/README.md`, `setpoint-evals/SE-36-full-zmq-bus-profile/README.md`, `setpoint-evals/SE-14-schema-single-source/README.md`
 - **Design history:** — none
