@@ -63,25 +63,39 @@ if [ "${1:-}" = "--self-test" ]; then
   fi
   echo "✅ file mode: canary was detected (gate can fail)."
 
-  # Tree mode must-fail control: a throwaway git repo that tracks one planted-canary file must
-  # FAIL, and the same repo holding only a clean file must PASS (a gate that always fails proves
-  # nothing either). The repo lives under mktemp -d; engine is invoked from inside it.
+  # Tree mode must-fail control. A throwaway git repo plants the canary where ONLY a full scan finds
+  # it, and each is asserted by its exact location: a scanner that reads partial content, skips
+  # nested directories or ignores paths cannot pass. (A canary on line 1 of a top-level file
+  # alone would pass a scanner that reads just the first line of each file.)
+  #   - top-level line 1, a DEEP line (350) of a nested file, and a canary in a file NAME only.
+  # The same repo holding only a clean file must PASS (a gate that always fails proves nothing).
   TREE_DIR="$(mktemp -d)"
+  CANARY_WORD="${FIXTURE_LINE#*\'}"; CANARY_WORD="${CANARY_WORD%%\'*}"
   git -C "$TREE_DIR" init -q
   printf '%s\n' "$FIXTURE_LINE" > "$TREE_DIR/planted.txt"
-  git -C "$TREE_DIR" add planted.txt
+  mkdir -p "$TREE_DIR/a/b/c"
+  { for _i in $(seq 1 349); do echo "filler line $_i"; done; printf '%s\n' "$FIXTURE_LINE"; } > "$TREE_DIR/a/b/c/deep.txt"
+  printf 'innocent content\n' > "$TREE_DIR/$CANARY_WORD.txt"
+  git -C "$TREE_DIR" add -A
   set +e
   OUTPUT="$(cd "$TREE_DIR" && node "$ENGINE" --tree 2>&1)"
   STATUS=$?
   set -e
-  if ! { [ "$STATUS" -eq 1 ] && printf '%s' "$OUTPUT" | grep -q "planted.txt:1: REDACTED token match"; }; then
-    echo "❌ Self-test FAILED: tree mode did NOT flag the planted fixture (gate is broken)." >&2
+  TREE_OK=1
+  [ "$STATUS" -eq 1 ] || TREE_OK=0
+  for want in "planted.txt:1: REDACTED token match" \
+              "a/b/c/deep.txt:350: REDACTED token match" \
+              "$CANARY_WORD.txt (path): REDACTED token match"; do
+    printf '%s\n' "$OUTPUT" | grep -qF -- "$want" || { TREE_OK=0; echo "   missing expected report: $want" >&2; }
+  done
+  if [ "$TREE_OK" -ne 1 ]; then
+    echo "❌ Self-test FAILED: tree mode did NOT flag every planted fixture (gate is broken)." >&2
     printf '%s\n' "$OUTPUT" >&2
     rm -rf "${TREE_DIR:?}"
     exit 1
   fi
-  echo "✅ tree mode: planted fixture was detected (gate can fail)."
-  git -C "$TREE_DIR" rm -q -f --cached planted.txt
+  echo "✅ tree mode: top-level line 1, nested deep line 350 and path-only canaries all detected."
+  git -C "$TREE_DIR" rm -q -r -f --cached . 
   printf 'nothing to see here\n' > "$TREE_DIR/clean.txt"
   git -C "$TREE_DIR" add clean.txt
   set +e
