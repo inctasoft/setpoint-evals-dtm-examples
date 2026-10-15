@@ -10,7 +10,9 @@
 # a handful of files, so the hot path runs in-process instead.
 #
 # Usage:
-#   scan.sh --self-test          Prove the gate can actually fail (canary check)
+#   scan.sh --self-test          Prove the gate can actually fail (canary check), in file, diff
+#                                and tree modes
+#   scan.sh --tree               Scan every git-tracked file of the repo in the cwd (full content)
 #   scan.sh                      Read a unified diff from stdin, scan added lines
 #   scan.sh <file> [<file> ...]  Scan the full content of each given file
 #
@@ -54,14 +56,51 @@ if [ "${1:-}" = "--self-test" ]; then
   STATUS=$?
   set -e
   rm -rf "$(dirname "$TMP_FIXTURE")"
-  if [ "$STATUS" -eq 1 ] && printf '%s' "$OUTPUT" | grep -q "REDACTED token match"; then
-    echo "✅ Self-test PASSED: canary was detected (gate can fail)."
-    exit 0
-  else
+  if ! { [ "$STATUS" -eq 1 ] && printf '%s' "$OUTPUT" | grep -q "REDACTED token match"; }; then
     echo "❌ Self-test FAILED: canary was NOT detected (gate is broken)." >&2
     printf '%s\n' "$OUTPUT" >&2
     exit 1
   fi
+  echo "✅ file mode: canary was detected (gate can fail)."
+
+  # Tree mode must-fail control: a throwaway git repo that tracks one planted-canary file must
+  # FAIL, and the same repo holding only a clean file must PASS (a gate that always fails proves
+  # nothing either). The repo lives under mktemp -d; engine is invoked from inside it.
+  TREE_DIR="$(mktemp -d)"
+  git -C "$TREE_DIR" init -q
+  printf '%s\n' "$FIXTURE_LINE" > "$TREE_DIR/planted.txt"
+  git -C "$TREE_DIR" add planted.txt
+  set +e
+  OUTPUT="$(cd "$TREE_DIR" && node "$ENGINE" --tree 2>&1)"
+  STATUS=$?
+  set -e
+  if ! { [ "$STATUS" -eq 1 ] && printf '%s' "$OUTPUT" | grep -q "planted.txt:1: REDACTED token match"; }; then
+    echo "❌ Self-test FAILED: tree mode did NOT flag the planted fixture (gate is broken)." >&2
+    printf '%s\n' "$OUTPUT" >&2
+    rm -rf "${TREE_DIR:?}"
+    exit 1
+  fi
+  echo "✅ tree mode: planted fixture was detected (gate can fail)."
+  git -C "$TREE_DIR" rm -q -f --cached planted.txt
+  printf 'nothing to see here\n' > "$TREE_DIR/clean.txt"
+  git -C "$TREE_DIR" add clean.txt
+  set +e
+  OUTPUT="$(cd "$TREE_DIR" && node "$ENGINE" --tree 2>&1)"
+  STATUS=$?
+  set -e
+  rm -rf "${TREE_DIR:?}"
+  if [ "$STATUS" -ne 0 ]; then
+    echo "❌ Self-test FAILED: tree mode flagged a clean tree (gate is stuck red)." >&2
+    printf '%s\n' "$OUTPUT" >&2
+    exit 1
+  fi
+  echo "✅ tree mode: clean tree passes."
+  echo "✅ Self-test PASSED."
+  exit 0
+fi
+
+if [ "${1:-}" = "--tree" ]; then
+  exec node "$ENGINE" --tree
 fi
 
 if [ "$#" -gt 0 ]; then

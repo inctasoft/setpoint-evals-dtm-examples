@@ -11,6 +11,11 @@
  * Usage (always invoked by scan.sh, not directly):
  *   node scan.js --diff            Read a unified diff from stdin
  *   node scan.js --files <f1> ...  Scan the full content of each given file
+ *   node scan.js --tree            Scan the FULL content (and paths) of every git-tracked file in
+ *                                  the current working directory's repo (`git ls-files`). The
+ *                                  diff modes only ever see what a change adds; this mode sees
+ *                                  what the tree already holds, so a token denylisted AFTER its
+ *                                  content landed is still caught.
  *
  * Exit codes: 0 = clean, 1 = denylisted token found, 2 = setup error.
  */
@@ -20,6 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 
 const HASH_FILE = path.join(__dirname, 'denylist.sha256');
 const SELF_SUFFIX = 'scripts/hygiene/scan.sh';
@@ -76,11 +82,19 @@ function isSelfPath(p) {
   return p.endsWith(SELF_SUFFIX) || path.basename(p) === 'scan.sh';
 }
 
+// Memoised per run: the tree mode sees the same words (import, const, ...) tens of thousands of
+// times, and hashing each occurrence would dominate the runtime.
+const verdictCache = new Map();
+
 function checkLine(salt, hashes, location, text, report) {
   let hit = false;
   for (const candidate of extractCandidates(text)) {
-    const h = hashWord(salt, candidate);
-    if (hashes.has(h)) {
+    let denied = verdictCache.get(candidate);
+    if (denied === undefined) {
+      denied = hashes.has(hashWord(salt, candidate));
+      verdictCache.set(candidate, denied);
+    }
+    if (denied) {
       report(`${location}: REDACTED token match`);
       hit = true;
     }
@@ -104,6 +118,42 @@ function scanFiles(salt, hashes, files, report) {
     if (checkLine(salt, hashes, `${f} (path)`, f, report)) found = true;
     const content = fs.readFileSync(f, 'utf8');
     const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (checkLine(salt, hashes, `${f}:${i + 1}`, lines[i], report)) found = true;
+    }
+  }
+  return found;
+}
+
+// Content of these is never text a human wrote; their PATH is still scanned.
+const BINARY_EXT = /\.(png|jpe?g|gif|ico|webp|pdf|zip|gz|tgz|bz2|xz|7z|wasm|woff2?|ttf|otf|eot|mp3|mp4|webm|wav|ogg|m4a|mov|avi|xlsx|docx|pptx|odt|so|dylib|dll|exe|bin|class|jar|pyc|node)$/i;
+// Machine-generated, huge, and carries registry integrity hashes, not authored prose.
+const TREE_SKIP = /(^|\/)pnpm-lock\.yaml$/;
+
+function scanTree(salt, hashes, report) {
+  let listed;
+  try {
+    listed = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  } catch (e) {
+    process.stderr.write('ERROR: git ls-files failed (not a git work tree?)\n');
+    process.exit(2);
+  }
+  const files = listed.split('\0').filter((f) => f && !TREE_SKIP.test(f));
+  // Vacuity guard: a verdict over zero files is no verdict.
+  if (files.length === 0) {
+    process.stderr.write('ERROR: tree scan set is EMPTY; refusing to report a vacuous CLEAN\n');
+    process.exit(2);
+  }
+  process.stdout.write(`hygiene tree scan: ${files.length} tracked file(s)\n`);
+  let found = false;
+  for (const f of files) {
+    if (isSelfPath(f)) continue;
+    if (checkLine(salt, hashes, `${f} (path)`, f, report)) found = true;
+    if (BINARY_EXT.test(f)) continue;
+    let st;
+    try { st = fs.lstatSync(f); } catch (e) { continue; }
+    if (!st.isFile()) continue; // symlinks / submodules: nothing to read
+    const lines = fs.readFileSync(f, 'utf8').split('\n');
     for (let i = 0; i < lines.length; i++) {
       if (checkLine(salt, hashes, `${f}:${i + 1}`, lines[i], report)) found = true;
     }
@@ -146,7 +196,9 @@ function main() {
   const report = (msg) => messages.push(msg);
 
   let found;
-  if (args[0] === '--files') {
+  if (args[0] === '--tree') {
+    found = scanTree(salt, hashes, report);
+  } else if (args[0] === '--files') {
     found = scanFiles(salt, hashes, args.slice(1), report);
   } else {
     // Default / --diff: read unified diff from stdin
