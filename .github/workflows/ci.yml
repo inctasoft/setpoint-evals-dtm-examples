@@ -123,6 +123,12 @@ jobs:
       - name: Self-test (prove the gate can fail)
         run: bash scripts/hygiene/scan.sh --self-test
 
+      # Whole-tree gate (every event, including workflow_dispatch). The diff scans below only see
+      # what a change ADDS, so a token denylisted after its content landed would pass them forever.
+      # Same salted-hash engine: no plaintext deny-list exists in this repo or its logs.
+      - name: Scan full tracked tree for denylisted vocabulary
+        run: bash scripts/hygiene/scan.sh --tree
+
       - name: Scan PR diff for denylisted vocabulary
         if: github.event_name == 'pull_request'
         run: |
