@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@dtm/core": "workspace:*",
-    "dompurify": "^3.4.16",
+    "dompurify": "^3.4.17",
     "marked": "^18.0.6",
     "mermaid": "^11.16.0",
     "preact": "^10.25.4",
